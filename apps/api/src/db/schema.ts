@@ -324,6 +324,8 @@ export const matchGroups = pgTable(
     status: matchGroupStatus('status').notNull(),
     basis: matchBasis('basis').notNull(),
     tier: matchTier('tier'),
+    /** The rule that made a rule-basis match (e.g. T1.receipt-amount.v1); null for agent and human groups. */
+    ruleId: text('rule_id'),
     /** What explains a known, accounted-for difference (e.g. FEE_GST_DEDUCTION), if anything. */
     reasonCode: reasonCode('reason_code'),
     /** Verifier-computed difference, signed. Must be 0 for an accepted group. */
@@ -339,6 +341,10 @@ export const matchGroups = pgTable(
     check(
       'match_groups_accepted_reconciles',
       sql`${t.status} <> 'accepted' or ${t.residualPaise} = 0`,
+    ),
+    check(
+      'match_groups_rule_records_tier_and_rule',
+      sql`${t.basis} <> 'rule' or (${t.tier} is not null and ${t.ruleId} is not null)`,
     ),
   ],
 );

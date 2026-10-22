@@ -41,6 +41,8 @@ export const matchGroupSchema = z
     status: z.enum(MATCH_GROUP_STATUSES),
     basis: z.enum(MATCH_BASES),
     tier: z.enum(MATCH_TIERS).nullable(),
+    /** The rule that made a rule-basis match, e.g. `T1.receipt-amount.v1`; null for agent and human groups. */
+    ruleId: z.string().min(1).max(100).nullable(),
     /** What explains a known, accounted-for difference (e.g. FEE_GST_DEDUCTION), if anything. */
     reasonCode: reasonCodeSchema.nullable(),
     residual: paiseSchema,
@@ -49,6 +51,14 @@ export const matchGroupSchema = z
   .refine((g) => g.status !== 'accepted' || g.residual === 0n, {
     error: 'an accepted match group must reconcile exactly: residual must be 0',
     path: ['residual'],
+  })
+  .refine((g) => g.basis !== 'rule' || g.tier !== null, {
+    error: 'a rule-made match records its tier',
+    path: ['tier'],
+  })
+  .refine((g) => g.basis !== 'rule' || g.ruleId !== null, {
+    error: 'a rule-made match records its rule id',
+    path: ['ruleId'],
   });
 export type MatchGroup = z.output<typeof matchGroupSchema>;
 

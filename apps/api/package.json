@@ -13,7 +13,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "seed": "tsx src/scripts/seed.ts",
-    "razorpay:probe": "tsx src/scripts/razorpay-probe.ts"
+    "razorpay:probe": "tsx src/scripts/razorpay-probe.ts",
+    "bench:matcher": "tsx src/scripts/bench-matcher.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.2.0",

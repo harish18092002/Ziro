@@ -1,0 +1,2 @@
+ALTER TABLE "match_groups" ADD COLUMN "rule_id" text;--> statement-breakpoint
+ALTER TABLE "match_groups" ADD CONSTRAINT "match_groups_rule_records_tier_and_rule" CHECK ("match_groups"."basis" <> 'rule' or ("match_groups"."tier" is not null and "match_groups"."rule_id" is not null));

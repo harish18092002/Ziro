@@ -156,6 +156,23 @@ describe('SyntheticSource', () => {
     expect(checked).toBe(data.collections.recon.length);
   });
 
+  it('can return the whole recon file in one pass, identical to the per-day answers', async () => {
+    const perDay = new Map<string, string>();
+    for (const day of DAYS) {
+      for (const { record } of (await source.fetchSettlementRecon(day)).items) {
+        perDay.set(record.sourceRef, record.importHash);
+      }
+    }
+    const all = await source.fetchAllSettlementRecon();
+    expect(all.source).toBe('synthetic');
+    expect(all.items).toHaveLength(data.collections.recon.length);
+    expect(new Map(all.items.map((s) => [s.record.sourceRef, s.record.importHash]))).toEqual(
+      perDay,
+    );
+    for (const { record } of all.items)
+      expect(settlementItemSchema.safeParse(record).success).toBe(true);
+  });
+
   it('is deterministic, and re-running with another run id changes ids but not content hashes', async () => {
     const again = new SyntheticSource({ runId: RUN_ID, dir: data.dir });
     expect(await again.fetchPayments(FULL)).toEqual(await source.fetchPayments(FULL));

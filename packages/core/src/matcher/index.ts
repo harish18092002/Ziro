@@ -1,0 +1,31 @@
+export {
+  composeSettlement,
+  isVerified,
+  itemPaymentId,
+  type CompositionIssue,
+  type CompositionIssueCode,
+  type CompositionLookups,
+  type SettlementComposition,
+} from './composition.js';
+export { runMatcher } from './run.js';
+export {
+  DEFAULT_MATCHER_CONFIG,
+  EXCEPTION_CAUSES,
+  IGNORED_REASONS,
+  MAX_CANDIDATES,
+  RULE_IDS,
+  matcherConfig,
+  type ExceptionCause,
+  type IgnoredReason,
+  type IgnoredRecord,
+  type MatcherConfig,
+  type MatcherInput,
+  type MatcherOutput,
+  type MatcherStats,
+  type OrderEvidence,
+  type PayoutEvidence,
+  type RuleException,
+  type RuleGroup,
+  type RuleId,
+  type SettlementVerdict,
+} from './types.js';

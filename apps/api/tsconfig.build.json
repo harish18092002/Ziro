@@ -4,5 +4,12 @@
     "rootDir": "src"
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/**/*.fixtures.ts"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/**/*.test.ts",
+    "src/**/*.fixtures.ts",
+    "src/matcher-eval/**",
+    "src/scripts/bench-matcher.ts"
+  ]
 }

@@ -337,3 +337,61 @@ column, but the audit trail could no longer say why a line matched at its tier).
   disagree, and the shapes assumed beyond length (3–5 letters, then digits) are verified only against
   datagen and one real statement. Real narrations from the merchant's bank should extend the table of
   formats in `utr.test.ts`.
+
+## ADR-010: The rule matcher — a waterfall that never guesses
+
+**Status:** accepted
+
+**Context.** Deterministic code should settle the bulk of the reconciliation, cheaply and provably, so
+the LLM agent sees only what is genuinely uncertain. A wrong automatic match is worse than a missing
+one: it hides exactly the discrepancy this product exists to find.
+
+**Decision.**
+
+- **A pure function over domain records** (`@ziro/core/matcher`): no IO, no clock, no randomness. The
+  output does not depend on input order, because no rule ever breaks a tie. This is a tested property.
+- **Four tiers, each recording its tier and rule id** (versioned, e.g. `T1.receipt-amount.v1`). T1
+  joins a ledger entry to a captured payment by cleaned receipt and equal amount. T3 and T4 join a
+  settlement to a bank credit. **T2 is a verdict, not a group** (ADR-005): a payment is already in an
+  order group, so the settlement's composition is verified, and only a verified settlement goes on.
+- **One composition function** (`composeSettlement`) holds the settlement maths, for the verifier to
+  reuse. The request wrote `Σpayments − Σfees − Σtax − Σrefunds ± adjustments`; ADR-004 says the fee
+  already includes its GST, and on the eval data that form matches 0 of 49 settlements while
+  `Σpayments − Σfees − Σrefunds ± adjustments` matches 49 of 49. Tax is reported, not subtracted.
+- **Zero amount tolerance; ambiguity is an exception.** One ledger entry and one captured payment per
+  receipt; a UTR must be unique on both sides; T4 needs exactly one candidate on both sides, counted
+  among records still unmatched after T3 (a certain T3 match must not make a lone leftover look
+  ambiguous). Every exception carries its candidates; none is resolved by position.
+- **T3 trusts a UTR only if it is exact or merely re-joined.** A repaired or truncated UTR is evidence
+  for the agent, not proof, so those credits can only match at T4. A UTR hit with a different amount is
+  an exception, and that settlement is then not offered to T4.
+- **Reason codes come from structure only**, and `UNKNOWN` otherwise. `LEDGER_AMOUNT_EDITED` asserts
+  intent (an edited ledger, a discount, a part-payment?), so it is left to the agent; `FEE_OVERCHARGE`
+  needs a fee schedule and belongs to the leakage report. A line's free-text description is used only
+  as a hint for `CHARGEBACK_ADJUSTMENT`, never as authority.
+- **Scope of exceptions.** Failed or uncaptured payments, bank debits and UPI/ACH/cheque credits are
+  _ignored_ (listed, not investigated); the refunds of an unmatched payment are folded into that
+  payment's exception. A NEFT, RTGS or IMPS credit that no settlement explains is an exception.
+- **The calendar is configuration** (weekend days and holidays), not a constant. The eval and the
+  benchmark pass datagen's assumptions (Saturday and Sunday off, its fixed holidays).
+- **`rule_id` is stored.** `match_groups.rule_id` (migration `0003`), with a CHECK that a rule-made group
+  names both its tier and its rule.
+
+**Alternatives.** Making T2 a group (breaks "a record is in at most one group"); resolving an
+ambiguous UTR hit by nearest amount or latest date (a guess); T3 accepting repaired UTRs (a look-alike
+repair is a hypothesis, and the verifier should not have to second-guess the rules); setting
+`LEDGER_AMOUNT_EDITED` whenever a receipt matches at a different amount (right on the synthetic data,
+wrong whenever a part-payment is the real cause).
+
+**Consequences.**
+
+- Measured against `truth.json` the rules make no wrong links and lose no record. They leave the
+  injected ambiguities (edited ledgers, duplicates, cash orders, manual payments, decoy credits) to the
+  agent, as designed. The numbers are pinned in a test and reproducible.
+- At stress scale about 30,000 of 32,600 exceptions are NEFT/RTGS/IMPS credits that no settlement
+  explains (the generator's noise). That volume must not reach the agent one by one: a triage or
+  batch-dismiss step is needed before the agent runs at scale.
+- The retry-receipt convention (`<ref>-R<n>`) is the generator's and each merchant's to define. It is a
+  config pattern, and null turns the `DUPLICATE_PAYMENT` rule off.
+- Persisting groups and exceptions, running the matcher on a run, and the endpoints for that are the
+  next task. This one delivers the pure function, its measurements and the schema column.

@@ -135,6 +135,27 @@ export class SyntheticSource implements RazorpaySource {
     );
   }
 
+  /**
+   * Every recon line in the dataset, parsed once. The per-day call below is what the Razorpay API
+   * contract asks for, but it re-reads the whole file each time: right for a sixty-day demo, hopeless
+   * for the two-year stress preset. Tooling that wants the whole dataset (the matcher benchmark and
+   * its truth test) uses this instead.
+   */
+  async fetchAllSettlementRecon(): Promise<FetchResult<SettlementItem>> {
+    const items = parseEntries(
+      await this.load(FILES.recon),
+      reconItemIngestSchema,
+      'synthetic recon',
+    );
+    return this.result(
+      'settlement_recon',
+      sortChronologically(
+        items.map((entry) => mapReconItem(entry, this.ctx)),
+        (r) => r.settledAt ?? '',
+      ),
+    );
+  }
+
   async fetchSettlementRecon(date: string): Promise<FetchResult<SettlementItem>> {
     const { fromEpoch, toEpoch } = istDayBounds(date);
     const items = parseEntries(

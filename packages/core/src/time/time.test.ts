@@ -1,12 +1,16 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  addBusinessDays,
   addDaysToBusinessDate,
   epochFromUtc,
+  expandFixedHolidays,
   instantFromEpoch,
   isBusinessDate,
+  isBusinessDay,
   istBusinessDate,
   istDayBounds,
+  weekdayOf,
 } from './index.js';
 
 const ist = new Intl.DateTimeFormat('en-CA', {
@@ -171,5 +175,89 @@ describe('epochFromUtc', () => {
     expect(() => epochFromUtc('2026-01-01', 86_400)).toThrow(RangeError);
     expect(() => epochFromUtc('2026-01-01', -1)).toThrow(RangeError);
     expect(() => epochFromUtc('2026-01-01', 1.5)).toThrow(RangeError);
+  });
+});
+
+describe('weekdayOf', () => {
+  it('agrees with Date for any date from 1970 to 2100', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: YEAR_2100 / 86_400 - 1 }), (day) => {
+        const date = istBusinessDate(day * 86_400 + 12 * 3600 - 19_800);
+        expect(weekdayOf(date)).toBe(new Date(`${date}T12:00:00Z`).getUTCDay());
+      }),
+      { numRuns: 3000 },
+    );
+  });
+
+  it('knows a few fixed days', () => {
+    expect(weekdayOf('1970-01-01')).toBe(4); // Thursday
+    expect(weekdayOf('2026-09-05')).toBe(6); // Saturday
+    expect(weekdayOf('2026-09-06')).toBe(0); // Sunday
+    expect(weekdayOf('2000-02-29')).toBe(2); // Tuesday
+  });
+});
+
+describe('business days', () => {
+  const sat_sun = { weekendDays: [0, 6], holidays: new Set<string>() };
+
+  it('skips weekends: Friday + 1 is Monday, + 3 is Wednesday', () => {
+    expect(addBusinessDays('2026-09-04', 1, sat_sun)).toBe('2026-09-07');
+    expect(addBusinessDays('2026-09-04', 3, sat_sun)).toBe('2026-09-09');
+    expect(addBusinessDays('2026-09-04', 5, sat_sun)).toBe('2026-09-11');
+  });
+
+  it('counts from a non-business start, and returns the start for zero', () => {
+    expect(addBusinessDays('2026-09-05', 1, sat_sun)).toBe('2026-09-07'); // Saturday + 1
+    expect(addBusinessDays('2026-09-05', 0, sat_sun)).toBe('2026-09-05');
+  });
+
+  it('skips holidays as well', () => {
+    const withHoliday = { weekendDays: [0, 6], holidays: new Set(['2026-09-07', '2026-09-08']) };
+    expect(addBusinessDays('2026-09-04', 1, withHoliday)).toBe('2026-09-09');
+    expect(isBusinessDay('2026-09-07', withHoliday)).toBe(false);
+    expect(isBusinessDay('2026-09-09', withHoliday)).toBe(true);
+  });
+
+  it('honours a calendar where only Sunday is off', () => {
+    const sundayOnly = { weekendDays: [0], holidays: new Set<string>() };
+    expect(addBusinessDays('2026-09-04', 2, sundayOnly)).toBe('2026-09-07'); // Sat, then Mon
+  });
+
+  it('lands on a business day, in order, having skipped exactly the non-business days', () => {
+    const calendar = { weekendDays: [0, 6], holidays: new Set(['2026-10-02', '2026-10-20']) };
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 400 }),
+        fc.integer({ min: 1, max: 15 }),
+        (offset, n) => {
+          const start = addDaysToBusinessDate('2026-09-01', offset);
+          const end = addBusinessDays(start, n, calendar);
+          expect(isBusinessDay(end, calendar)).toBe(true);
+          let counted = 0;
+          for (let d = addDaysToBusinessDate(start, 1); d <= end; d = addDaysToBusinessDate(d, 1)) {
+            if (isBusinessDay(d, calendar)) counted += 1;
+          }
+          expect(counted).toBe(n);
+        },
+      ),
+      { numRuns: 400 },
+    );
+  });
+
+  it('refuses a calendar with no business days, and a bad count', () => {
+    const never = { weekendDays: [0, 1, 2, 3, 4, 5, 6], holidays: new Set<string>() };
+    expect(() => addBusinessDays('2026-09-04', 1, never)).toThrow(RangeError);
+    expect(() => addBusinessDays('2026-09-04', -1, sat_sun)).toThrow(RangeError);
+    expect(() => addBusinessDays('2026-09-04', 1.5, sat_sun)).toThrow(RangeError);
+  });
+});
+
+describe('expandFixedHolidays', () => {
+  it('turns MM-DD into dates for every year, dropping impossible ones', () => {
+    expect([...expandFixedHolidays(['01-26', '02-29'], 2027, 2028)].sort()).toEqual([
+      '2027-01-26',
+      '2028-01-26',
+      '2028-02-29',
+    ]);
   });
 });

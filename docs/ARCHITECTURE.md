@@ -163,6 +163,8 @@ erDiagram
         match_group_kind kind "order or payout"
         match_group_status status "unique with id"
         match_basis basis "rule agent human"
+        match_tier tier "T1 to T4, set for rule matches"
+        text rule_id "set for rule matches"
         reason_code reason_code
         bigint residual_paise "must be 0 when accepted"
     }
@@ -301,6 +303,47 @@ UTR joined back), `repaired` (look-alike characters fixed: O/0, I/1, S/5, B/8, o
 cheapest) or `truncated` (a fragment, never equal to a full UTR). Measured against datagen's ground
 truth the extractor makes no wrong repairs; a garble that keeps the token well-formed (two digits
 swapped) is invisible to it and surfaces later as a UTR mismatch.
+
+## Rule matcher
+
+`@ziro/core/matcher` is a pure function, `runMatcher(input, config)`, over domain records (ADR-010). It
+never breaks a tie, so its output does not depend on input order, and every input record ends in
+exactly one place: a group, an exception, or the ignored list.
+
+```
+ledger ──T1 receipt + amount──▶ payment (+ its refunds)                      = order group
+settlement ──T2 composition──▶ verified? ──T3 UTR + amount──▶ bank credit    = payout group
+                                         └─T4 amount, window, unique──▶       (tier T3 or T4)
+```
+
+| Tier | Rule (id)                                  | Matches when                                                                                              |
+| ---- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| T1   | `T1.receipt-amount.v1`                     | one ledger entry and one captured payment share a cleaned receipt, and the amounts are equal              |
+| T2   | `T2.settlement-composition.v1` (a verdict) | `settlement = Σ payments − Σ fees − Σ refunds ± adjustments`, exactly, and no line contradicts its record |
+| T3   | `T3.utr-amount.v1`                         | a verified settlement and one credit carry the same exact or re-joined UTR, and the amounts are equal     |
+| T4   | `T4.amount-window-unique.v1`               | amount equal, value date in [settlement date, +3 business days], and exactly one candidate on both sides  |
+
+The settlement maths lives in ONE function, `composeSettlement`, which the verifier will call too. The
+fee already contains its GST (ADR-004), so tax is reported but never subtracted a second time. T2 is a
+verdict rather than a group because a payment already sits in an order group (ADR-005); a settlement
+that does not add up never reaches T3 or T4.
+
+Anything the rules cannot settle safely becomes an exception with its candidates attached (at most 50,
+and how many there were). Rules set a reason code only from structure: no payment of any status for a
+reference (`LEDGER_WITHOUT_PAYMENT`), a captured payment no ledger entry claims
+(`PAYMENT_WITHOUT_LEDGER`), a retry receipt of an order already matched at the same amount
+(`DUPLICATE_PAYMENT`), a damaged UTR among ambiguous candidates (`UTR_MISSING_OR_GARBLED`), a single
+credit just past the window (`SETTLEMENT_DELAYED`). Matched groups can carry an explanation:
+`FULL_REFUND` or `PARTIAL_REFUND_NETTED`, `TIMEZONE_DATE_SHIFT`, `CHARGEBACK_ADJUSTMENT`,
+`SETTLEMENT_DELAYED`. Everything else, notably `LEDGER_AMOUNT_EDITED` and `FEE_OVERCHARGE`, is `UNKNOWN`
+or left to the agent and the leakage report.
+
+Measured on the eval preset (500 orders, seed 42, against `truth.json`): 472 of 485 order groups
+exactly and 3 partially (a duplicate payment and its refund cannot be linked by rules), 48 of 49 payout
+groups, and **0 wrong links, 0 lost records, 0 wrong labels**. Every injected duplicate, edited
+ledger, cash order and manual payment was raised for the agent. `npm run bench:matcher` times the
+matcher alone on the stress preset: 410,214 input rows in about 2.1 s (157,000 to 195,000 rows/sec
+over two runs), with the files loaded beforehand.
 
 ## TODO
 

@@ -1,6 +1,7 @@
 // Persists a fetched Razorpay bundle: payments, then refunds, settlements and settlement items,
 // resolving each foreign key to our own row id. Everything runs on the caller's transaction.
 import type { RzpPayment, RzpRefund, RzpSettlement, SettlementItem } from '@ziro/core/domain';
+import { itemPaymentId } from '@ziro/core/matcher';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Executor } from '../db/executor.js';
 import { rzpPayments, rzpRefunds, rzpSettlements, settlementItems } from '../db/schema.js';
@@ -37,15 +38,6 @@ function assertRun<T extends { runId: string; sourceRef: string }>(runId: string
   if (record.runId !== runId) {
     throw new Error(`record ${record.sourceRef} belongs to run ${record.runId}, not ${runId}`);
   }
-}
-
-/**
- * The payment a settlement item concerns. Razorpay's recon report puts a payment line's own id in
- * `entity_id` and leaves `payment_id` null; `payment_id` is filled for refund lines, naming the
- * payment that was refunded. Reading only `payment_id` would leave every payment line unlinked.
- */
-function itemPaymentId(item: SettlementItem): string | null {
-  return item.paymentId ?? (item.itemType === 'payment' ? item.entityId : null);
 }
 
 type IdLookup = (ids: string[]) => Promise<readonly { rzpId: string; id: string }[]>;

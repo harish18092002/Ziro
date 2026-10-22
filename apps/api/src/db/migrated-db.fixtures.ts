@@ -232,7 +232,15 @@ export async function insertGroup(
   return one(
     await db
       .insert(schema.matchGroups)
-      .values({ runId, kind: 'order', status: 'proposed', basis: 'rule', ...over })
+      .values({
+        runId,
+        kind: 'order',
+        status: 'proposed',
+        basis: 'rule',
+        tier: 'T1',
+        ruleId: 'T1.receipt-amount.v1',
+        ...over,
+      })
       .returning({ id: schema.matchGroups.id, status: schema.matchGroups.status }),
   );
 }

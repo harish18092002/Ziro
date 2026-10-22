@@ -144,3 +144,63 @@ export function isBusinessDate(value: string): boolean {
     return false;
   }
 }
+
+/** Day of the week of an IST business date: 0 = Sunday ... 6 = Saturday. */
+export function weekdayOf(date: string): number {
+  // 1970-01-01 was a Thursday (4).
+  return (daysFromCivil(parseBusinessDate(date)) + 4) % 7;
+}
+
+/**
+ * Which days settlement and banking skip. Real calendars differ by bank and region (some Saturdays
+ * are working days), so this is configuration, never a constant baked into a rule.
+ */
+export interface BusinessCalendar {
+  /** Days of the week that are not business days: 0 = Sunday ... 6 = Saturday. */
+  readonly weekendDays: readonly number[];
+  /** Full dates (`YYYY-MM-DD`) that are not business days. */
+  readonly holidays: ReadonlySet<string>;
+}
+
+export function isBusinessDay(date: string, calendar: BusinessCalendar): boolean {
+  return !calendar.weekendDays.includes(weekdayOf(date)) && !calendar.holidays.has(date);
+}
+
+/**
+ * The date `count` business days after `date`. The start day is not counted and need not itself be a
+ * business day; `count` 0 returns `date`. A calendar with no business day within a year is an error
+ * rather than an endless loop.
+ */
+export function addBusinessDays(date: string, count: number, calendar: BusinessCalendar): string {
+  if (!Number.isSafeInteger(count) || count < 0) {
+    throw new RangeError('business days to add must be a non-negative integer');
+  }
+  let current = date;
+  let remaining = count;
+  let scanned = 0;
+  while (remaining > 0) {
+    current = addDaysToBusinessDate(current, 1);
+    if (isBusinessDay(current, calendar)) remaining -= 1;
+    scanned += 1;
+    if (scanned > 366 * (count + 1)) {
+      throw new RangeError('the calendar has no business days');
+    }
+  }
+  return current;
+}
+
+/** Turns yearly holidays written `MM-DD` into full dates for each year in the range, inclusive. */
+export function expandFixedHolidays(
+  fixed: readonly string[],
+  fromYear: number,
+  toYear: number,
+): Set<string> {
+  const dates = new Set<string>();
+  for (let year = fromYear; year <= toYear; year++) {
+    for (const monthDay of fixed) {
+      const date = `${String(year).padStart(4, '0')}-${monthDay}`;
+      if (isBusinessDate(date)) dates.add(date);
+    }
+  }
+  return dates;
+}

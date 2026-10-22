@@ -364,6 +364,22 @@ describe('match group and link integrity', () => {
     expect(error.code).toBe(PG.foreignKey);
   });
 
+  it('a rule-made group records its tier and rule id; agent and human groups need neither', async () => {
+    const run = await seedRun(db);
+    for (const over of [{ tier: null }, { ruleId: null }, { tier: null, ruleId: null }]) {
+      const error = await pgErrorOf(insertGroup(db, run, over));
+      expect(error, JSON.stringify(over)).toMatchObject({
+        code: PG.check,
+        constraint: 'match_groups_rule_records_tier_and_rule',
+      });
+    }
+    for (const basis of ['agent', 'human'] as const) {
+      await expect(
+        insertGroup(db, run, { basis, tier: null, ruleId: null }),
+      ).resolves.toMatchObject({ status: 'proposed' });
+    }
+  });
+
   it('an accepted group must reconcile to the paise: residual 0', async () => {
     const run = await seedRun(db);
     for (const residualPaise of [1n, -1n, 6800n]) {

@@ -73,8 +73,23 @@ describe('MatchGroup', () => {
         ...matchGroupFixture(),
         basis: 'human',
         tier: null,
+        ruleId: null,
         reasonCode: null,
       }),
+    ).toEqual([]);
+  });
+
+  it('requires a rule-made match to record its tier and its rule id', () => {
+    const rule = matchGroupFixture();
+    expect(failures(matchGroupSchema, { ...rule, tier: null })).toEqual(['tier']);
+    expect(failures(matchGroupSchema, { ...rule, ruleId: null })).toEqual(['ruleId']);
+    expect(failures(matchGroupSchema, { ...rule, ruleId: '' })).toEqual(['ruleId']);
+    expect(failures(matchGroupSchema, { ...rule, tier: null, ruleId: null })).toEqual([
+      'tier',
+      'ruleId',
+    ]);
+    expect(
+      failures(matchGroupSchema, { ...rule, basis: 'agent', tier: null, ruleId: null }),
     ).toEqual([]);
   });
 

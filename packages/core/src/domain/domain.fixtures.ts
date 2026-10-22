@@ -95,6 +95,7 @@ export const matchGroupFixture = () => ({
   status: 'accepted',
   basis: 'rule',
   tier: 'T2',
+  ruleId: 'T2.settlement-composition.v1',
   reasonCode: 'BATCHED_SETTLEMENT',
   residual: '0',
   createdAt: '2026-10-23T07:00:00Z',
