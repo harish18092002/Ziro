@@ -17,11 +17,14 @@
     "bench:matcher": "tsx src/scripts/bench-matcher.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.1.0",
     "@nestjs/common": "^12.2.0",
     "@nestjs/core": "^12.2.0",
     "@nestjs/platform-express": "^12.2.0",
     "@ziro/core": "*",
+    "@ziro/datagen": "*",
     "axios": "^1.18.1",
+    "bullmq": "^6.4.0",
     "drizzle-orm": "^0.45.4",
     "ioredis": "^6.0.0",
     "nestjs-pino": "^5.3.1",
@@ -41,7 +44,6 @@
     "@types/multer": "^2.3.0",
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.2.1",
-    "@ziro/datagen": "*",
     "drizzle-kit": "^0.31.11",
     "supertest": "^7.3.1"
   }

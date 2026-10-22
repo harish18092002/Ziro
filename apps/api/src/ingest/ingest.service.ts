@@ -13,6 +13,8 @@ import {
 import { findForbiddenCharacter } from '@ziro/core/normalize';
 import { count, eq, and, inArray } from 'drizzle-orm';
 import { appendAudit } from '../audit/audit.js';
+import { DEFAULT_FEE_CONTRACT } from '../common/fee-contract.js';
+import { DEFAULT_WINDOWS } from '../common/verifier-config.js';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { DB } from '../db/db.module.js';
@@ -281,6 +283,10 @@ export class IngestService {
             settlementLookaheadDays: SETTLEMENT_LOOKAHEAD_DAYS,
             maxImportBytes: this.env.IMPORT_MAX_BYTES,
           },
+          // The fee Razorpay is supposed to charge, as it was when this run was made.
+          feeContract: DEFAULT_FEE_CONTRACT,
+          // The date windows the rules and the verifier judge this run by.
+          windows: DEFAULT_WINDOWS,
         },
       })
       .returning();
@@ -579,15 +585,15 @@ export class IngestService {
    * The CSVs go through the very same parse-and-write path as an upload, and Razorpay's side comes
    * from the synthetic source whatever RAZORPAY_SOURCE says, so the demo never touches Razorpay.
    */
-  async createDemo(): Promise<DemoResult> {
-    const dir = resolveDataDir(this.env.SYNTHETIC_DATA_DIR);
+  async createDemo(dataDir?: string): Promise<DemoResult> {
+    const dir = dataDir ?? resolveDataDir(this.env.SYNTHETIC_DATA_DIR);
     const [ledgerFile, bankFile] = await Promise.all([
       this.readDemoFile(dir, 'ledger.csv'),
       this.readDemoFile(dir, 'bank_statement.csv'),
     ]);
     const runId = randomUUID();
     // Always the generated dataset, whatever RAZORPAY_SOURCE says: the demo never calls Razorpay.
-    const synthetic = await this.fetchWith(() => this.razorpay.synthetic(runId), WIDE);
+    const synthetic = await this.fetchWith(() => this.razorpay.synthetic(runId, dir), WIDE);
 
     const ledger = prepareCsv('ledger', ledgerFile);
     const bank = prepareCsv('bank', bankFile);

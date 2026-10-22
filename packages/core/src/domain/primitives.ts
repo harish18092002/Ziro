@@ -61,6 +61,11 @@ export const rzpRefundIdSchema = z.string().regex(/^rfnd_[A-Za-z0-9]+$/, 'must l
 export const rzpSettlementIdSchema = z
   .string()
   .regex(/^setl_[A-Za-z0-9]+$/, 'must look like setl_...');
+/** An ISO 4217 code. Razorpay settles in INR; anything else is read faithfully so the verifier can refuse it. */
+export const currencySchema = z
+  .string()
+  .regex(/^[A-Z]{3}$/, { error: 'must be a 3-letter currency code such as INR' });
+
 export const rzpOrderIdSchema = z
   .string()
   .regex(/^order_[A-Za-z0-9]+$/, 'must look like order_...');

@@ -29,6 +29,34 @@
       "when": 1792678417900,
       "tag": "0003_match_rule_id",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792683460318,
+      "tag": "0004_agent_proposals_add",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792683464916,
+      "tag": "0005_agent_proposals_drop_claim",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792683580731,
+      "tag": "0006_exception_cause",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792688349587,
+      "tag": "0007_verifier_review_audit",
+      "breakpoints": true
     }
   ]
 }

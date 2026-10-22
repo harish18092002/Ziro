@@ -22,5 +22,6 @@ import { RunsController } from './runs.controller.js';
   ],
   controllers: [RunsController],
   providers: [IngestService],
+  exports: [IngestService],
 })
 export class IngestModule {}

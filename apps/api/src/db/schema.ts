@@ -14,6 +14,7 @@
 //    because Drizzle cannot express triggers.
 import {
   ACTORS,
+  AGENT_VERDICTS,
   BANK_DIRECTIONS,
   EXCEPTION_STATUSES,
   MATCH_BASES,
@@ -28,6 +29,7 @@ import {
   SETTLEMENT_ITEM_TYPES,
   SETTLEMENT_STATUSES,
   SOURCES,
+  SUGGESTED_ACTIONS,
   VERIFIER_STATUSES,
 } from '@ziro/core/domain';
 import { UTR_QUALITIES } from '@ziro/core/normalize';
@@ -45,6 +47,8 @@ import {
   jsonb,
   numeric,
   pgEnum,
+  primaryKey,
+  smallint,
   pgTable,
   text,
   timestamp,
@@ -82,6 +86,8 @@ export const settlementStatus = pgEnum('settlement_status', SETTLEMENT_STATUSES)
 export const settlementItemType = pgEnum('settlement_item_type', SETTLEMENT_ITEM_TYPES);
 export const bankDirection = pgEnum('bank_direction', BANK_DIRECTIONS);
 export const utrQuality = pgEnum('utr_quality', UTR_QUALITIES);
+export const agentVerdict = pgEnum('agent_verdict', AGENT_VERDICTS);
+export const suggestedAction = pgEnum('suggested_action', SUGGESTED_ACTIONS);
 export const recordType = pgEnum('record_type', RECORD_TYPES);
 export const matchGroupKind = pgEnum('match_group_kind', MATCH_GROUP_KINDS);
 export const matchGroupStatus = pgEnum('match_group_status', MATCH_GROUP_STATUSES);
@@ -163,6 +169,8 @@ export const rzpPayments = pgTable(
     ...sourceColumns(),
     rzpId: text('rzp_id').notNull(),
     rzpOrderId: text('rzp_order_id'),
+    /** As Razorpay states it. Anything but INR is stored faithfully and refused by the verifier. */
+    currency: text('currency').notNull().default('INR'),
     /** The order's receipt; equals the ledger's order_ref. */
     receipt: text('receipt'),
     amountPaise: paise('amount_paise').notNull(),
@@ -206,6 +214,7 @@ export const rzpRefunds = pgTable(
     rzpPaymentId: text('rzp_payment_id').notNull(),
     /** ...and our row for it, null when that payment is not in this run's data. */
     paymentId: uuid('payment_id').references(() => rzpPayments.id, { onDelete: 'restrict' }),
+    currency: text('currency').notNull().default('INR'),
     amountPaise: paise('amount_paise').notNull(),
     status: text('status').notNull(),
     rzpCreatedAt: timestamp('rzp_created_at', { withTimezone: true }).notNull(),
@@ -258,6 +267,7 @@ export const settlementItems = pgTable(
     rzpEntityId: text('rzp_entity_id').notNull(),
     rzpPaymentId: text('rzp_payment_id'),
     rzpOrderId: text('rzp_order_id'),
+    currency: text('currency').notNull().default('INR'),
     paymentId: uuid('payment_id').references(() => rzpPayments.id, { onDelete: 'restrict' }),
     refundId: uuid('refund_id').references(() => rzpRefunds.id, { onDelete: 'restrict' }),
     amountPaise: paise('amount_paise').notNull(),
@@ -423,6 +433,10 @@ export const reconExceptions = pgTable(
     amountAtStakePaise: paise('amount_at_stake_paise')
       .notNull()
       .default(sql`0`),
+    /** The rules' machine-readable reason for raising it (e.g. receipt_amount_differs). Trusted. */
+    cause: text('cause'),
+    /** The rules' one-sentence description of what they saw. Trusted: generated, not quoted. */
+    note: text('note'),
     createdAt: createdAt(),
   },
   (t) => [
@@ -452,9 +466,17 @@ export const llmCalls = pgTable(
     latencyMs: integer('latency_ms').notNull(),
     /** sha-256 of the prompt: identifies it without storing untrusted text twice. */
     promptHash: char('prompt_hash', { length: 64 }).notNull(),
+    /** Input tokens read from / written to the prompt cache; `tokens_in` is the uncached remainder. */
+    cacheReadTokens: integer('cache_read_tokens').notNull().default(0),
+    cacheWriteTokens: integer('cache_write_tokens').notNull().default(0),
+    /** Why the model stopped: end_turn, tool_use, max_tokens, refusal... */
+    stopReason: text('stop_reason'),
+    /** Anthropic's request id, for support and for tracing one call end to end. */
+    requestId: text('request_id'),
     createdAt: createdAt(),
   },
   (t) => [
+    check('llm_calls_cache_nonneg', sql`${t.cacheReadTokens} >= 0 and ${t.cacheWriteTokens} >= 0`),
     index('llm_calls_run_idx').on(t.runId),
     index('llm_calls_created_idx').on(t.createdAt),
     sha256Check('llm_calls', t.promptHash),
@@ -475,20 +497,41 @@ export const agentProposals = pgTable(
     exceptionId: uuid('exception_id')
       .notNull()
       .references(() => reconExceptions.id, { onDelete: 'restrict' }),
+    /** The last model call of the investigation. */
     llmCallId: uuid('llm_call_id').references(() => llmCalls.id, { onDelete: 'restrict' }),
+    /** Which investigation of the exception this is. (exception_id, attempt) is unique: idempotency. */
+    attempt: integer('attempt').notNull().default(1),
+    /** Shared by the proposals that came out of one clustered investigation. */
+    clusterId: uuid('cluster_id'),
+    model: text('model'),
+    verdict: agentVerdict('verdict').notNull(),
     reasonCode: reasonCode('reason_code').notNull(),
     /** RecordRef[] the agent proposes to link. A claim, not a match. */
     links: jsonb('links').$type<Json[]>().notNull(),
-    /** The agent's own residual claim; the verifier recomputes it and never trusts this. */
-    claimedResidualPaise: paise('claimed_residual_paise').notNull(),
     /** LLM-written text. Untrusted. */
     explanation: text('explanation').notNull(),
+    /** {tool, args, keyFinding}[], each checked by the harness against the calls actually made. */
     evidence: jsonb('evidence').$type<Json[]>().notNull(),
+    /** 0 to 1000 (per-mille). The model's own certainty, not a probability anyone has calibrated. */
+    confidencePermille: smallint('confidence_permille').notNull(),
+    suggestedAction: suggestedAction('suggested_action').notNull(),
+    /** A balanced draft entry for the books, or null. Never posted automatically. */
+    draftJournalEntry: jsonb('draft_journal_entry').$type<Json>(),
+    /** Why the harness changed or limited what the model said. */
+    harnessFindings: jsonb('harness_findings').$type<string[]>().notNull().default([]),
     verifierStatus: verifierStatus('verifier_status').notNull().default('pending'),
     verifierFindings: jsonb('verifier_findings').$type<string[]>().notNull().default([]),
     createdAt: createdAt(),
   },
-  (t) => [index('agent_proposals_exception_idx').on(t.exceptionId)],
+  (t) => [
+    index('agent_proposals_exception_idx').on(t.exceptionId),
+    uniqueIndex('agent_proposals_exception_attempt_uq').on(t.exceptionId, t.attempt),
+    check('agent_proposals_attempt_positive', sql`${t.attempt} >= 1`),
+    check(
+      'agent_proposals_confidence_range',
+      sql`${t.confidencePermille} >= 0 and ${t.confidencePermille} <= 1000`,
+    ),
+  ],
 );
 
 export const reviews = pgTable(
@@ -535,5 +578,26 @@ export const auditEvents = pgTable(
   (t) => [
     index('audit_events_run_idx').on(t.runId, t.id),
     index('audit_events_entity_idx').on(t.entityType, t.entityId),
+  ],
+);
+
+/**
+ * Which source records an audit event is about. An event names its own entity (a proposal, a group, a
+ * review) but is also "about" the ledger entries, payments and bank lines involved; this index is what
+ * lets GET /records/:id/audit list everything that ever touched one record without scanning JSON.
+ * Append-only like audit_events (migration 0007 adds the same trigger).
+ */
+export const auditEventRecords = pgTable(
+  'audit_event_records',
+  {
+    auditEventId: bigint('audit_event_id', { mode: 'bigint' })
+      .notNull()
+      .references(() => auditEvents.id, { onDelete: 'restrict' }),
+    recordType: recordType('record_type').notNull(),
+    recordId: uuid('record_id').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.auditEventId, t.recordType, t.recordId] }),
+    index('audit_event_records_record_idx').on(t.recordId, t.auditEventId),
   ],
 );

@@ -122,23 +122,40 @@ export const reconExceptionFixture = () => ({
 
 export const agentProposalContentFixture = () => ({
   exceptionId: uuid(30),
-  reasonCode: 'FEE_GST_DEDUCTION',
+  verdict: 'MATCH_PROPOSED',
+  reasonCode: 'UTR_MISSING_OR_GARBLED',
   links: [
-    { recordType: 'ledger_entry', recordId: uuid(10) },
-    { recordType: 'rzp_payment', recordId: uuid(11) },
+    { recordType: 'rzp_settlement', recordId: uuid(12) },
+    { recordType: 'bank_line', recordId: uuid(13) },
   ],
-  claimedResidual: '0',
-  explanation: 'Payment 250000 less fee 5900 (incl. GST 900) matches the ledger order.',
+  explanation:
+    'Settlement setl_A and the bank credit on row-21 are both 97640 paise. The credit UTR UT1BN34889755412 differs from the settlement UTR only by 1 for I.',
   evidence: [
-    { ref: { recordType: 'rzp_payment', recordId: uuid(11) }, field: 'fee', value: '5900' },
+    {
+      tool: 'get_settlement_composition',
+      args: { settlement_id: 'setl_A' },
+      keyFinding: 'The settlement composes to 97640 paise with no residual.',
+    },
+    {
+      tool: 'search_bank_lines',
+      args: { amount_min: '97640', amount_max: '97640' },
+      keyFinding: 'Exactly one credit of 97640 paise falls in the window.',
+    },
   ],
+  confidence: 0.9,
+  suggestedAction: 'ACCEPT_MATCH',
+  draftJournalEntry: null,
 });
 
 export const agentProposalFixture = () => ({
   id: uuid(31),
   runId: RUN_ID,
   llmCallId: uuid(40),
+  attempt: 1,
+  clusterId: null,
+  model: 'claude-haiku-5-5',
   ...agentProposalContentFixture(),
+  harnessFindings: [],
   verifierStatus: 'pending',
   verifierFindings: [],
   createdAt: '2026-10-23T07:05:00Z',

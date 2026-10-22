@@ -36,6 +36,7 @@ describe('loadEnv', () => {
       AGENT_HARNESS: 'loop',
       AUTO_ACCEPT_ENABLED: false,
       AUTO_ACCEPT_MAX_PAISE: 100000n,
+      AUTO_ACCEPT_MIN_CONFIDENCE: 0.85,
       DEMO_MODE: true,
       DAILY_LLM_BUDGET_USD: 5,
       AGENT_KILL_SWITCH: false,
@@ -182,5 +183,77 @@ describe('loadEnv', () => {
       });
       expect(issues).toEqual(['RAZORPAY_KEY_ID: must start with rzp_test_ (test mode only)']);
     });
+  });
+});
+
+describe('investigation agent settings', () => {
+  it('default to: no clustering, escalation on, worker on, 4 at a time', () => {
+    expect(loadEnv(validEnv())).toMatchObject({
+      CLUSTER_EXCEPTIONS: false,
+      AGENT_ESCALATION: true,
+      AGENT_WORKER_ENABLED: true,
+      AGENT_CONCURRENCY: 4,
+    });
+  });
+
+  it('can be set, and blank means the default', () => {
+    const env = loadEnv({
+      ...validEnv(),
+      CLUSTER_EXCEPTIONS: 'true',
+      AGENT_ESCALATION: 'false',
+      AGENT_WORKER_ENABLED: 'false',
+      AGENT_CONCURRENCY: '16',
+    });
+    expect(env).toMatchObject({
+      CLUSTER_EXCEPTIONS: true,
+      AGENT_ESCALATION: false,
+      AGENT_WORKER_ENABLED: false,
+      AGENT_CONCURRENCY: 16,
+    });
+    expect(loadEnv({ ...validEnv(), CLUSTER_EXCEPTIONS: '', AGENT_CONCURRENCY: '' })).toMatchObject(
+      {
+        CLUSTER_EXCEPTIONS: false,
+        AGENT_CONCURRENCY: 4,
+      },
+    );
+  });
+
+  it.each([
+    ['CLUSTER_EXCEPTIONS', 'yes'],
+    ['AGENT_ESCALATION', '1'],
+    ['AGENT_CONCURRENCY', '0'],
+    ['AGENT_CONCURRENCY', '33'],
+    ['AGENT_CONCURRENCY', '2.5'],
+    ['AGENT_CONCURRENCY', 'many'],
+  ])('rejects %s=%s', (name, value) => {
+    const issues = issuesOf({ ...validEnv(), [name]: value });
+    expect(issues.filter((i) => i.startsWith(name))).toHaveLength(1);
+  });
+});
+
+describe('AUTO_ACCEPT_MIN_CONFIDENCE', () => {
+  const withValue = (value: string | undefined) => ({
+    ...validEnv(),
+    AUTO_ACCEPT_MIN_CONFIDENCE: value,
+  });
+
+  it('defaults to 0.85 when left out or blank', () => {
+    expect(loadEnv(validEnv()).AUTO_ACCEPT_MIN_CONFIDENCE).toBe(0.85);
+    expect(loadEnv(withValue('')).AUTO_ACCEPT_MIN_CONFIDENCE).toBe(0.85);
+  });
+
+  it.each([
+    ['0', 0],
+    ['0.5', 0.5],
+    ['0.9', 0.9],
+    ['0.9999', 0.9999],
+    ['1', 1],
+    ['1.0', 1],
+  ])('accepts %s', (text, value) => {
+    expect(loadEnv(withValue(text)).AUTO_ACCEPT_MIN_CONFIDENCE).toBe(value);
+  });
+
+  it.each(['1.1', '2', '-0.1', '.5', '0.85555', 'high', '85%', '1e-1'])('refuses %s', (text) => {
+    expect(issuesOf(withValue(text)).join(' ')).toContain('AUTO_ACCEPT_MIN_CONFIDENCE');
   });
 });

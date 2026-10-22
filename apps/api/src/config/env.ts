@@ -50,6 +50,33 @@ const importMaxBytes = z.preprocess(
     .refine((value) => value >= 1024 && value <= 104_857_600, 'must be between 1 KiB and 100 MiB'),
 );
 
+/** A true/false setting that may be left out, with the value it then takes. */
+const optionalFlag = (fallback: 'true' | 'false') =>
+  z.preprocess((value) => blankToUndefined(value) ?? fallback, flag);
+
+/** A whole number in [min, max] that may be left out. */
+const boundedInt = (fallback: string, min: number, max: number) =>
+  z.preprocess(
+    (value) => blankToUndefined(value) ?? fallback,
+    z
+      .string()
+      .trim()
+      .regex(/^\d{1,6}$/, 'must be a whole number')
+      .transform(Number)
+      .refine((n) => n >= min && n <= max, `must be between ${min} and ${max}`),
+  );
+
+/** A number from 0 to 1 (a confidence) that may be left out, with the value it then takes. */
+const unitInterval = (fallback: string) =>
+  z.preprocess(
+    (value) => blankToUndefined(value) ?? fallback,
+    z
+      .string()
+      .trim()
+      .regex(/^(0(\.\d{1,4})?|1(\.0{1,4})?)$/, 'must be a number from 0 to 1, such as 0.85')
+      .transform(Number),
+  );
+
 // Paise are integers end to end (CLAUDE.md §4.1): a decimal here is a bug, not a rounding case.
 const paise = z
   .string({ error: requiredError('must be a non-negative integer number of paise') })
@@ -105,9 +132,21 @@ export const envSchema = z
     }),
     AUTO_ACCEPT_ENABLED: flag,
     AUTO_ACCEPT_MAX_PAISE: paise,
+    // Auto-accept needs at least this much confidence from the agent, on top of every other condition.
+    AUTO_ACCEPT_MIN_CONFIDENCE: unitInterval('0.85'),
     DEMO_MODE: flag,
     DAILY_LLM_BUDGET_USD: usd,
     AGENT_KILL_SWITCH: flag,
+    // Investigate related exceptions (same candidates) in one conversation instead of one each.
+    CLUSTER_EXCEPTIONS: optionalFlag('false'),
+    // Retry once on the large model when the small one is unsure or gives up.
+    AGENT_ESCALATION: optionalFlag('true'),
+    // Build the featured demo and eval runs in the background at boot if they are missing.
+    DEMO_SEED_ON_BOOT: optionalFlag('true'),
+    // Run the investigation worker inside this process. Turn off to only enqueue.
+    AGENT_WORKER_ENABLED: optionalFlag('true'),
+    // Investigations running at once. Each holds one model request open at a time.
+    AGENT_CONCURRENCY: boundedInt('4', 1, 32),
   })
   .superRefine((env, ctx) => {
     if (env.RAZORPAY_SOURCE !== 'testmode') return;

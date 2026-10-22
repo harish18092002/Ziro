@@ -8,6 +8,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    proxy: { '/health': API },
+    proxy: Object.fromEntries(
+      ['/health', '/demo', '/runs', '/exceptions', '/proposals', '/records'].map((p) => [p, API]),
+    ),
   },
 });

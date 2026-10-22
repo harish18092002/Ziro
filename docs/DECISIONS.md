@@ -395,3 +395,199 @@ wrong whenever a part-payment is the real cause).
   config pattern, and null turns the `DUPLICATE_PAYMENT` rule off.
 - Persisting groups and exceptions, running the matcher on a run, and the endpoints for that are the
   next task. This one delivers the pure function, its measurements and the schema column.
+
+## ADR-011: The investigation agent — a hand-rolled loop whose every claim is checked
+
+**Status:** accepted
+
+**Context.** The rules (ADR-010) leave the genuinely uncertain exceptions: duplicate payments, edited
+ledger amounts, fee overcharges, short or late payouts. An LLM can investigate these, but it can be
+wrong, can be talked into things by text in a memo, and costs money per call. The design has to make a
+wrong or hostile answer harmless, and the spend bounded and visible.
+
+**Decision.**
+
+- **Harness A is a loop we own**, on `@anthropic-ai/sdk`, behind `AgentRunner.investigate(members, ctx)`.
+  Harness B (the Claude Agent SDK, P11) will implement the same interface. The loop is append-only: the
+  model's response goes back unchanged (thinking blocks are bound to their turn), and an escalation is a
+  fresh conversation, never a continuation on another model.
+- **Nine read-only tools**, each with a strict zod schema (the API's copy is a sanitised derivative; zod
+  on our side is authoritative), each run in its own `READ ONLY` transaction with a 5 s statement
+  timeout, scoped by a `runId` that comes from the investigation and never from the model, with results
+  capped at 12,000 characters. A failure of ours (the database) is rethrown so the job retries; it is
+  never shown to the model as "not found". Money arithmetic is not the model's: `compute_expected_settlement`
+  and `get_settlement_composition` call the same `composeLines` the rule matcher uses.
+- **Untrusted text is data.** Memos, customer references, narrations and settlement line descriptions
+  reach the model only inside `<untrusted field="...">` in tool results; the tag cannot be closed from
+  inside (any `<untrusted` or `</untrusted`, in any case or spacing, is defanged). Order references and
+  receipts that are not plain tokens are wrapped too. The system prompt and the opening message never
+  contain record text.
+- **Every claim is checked in code before it is stored** (`output.ts`). Evidence is cited by call number
+  and the harness fills in tool and arguments from its own call log; a citation of a call that did not
+  happen or failed is dropped. Links must be records a tool returned in this investigation, and a
+  `MATCH_PROPOSED` that names anything else, or fewer than two records, is _downgraded to NEEDS_HUMAN_
+  with confidence capped at 0.3, never trimmed into a smaller match. `ACCEPT_MATCH` needs a proposed
+  match at confidence 0.5 or more. A draft journal entry must balance to the paise or it is dropped.
+- **Budgets are the harness's, not the model's:** 8 tool calls, 24,000 output tokens, 8,000 per
+  request, 60 s (the request itself is aborted at the deadline), and a prompt ceiling. A spent budget
+  ends the investigation without another model call, as NEEDS_HUMAN with the evidence gathered. The
+  model is told on its last allowed call. One repair is allowed for a malformed reply; a refusal is final.
+- **Small model first, one escalation.** `AGENT_MODEL_SMALL` investigates; if it answers NEEDS_HUMAN or
+  below 0.7 confidence, `AGENT_MODEL_LARGE` looks once more in a fresh conversation seeded with the
+  _facts_ the first pass gathered (tool summaries, not its conclusion, to avoid anchoring). A budget that
+  ran out, a refusal or an unusable reply are not escalated.
+- **Clusters.** With `CLUSTER_EXCEPTIONS`, exceptions that share a record (a candidate, or one's
+  candidate being another's subject) are investigated in one conversation, at most six. The model
+  returns one full result per exception, so each is stored and validated on its own; nothing is merged.
+- **Triage.** A bank credit nothing explains and with no candidate record is not investigated; it is
+  listed for a person. At stress scale this is about 30,000 of 32,600 exceptions.
+- **Idempotent by (exception, attempt).** The unique index on `agent_proposals(exception_id, attempt)` is
+  the guard; the queue job id (`<exception>-<attempt>`) only de-duplicates work still waiting. Jobs are
+  removed when they finish or fail, so a person can ask again after a halt. Asking twice cannot spend
+  twice: a stored proposal moves the exception from `open` to `proposed`.
+- **Spend is gated and logged.** Before every request the kill switch and the day's spend (UTC) are
+  checked against `DAILY_LLM_BUDGET_USD`; every request is written to `llm_calls` at once (tokens
+  including cache reads and writes, cost, latency, model, harness, prompt hash, stop reason, request id),
+  so spend is on record even if the investigation later fails. Cost is integer micro-USD, rounded up,
+  from a price table that refuses a model or a prompt tier it does not know.
+
+**Alternatives.** The Agent SDK as the default (less control over budgets and the exact messages, and it
+is the bake-off's job); letting the model write evidence (`tool`, `args`) itself (it can misquote its
+own calls); trimming a match's unseen links instead of downgrading it (silently turns a claim about one
+group into a claim about a smaller one); a shared top-level explanation for a cluster (one conversation,
+but a proposal that cannot be validated or stored per exception); escalating after any NEEDS_HUMAN
+(spends more on exactly the cases that ran out of budget).
+
+**Consequences.**
+
+- The agent can only propose. The verifier (next) re-checks the paise, ids and windows, and a person
+  approves; the agent's grounding checks are a first line, not the last.
+- Cost and accuracy of the small model, the escalation, and clustering are **not yet measured**, so no
+  cost figure is quoted here. A live smoke test exists
+  (`RUN_LIVE_LLM_TESTS=1`, one investigation, hard-capped spend), and the eval harness will compare the
+  settings.
+- The investigate endpoint has no authentication or rate limit and spends money. The kill switch and the
+  daily budget bound the damage; auth is needed before a public deploy.
+- A worker holds a Redis connection for blocking commands; Upstash's command usage under BullMQ must be
+  checked at deploy time.
+
+## ADR-012: The verifier and the human gate — an agent's claim is never a match
+
+**Status:** accepted
+
+**Context.** The agent (ADR-011) proposes matches. Its own checks make a wrong proposal unlikely; they do
+not make it impossible, and a wrong accepted match hides exactly the discrepancy this product exists to
+find. Something deterministic, written separately from the agent and the rules, has to re-derive every
+proposed match from the records, and a person has to see everything that is not trivially safe.
+
+**Decision.**
+
+- **A pure verifier, `@ziro/core/verify`.** `verifyProposal(claim, snapshot, config)` returns `VERIFIED` or
+  `REJECTED(findings)`, each finding a stable code and the records it is about, written from the records
+  and never quoting free text. It trusts nothing the agent checked. Records are looked up by id with no run
+  filter, so a link into another run is reported as exactly that.
+- **Two group shapes, no tolerance.** An _order_ group (ledger entries + captured payments + their refunds)
+  must satisfy `Σ ledger = Σ payments − Σ processed refunds` to the paise, and every refund a payment
+  records as refunded must be linked (a missing refund hides money). A _payout_ group (one settlement + one
+  bank credit) must pass `composeSettlement`, the same function rule tier T2 uses, and the credit must
+  equal the settlement amount.
+- **One set of windows.** The verifier's config extends the matcher's (calendar, T4 window, settlement lag,
+  delay horizon, date-shift minutes, retry pattern) plus `orderDateWindowDays` (3). A run snapshots them as
+  `config.windows` next to the fee contract. The matcher's "is this settlement late?" was extracted into
+  `settlementCreatedLate` so the rule's label and the verifier's check cannot drift; this was found by
+  running the verifier over the rules' own groups.
+- **The reason code must fit the links.** `PARTIAL_REFUND_NETTED` needs a linked refund that does not
+  refund in full; `DUPLICATE_PAYMENT` needs two or more payments for one order; `TIMEZONE_DATE_SHIFT` needs
+  a payment just after IST midnight; `BATCHED_SETTLEMENT`, `FEE_GST_DEDUCTION`, `CHARGEBACK_ADJUSTMENT`,
+  `SETTLEMENT_DELAYED` and `UTR_MISSING_OR_GARBLED` each need the settlement to show it. Reasons that
+  describe a record with no counterpart (`LEDGER_WITHOUT_PAYMENT`, `PAYMENT_WITHOUT_LEDGER`,
+  `LEDGER_AMOUNT_EDITED`, `FEE_OVERCHARGE`) can never accompany a match: an edited amount means the sides
+  differ, and zero tolerance means they do not match.
+- **Currency.** Stored on payments, refunds and settlement lines, where Razorpay states it (the settlement
+  entity does not; its lines do). Ingestion reads it faithfully, so a foreign-currency record is kept and
+  the verifier refuses to match it, rather than being rejected at the door or silently read as rupees.
+- **Policy, pure and strict.** Auto-accept needs every one of: verified, the agent proposed and suggested
+  accepting it, the group's gross is within `AUTO_ACCEPT_MAX_PAISE`, confidence is at least
+  `AUTO_ACCEPT_MIN_CONFIDENCE` (0.85), `AUTO_ACCEPT_ENABLED`, not `DEMO_MODE` (the public demo always shows
+  the human gate) and not `AGENT_KILL_SWITCH`. The kill switch stops the agent and auto-accept; people
+  keep reviewing and the rules keep working.
+- **A rejected proposal stays an exception.** The exception returns to `open`, the proposal is kept as
+  history and counted ("caught by the verifier"). "Investigate all" skips an exception already
+  investigated, so asking twice cannot spend twice; running it again is asked for by id.
+- **Proposals that propose no match** (an explanation, a NEEDS_HUMAN) have `verifier_status =
+not_applicable`. Approving an explanation resolves the exception with the explained reason code; a
+  NEEDS_HUMAN cannot be approved, only rejected, which reopens the exception.
+- **Approval re-verifies, then writes through the shared writer.** In one transaction: lock the proposal,
+  verify against the data as it is now, write the group with `writeGroup` (the one place a group is made;
+  rules will use it too), record the review, resolve every open exception about a record in the group, and
+  audit each step. A proposal that went stale is refused with 409 and the refusal is recorded. The unique
+  indexes (a record in at most one accepted group) are the final guard against two writers racing.
+- **Audit, with a record timeline.** `auditStep` writes `{before, after, reason, records}` and indexes
+  every record the step is about in `audit_event_records` (append-only like `audit_events`).
+  `GET /records/:id/audit` is one indexed lookup plus a synthesised "imported" entry read from the record.
+  Audit reasons are written by code, never copied from model text.
+
+**Alternatives.** Verifying inside the agent (no independence); one balance equation for rule and agent
+groups (the rules' T1 annotation form, ledger equal to payment with the refund shown beside it, would let
+an agent pick which refunds to link to hit a number); stopping at the first finding (a reviewer then fixes
+one problem at a time); a hard `409` on any re-run instead of skipping (clearer, but "investigate all"
+would then fail on any run that had a rejection).
+
+**Consequences.**
+
+- On the eval preset the verifier agrees with the rules: all 48 payout groups verify, and 440 of 475 order
+  groups do. The other 35 carry a refund as an annotation, the rule-only form above, and are refused by
+  exactly the refund amount. Pinned by a test that runs both on the same data.
+- The review and audit endpoints have no authentication. `reviewer` is a name recorded as given, so the
+  audit trail identifies a reviewer but does not authenticate one. This must be fixed before any public
+  deployment; the kill switch and daily budget do not protect these endpoints.
+- A group approved by a person has `basis = 'agent'`; who approved it is the review row and the audit
+  trail.
+- Nothing persists the rule matcher's output yet, so on real data there are no exceptions to propose about;
+  the next task (P7) persists them through the same `writeGroup`.
+
+---
+
+## ADR-013: The console, the free demo, and what the gap means
+
+**Context.** A reviewer must see the whole loop (rules, agent, verifier, human) from one click, at no
+cost, on a public URL, and every number on the page must be one a person can defend.
+
+**Decision.**
+
+- **One URL.** `apps/web` is plain React with one CSS file and hash routing. The API serves the built files
+  (`web/mount-web.ts`) with a strict CSP (no inline script or style, same-origin only, no framing) and
+  `trust proxy` = 1 so the per-client rate limit sees the real client behind Cloud Run. API routes stay at
+  the root. All free text (memos, narrations, model and scripted explanations) is rendered by React as text.
+- **Free demo, honestly labelled.** The default agent is a **scripted baseline, not a language model**. It
+  reads records through the same nine read-only tools, its evidence is those tool calls, and its answers
+  pass the same `finalizeResult` grounding. Storage, verifier, policy, review and audit are the real code.
+  A live model is offered only when the server has a key and budget, and is off by default.
+- **Planted refusals.** Two proposals per demo run are deliberately wrong (a payment already matched
+  elsewhere; a payment of a different amount). They carry model `planted-for-demo` and a finding saying so,
+  and the page labels them. They exist so a visitor sees the verifier refuse something; they are not
+  evidence of model quality, and no README accuracy number may include them.
+- **The visitor is the human.** The approval in the demo is the visitor's own click, recorded under the name
+  they type. There is no login (a stated limitation), so a deployment needs auth or a read-only mode.
+- **The Ziro gap.** Exceptions that share any record (an edited ledger amount is raised once for the entry and
+  once for its payment) form one case; a case counts once, at its largest stake. gap = open cases + cases
+  awaiting a person; cases a person has settled are shown separately as _explained_. A case with any
+  unsettled member is unsettled, so approving one exception can leave the headline unchanged when a sibling
+  (for example a second bank credit of the same amount) is still unexplained. That is the intended
+  conservatism, not a rounding choice.
+- **Persisting the rules (P7).** `ReconService.match` stores the matcher's output through the same
+  `writeGroups` path the review uses, and is verified to round-trip to the direct matcher result.
+- **Downloads.** JSON (integer paise as strings) and CSV (plain rupees). Every text cell is defused against
+  spreadsheet formula injection. The journal CSV lists only drafts the verifier did not refuse, with their
+  true state (awaiting review, approved, rejected by a person).
+
+**Alternatives.** A component kit (Pico, Tailwind): rejected, the brief says core logic over polish. Recorded
+real-model replay for the free demo: better realism but needs a paid run and the author's OK; left as a
+follow-up. Summing every exception's stake as the gap: double counts one difference raised from both sides.
+
+**Consequences.**
+
+- The demo run takes about two seconds and costs nothing, so the 2-minute acceptance has wide margin.
+- The scripted baseline's answers are rules in disguise. Do not quote its behaviour as agent performance.
+- Creating a run is unauthenticated and rate-limited in memory (per process); a multi-instance deployment
+  needs a shared limiter.

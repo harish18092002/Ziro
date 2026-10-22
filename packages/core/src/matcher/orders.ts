@@ -299,7 +299,7 @@ export function matchOrders(input: MatcherInput, config: MatcherConfig, state: M
   }
 }
 
-function retryBase(payment: RzpPayment, config: MatcherConfig): string | null {
+export function retryBase(payment: RzpPayment, config: MatcherConfig): string | null {
   if (config.retryReceiptPattern === null || payment.receipt === null) return null;
   const key = normalizeRef(payment.receipt);
   const base = key === null ? undefined : config.retryReceiptPattern.exec(key)?.[1];
@@ -307,7 +307,11 @@ function retryBase(payment: RzpPayment, config: MatcherConfig): string | null {
 }
 
 /** The order was dated the day before the payment, and the payment came just after IST midnight. */
-function isDateShift(ledger: LedgerEntry, payment: RzpPayment, config: MatcherConfig): boolean {
+export function isDateShift(
+  ledger: LedgerEntry,
+  payment: RzpPayment,
+  config: MatcherConfig,
+): boolean {
   if (addDaysToBusinessDate(ledger.businessDate, 1) !== payment.businessDate) return false;
   const minutes = minutesIntoIstDay(payment);
   return minutes !== null && minutes >= 0 && minutes < config.dateShiftWindowMinutes;

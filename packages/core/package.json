@@ -34,6 +34,10 @@
     "./domain": {
       "types": "./dist/domain/index.d.ts",
       "default": "./dist/domain/index.js"
+    },
+    "./verify": {
+      "types": "./dist/verify/index.d.ts",
+      "default": "./dist/verify/index.js"
     }
   },
   "files": [

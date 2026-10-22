@@ -1,0 +1,1 @@
+ALTER TABLE "agent_proposals" DROP COLUMN "claimed_residual_paise";

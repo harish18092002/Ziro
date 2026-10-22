@@ -14,8 +14,8 @@ export class RazorpaySourceFactory {
   constructor(@Inject(ENV) private readonly env: Env) {}
 
   /** The generated dataset, whatever `RAZORPAY_SOURCE` says: the demo preset never touches Razorpay. */
-  synthetic(runId: string): SyntheticSource {
-    return new SyntheticSource({ runId, dir: resolveDataDir(this.env.SYNTHETIC_DATA_DIR) });
+  synthetic(runId: string, dir?: string): SyntheticSource {
+    return new SyntheticSource({ runId, dir: dir ?? resolveDataDir(this.env.SYNTHETIC_DATA_DIR) });
   }
 
   /**

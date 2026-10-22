@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { paise } from '../money/index.js';
-import { composeSettlement, isVerified, itemPaymentId } from './composition.js';
+import { composeLines, composeSettlement, isVerified, itemPaymentId } from './composition.js';
 import { payment, refund, settlementOf } from './matcher.fixtures.js';
 
 const P = (n: number) => paise(BigInt(n));
@@ -155,5 +155,41 @@ describe('itemPaymentId', () => {
     expect(itemPaymentId(payLine as (typeof full.items)[number])).toBe('pay_1');
     expect(itemPaymentId(refundLine as (typeof full.items)[number])).toBe('pay_1');
     expect(itemPaymentId(adjustment as (typeof full.items)[number])).toBeNull();
+  });
+});
+
+describe('composeLines: the same arithmetic, with no settlement attached', () => {
+  it('adds up arbitrary lines exactly as composeSettlement does', () => {
+    const lines = composeLines(full.items, lookups());
+    const settlement = composeSettlement(full.settlement, full.items, lookups());
+    const {
+      settlementId: _id,
+      settlementAmount: _amount,
+      residual: _residual,
+      ...rest
+    } = settlement;
+    expect(lines).toEqual(rest);
+    expect(lines.computed).toBe(121_460n);
+  });
+
+  it('works on hand-built lines and needs only the fields it reads', () => {
+    const lines = composeLines(
+      [
+        {
+          sourceRef: 'x',
+          itemType: 'payment',
+          entityId: 'pay_9',
+          paymentId: null,
+          amount: P(10_000),
+          fee: P(236),
+          tax: P(36),
+          debit: P(0),
+          credit: P(9764),
+        },
+      ],
+      { payment: () => undefined, refund: () => undefined },
+    );
+    expect(lines).toMatchObject({ gross: 10_000n, fees: 236n, tax: 36n, computed: 9764n });
+    expect(lines.issues.map((i) => i.code)).toEqual(['payment_record_missing']);
   });
 });

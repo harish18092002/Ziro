@@ -1,5 +1,6 @@
-// How a Razorpay settlement is put together, in ONE place. The rule matcher uses it for tier T2 and the
-// verifier will call the same function, so "does this settlement reconcile?" has exactly one answer.
+// How a Razorpay settlement is put together, in ONE place. The rule matcher uses it for tier T2, the
+// verifier will call the same functions, and the investigation agent's "expected settlement" tool does
+// too, so "does this reconcile?" has exactly one answer.
 //
 //   settlement.amount  =  Σ payment amounts  −  Σ fees  −  Σ refunds  ±  adjustments
 //
@@ -8,12 +9,28 @@
 import type { RzpPayment, RzpRefund, RzpSettlement, SettlementItem } from '../domain/index.js';
 import { type Paise, paise } from '../money/index.js';
 
+/** The fields of a settlement line the arithmetic reads; a full `SettlementItem` satisfies it. */
+export type CompositionLine = Pick<
+  SettlementItem,
+  | 'sourceRef'
+  | 'itemType'
+  | 'entityId'
+  | 'paymentId'
+  | 'amount'
+  | 'fee'
+  | 'tax'
+  | 'debit'
+  | 'credit'
+>;
+
 /**
  * The payment a settlement line concerns. Razorpay's recon report puts a payment line's own id in
  * `entity_id` and leaves `payment_id` null; `payment_id` is filled for refund lines, naming the
  * payment that was refunded. Reading only `payment_id` would leave every payment line unlinked.
  */
-export function itemPaymentId(item: SettlementItem): string | null {
+export function itemPaymentId(
+  item: Pick<SettlementItem, 'paymentId' | 'itemType' | 'entityId'>,
+): string | null {
   return item.paymentId ?? (item.itemType === 'payment' ? item.entityId : null);
 }
 
@@ -33,10 +50,8 @@ export interface CompositionIssue {
   readonly message: string;
 }
 
-export interface SettlementComposition {
-  /** Razorpay's id (`setl_...`). */
-  readonly settlementId: string;
-  readonly settlementAmount: Paise;
+/** What a set of settlement lines adds up to, whether or not they belong to a known settlement. */
+export interface LinesComposition {
   /** Σ amounts of the payment lines. */
   readonly gross: Paise;
   /** Σ fees of the payment lines, GST included. */
@@ -49,37 +64,42 @@ export interface SettlementComposition {
   readonly adjustmentsDebit: Paise;
   /** gross − fees − refunds + adjustmentsCredit − adjustmentsDebit. */
   readonly computed: Paise;
-  /** settlementAmount − computed. Zero for a settlement that reconciles. */
-  readonly residual: Paise;
   readonly paymentLines: number;
   readonly refundLines: number;
   readonly adjustmentLines: number;
-  /** Razorpay ids of the payments in this settlement. */
+  /** Razorpay ids of the payments among the lines. */
   readonly paymentIds: readonly string[];
   readonly issues: readonly CompositionIssue[];
 }
 
-export interface CompositionLookups {
-  payment(paymentId: string): RzpPayment | undefined;
-  refund(refundId: string): RzpRefund | undefined;
+export interface SettlementComposition extends LinesComposition {
+  /** Razorpay's id (`setl_...`). */
+  readonly settlementId: string;
+  readonly settlementAmount: Paise;
+  /** settlementAmount − computed. Zero for a settlement that reconciles. */
+  readonly residual: Paise;
 }
 
-const sortedByEntity = (items: readonly SettlementItem[]): SettlementItem[] =>
-  [...items].sort((a, b) =>
+export interface CompositionLookups {
+  payment(paymentId: string): Pick<RzpPayment, 'amount' | 'fee' | 'tax'> | undefined;
+  refund(refundId: string): Pick<RzpRefund, 'amount'> | undefined;
+}
+
+const sortedByEntity = (lines: readonly CompositionLine[]): CompositionLine[] =>
+  [...lines].sort((a, b) =>
     a.entityId < b.entityId ? -1 : a.entityId > b.entityId ? 1 : a.sourceRef < b.sourceRef ? -1 : 1,
   );
 
 /**
- * Builds the breakdown of one settlement from its recon lines and cross-checks each line against
- * the payment and refund records where those exist. A line whose record is simply not in the data
- * (a payment from before the period) is a note, not a failure; a line that DISAGREES with its record
- * is blocking.
+ * Adds up settlement lines and cross-checks each against the payment and refund records where those
+ * exist. A line whose record is simply not in the data (a payment from before the period) is a note,
+ * not a failure; a line that DISAGREES with its record is blocking. This is the one place the
+ * arithmetic lives.
  */
-export function composeSettlement(
-  settlement: RzpSettlement,
-  items: readonly SettlementItem[],
+export function composeLines(
+  lines: readonly CompositionLine[],
   lookups: CompositionLookups,
-): SettlementComposition {
+): LinesComposition {
   let gross = 0n;
   let fees = 0n;
   let tax = 0n;
@@ -98,7 +118,7 @@ export function composeSettlement(
   const note = (code: CompositionIssueCode, entityId: string, message: string) =>
     issues.push({ severity: 'note', code, entityId, message });
 
-  for (const item of sortedByEntity(items)) {
+  for (const item of sortedByEntity(lines)) {
     const lineKey = `${item.itemType}:${item.entityId}`;
     if (seen.has(lineKey)) {
       block('duplicate_line', item.entityId, `${lineKey} appears more than once in the settlement`);
@@ -161,23 +181,34 @@ export function composeSettlement(
     }
   }
 
-  const computed = gross - fees - refunds + adjustmentsCredit - adjustmentsDebit;
   return {
-    settlementId: settlement.settlementId,
-    settlementAmount: settlement.amount,
     gross: paise(gross),
     fees: paise(fees),
     tax: paise(tax),
     refunds: paise(refunds),
     adjustmentsCredit: paise(adjustmentsCredit),
     adjustmentsDebit: paise(adjustmentsDebit),
-    computed: paise(computed),
-    residual: paise(settlement.amount - computed),
+    computed: paise(gross - fees - refunds + adjustmentsCredit - adjustmentsDebit),
     paymentLines,
     refundLines,
     adjustmentLines,
     paymentIds,
     issues,
+  };
+}
+
+/** One settlement's breakdown: its lines, added up, against the amount Razorpay says it paid out. */
+export function composeSettlement(
+  settlement: Pick<RzpSettlement, 'settlementId' | 'amount'>,
+  items: readonly CompositionLine[],
+  lookups: CompositionLookups,
+): SettlementComposition {
+  const lines = composeLines(items, lookups);
+  return {
+    ...lines,
+    settlementId: settlement.settlementId,
+    settlementAmount: settlement.amount,
+    residual: paise(settlement.amount - lines.computed),
   };
 }
 

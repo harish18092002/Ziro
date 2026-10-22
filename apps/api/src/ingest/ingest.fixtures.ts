@@ -126,6 +126,7 @@ export function itemOf(
       source: 'synthetic',
       sourceRef: `recon-${n}`,
       importHash: HASH,
+      currency: 'INR',
       settlementId,
       itemType: 'payment',
       entityId: `pay_item${n}`,

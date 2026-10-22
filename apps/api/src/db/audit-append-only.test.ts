@@ -9,7 +9,7 @@ import {
   seedRun,
   type TestDb,
 } from './migrated-db.fixtures.js';
-import { auditEvents, reconRuns } from './schema.js';
+import { auditEventRecords, auditEvents, reconRuns } from './schema.js';
 
 let ctx: Awaited<ReturnType<typeof createMigratedDb>>;
 let db: TestDb;
@@ -77,7 +77,11 @@ describe('audit_events is append-only', () => {
 
   it('rejects TRUNCATE, which a row-level trigger alone would miss', async () => {
     await insertAudit(db);
-    const error = await pgErrorOf(ctx.client.query('TRUNCATE audit_events'));
+    // audit_event_records references this table, so Postgres refuses a plain TRUNCATE on its own
+    // (0A000) before any trigger runs. CASCADE gets past that check and meets the statement trigger.
+    const plain = await pgErrorOf(ctx.client.query('TRUNCATE audit_events'));
+    expect(plain.code).toBe('0A000');
+    const error = await pgErrorOf(ctx.client.query('TRUNCATE audit_events CASCADE'));
     expect(error).toMatchObject(BLOCKED('TRUNCATE'));
     const { rows } = await ctx.client.query<{ n: number }>(
       'SELECT count(*)::int AS n FROM audit_events',
@@ -138,5 +142,67 @@ describe('audit_events is append-only', () => {
     const { id } = one(await insertAudit(db, { action: 'committed' }));
     await pgErrorOf(db.delete(auditEvents).where(eq(auditEvents.id, id)));
     expect(await db.select().from(auditEvents).where(eq(auditEvents.id, id))).toHaveLength(1);
+  });
+});
+
+describe('audit_event_records is append-only too', () => {
+  const blocked = (op: 'UPDATE' | 'DELETE' | 'TRUNCATE') => ({
+    code: PG.restrict,
+    message: expect.stringContaining(
+      `audit_event_records is append-only: ${op} is not allowed`,
+    ) as unknown,
+  });
+
+  async function seeded() {
+    const { id } = one(await insertAudit(db, { action: 'record.touched' }));
+    const recordId = crypto.randomUUID();
+    await db
+      .insert(auditEventRecords)
+      .values({ auditEventId: id, recordType: 'rzp_payment', recordId });
+    return { id, recordId };
+  }
+
+  it('accepts INSERT, once per event and record', async () => {
+    const { id, recordId } = await seeded();
+    const error = await pgErrorOf(
+      db
+        .insert(auditEventRecords)
+        .values({ auditEventId: id, recordType: 'rzp_payment', recordId }),
+    );
+    expect(error.code).toBe(PG.unique);
+  });
+
+  it('refuses a row for an event that does not exist', async () => {
+    const error = await pgErrorOf(
+      db.insert(auditEventRecords).values({
+        auditEventId: 999_999_999n,
+        recordType: 'bank_line',
+        recordId: crypto.randomUUID(),
+      }),
+    );
+    expect(error.code).toBe(PG.foreignKey);
+  });
+
+  it('rejects UPDATE, DELETE and TRUNCATE', async () => {
+    const { id, recordId } = await seeded();
+    expect(
+      await pgErrorOf(
+        db
+          .update(auditEventRecords)
+          .set({ recordId: crypto.randomUUID() })
+          .where(eq(auditEventRecords.auditEventId, id)),
+      ),
+    ).toMatchObject(blocked('UPDATE'));
+    expect(
+      await pgErrorOf(db.delete(auditEventRecords).where(eq(auditEventRecords.auditEventId, id))),
+    ).toMatchObject(blocked('DELETE'));
+    expect(await pgErrorOf(db.execute('TRUNCATE audit_event_records'))).toMatchObject(
+      blocked('TRUNCATE'),
+    );
+    const rows = await db
+      .select()
+      .from(auditEventRecords)
+      .where(eq(auditEventRecords.recordId, recordId));
+    expect(rows).toHaveLength(1);
   });
 });

@@ -38,6 +38,7 @@ const names = async (sql: string, params: unknown[] = []): Promise<string[]> => 
 
 const EXPECTED_TABLES = [
   'agent_proposals',
+  'audit_event_records',
   'audit_events',
   'bank_lines',
   'ledger_entries',
@@ -54,7 +55,7 @@ const EXPECTED_TABLES = [
 ];
 
 describe('migrations on a fresh database', () => {
-  it('create exactly the 14 expected tables', async () => {
+  it('create exactly the 15 expected tables', async () => {
     const tables = await names(
       `SELECT table_name AS name FROM information_schema.tables
        WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY 1`,

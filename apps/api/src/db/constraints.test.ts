@@ -502,19 +502,68 @@ describe('exceptions, proposals and reviews', () => {
     expect(second).toMatchObject({ code: PG.unique, constraint: 'reviews_proposal_uq' });
   });
 
-  it('keeps the verifier verdict separate from the agent claim, defaulting to pending', async () => {
+  it('keeps the verifier verdict separate from the agent proposal, defaulting to pending', async () => {
     const run = await seedRun(db);
-    const id = await insertProposal(db, run, await insertException(db, run), {
-      claimedResidualPaise: 0n,
-    });
+    const id = await insertProposal(db, run, await insertException(db, run));
     const row = one(
       await db.query.agentProposals.findMany({ where: (p, { eq: is }) => is(p.id, id) }),
     );
     expect(row).toMatchObject({
       verifierStatus: 'pending',
-      claimedResidualPaise: 0n,
       verifierFindings: [],
+      harnessFindings: [],
+      attempt: 1,
+      clusterId: null,
+      draftJournalEntry: null,
+      confidencePermille: 800,
     });
+  });
+
+  it('is idempotent per (exception, attempt): the same investigation cannot be stored twice', async () => {
+    const run = await seedRun(db);
+    const exception = await insertException(db, run);
+    await insertProposal(db, run, exception, { attempt: 1 });
+    const again = await pgErrorOf(insertProposal(db, run, exception, { attempt: 1 }));
+    expect(again).toMatchObject({
+      code: PG.unique,
+      constraint: 'agent_proposals_exception_attempt_uq',
+    });
+    // A re-run asked for by a person is a new attempt.
+    await expect(insertProposal(db, run, exception, { attempt: 2 })).resolves.toEqual(
+      expect.any(String),
+    );
+  });
+
+  it('keeps attempt positive and confidence between 0 and 1', async () => {
+    const run = await seedRun(db);
+    const exception = await insertException(db, run);
+    const attempt = await pgErrorOf(insertProposal(db, run, exception, { attempt: 0 }));
+    expect(attempt).toMatchObject({
+      code: PG.check,
+      constraint: 'agent_proposals_attempt_positive',
+    });
+    for (const confidencePermille of [1001, -1]) {
+      const error = await pgErrorOf(
+        insertProposal(db, run, await insertException(db, run), { confidencePermille }),
+      );
+      expect(error, String(confidencePermille)).toMatchObject({
+        code: PG.check,
+        constraint: 'agent_proposals_confidence_range',
+      });
+    }
+  });
+
+  it('only allows the known verdicts and suggested actions', async () => {
+    const run = await seedRun(db);
+    const exception = await insertException(db, run);
+    const verdict = await pgErrorOf(
+      insertProposal(db, run, exception, { verdict: 'MATCHED' as never }),
+    );
+    expect(verdict.code).toBe(PG.badEnum);
+    const action = await pgErrorOf(
+      insertProposal(db, run, exception, { suggestedAction: 'PAY_OUT' as never }),
+    );
+    expect(action.code).toBe(PG.badEnum);
   });
 });
 

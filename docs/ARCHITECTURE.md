@@ -345,8 +345,131 @@ ledger, cash order and manual payment was raised for the agent. `npm run bench:m
 matcher alone on the stress preset: 410,214 input rows in about 2.1 s (157,000 to 195,000 rows/sec
 over two runs), with the files loaded beforehand.
 
+## Investigation agent
+
+`apps/api/src/agent` investigates the exceptions the rules left (ADR-011). It proposes; it never matches.
+Nothing it says is stored until the harness has checked it against what the tools actually returned.
+
+```
+POST /runs/:id/investigate ──▶ plan: open exceptions ─ triage ─ cluster? ─▶ jobs (exception, attempt)
+                                                                              │ BullMQ, concurrency-limited
+                                                                              ▼
+ gate (kill switch, day's spend) ─▶ LoopRunner ─▶ small model ─┐
+                                      │   ▲ tool results       │ unsure / NEEDS_HUMAN?
+                                      ▼   │                    ▼
+                          9 read-only tools (READ ONLY tx)   large model, fresh conversation
+                                                                              │
+                  finalize: ground evidence + links, downgrade, balance journal ◀┘
+                                                                              ▼
+              agent_proposals (unique exception+attempt) + exception → proposed + audit_events + llm_calls
+```
+
+**Tools.** `get_exception`, `get_ledger_entry`, `search_ledger`, `get_payment`, `list_refunds`,
+`get_settlement_composition`, `search_bank_lines`, `compute_expected_settlement`, `get_fee_contract`.
+Arguments are validated by strict zod schemas (unknown keys refused, so a model cannot name a run), each
+call is a `READ ONLY` transaction with a 5 s statement timeout, and a result is capped at 12,000
+characters. Searches need at least one filter, cap rows at 20 and date spans at 62 days. The two
+settlement tools run the same `composeLines` as rule tier T2, so "does this add up?" has one answer.
+
+**Where the model's output is distrusted.**
+
+| Layer                 | What it stops                                                                                 |
+| --------------------- | --------------------------------------------------------------------------------------------- |
+| `<untrusted>` wrapper | Memo, narration, customer reference, line description and odd references are data only.       |
+| Strict output schema  | Unknown keys (an `approve` field), more than three sentences, confidence outside 0 to 1.      |
+| Call-number evidence  | The model cites `{call, keyFinding}`; the harness writes tool and arguments from its own log. |
+| Link grounding        | A match naming a record no tool returned is downgraded to NEEDS_HUMAN, not trimmed.           |
+| Action rules          | `ACCEPT_MATCH` only for a proposed match at 0.5 or more; journal entries must balance.        |
+| Budgets               | 8 tool calls, 24k output tokens, 60 s (request aborted), prompt ceiling; then NEEDS_HUMAN.    |
+| Verifier (next task)  | Re-checks the paise, ids and windows; a person approves above the thresholds.                 |
+
+**Execution.** A job is `(exception, attempt)` pairs and carries no record data. The unique index on
+`agent_proposals(exception_id, attempt)` makes a repeated or racing job store one proposal; `process`
+also skips work already on record before it spends anything. Every request is written to `llm_calls` as
+it happens, including prompt-cache reads and writes, so spend is recorded even when the investigation
+later fails. A halt (kill switch, daily budget) ends the job and leaves the exceptions open.
+
+**Configuration** (all in `.env.example`): `ANTHROPIC_API_KEY` (optional at boot; without it the
+endpoint answers 503 and no worker starts), `AGENT_MODEL_SMALL`, `AGENT_MODEL_LARGE` (must be in
+`agent/pricing.ts`, or boot fails), `AGENT_HARNESS=loop`, `AGENT_ESCALATION`, `CLUSTER_EXCEPTIONS`,
+`AGENT_CONCURRENCY`, `AGENT_WORKER_ENABLED`, `AGENT_KILL_SWITCH`, `DAILY_LLM_BUDGET_USD`.
+
+## Verifier, policy and review
+
+A stored agent proposal is a claim. `@ziro/core/verify` re-derives it from the records, `apps/api/src/review`
+routes it, and nothing becomes a match without passing both (ADR-012).
+
+```
+agent proposal ──▶ verifyProposal ──REJECTED──▶ exception back to open, counted "caught by the verifier"
+ (stored, pending)     │
+                       └─VERIFIED──▶ decideRoute ──auto_accept (every condition)──┐
+                                          └──human──▶ review queue ──approve──────┴▶ writeGroup
+                                                          └──reject (note)──▶ exception open     (accepted group,
+                                                                                                  links, audit)
+```
+
+| Check                         | Order group (ledger + payments + refunds)                         | Payout group (settlement + bank credit)                    |
+| ----------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------- |
+| Records exist, this run, free | each id found, `runId` equal, not in an accepted group            | the same                                                   |
+| Money, to the paise           | `Σ ledger = Σ captured payments − Σ processed refunds`            | `composeSettlement` reconciles, and credit = settlement    |
+| Nothing hidden                | every refund a payment records is linked                          | every line agrees with its payment or refund record        |
+| Dates, from the run's windows | ledger and payment within `orderDateWindowDays`; refund after pay | credit in [settlement date, +T4 window], or late and said  |
+| Currency                      | payments and refunds in INR                                       | settlement lines in INR                                    |
+| Reason code fits the links    | refund, duplicate and date-shift codes need what they claim       | batch, fee, chargeback, delay and UTR codes likewise       |
+| UTRs                          | n/a                                                               | two trusted UTRs may not differ (unless the claim says so) |
+
+**Policy.** Auto-accept needs all of: verified, the agent suggested accepting, gross within
+`AUTO_ACCEPT_MAX_PAISE`, confidence at least `AUTO_ACCEPT_MIN_CONFIDENCE` (0.85), `AUTO_ACCEPT_ENABLED`, and
+neither `DEMO_MODE` nor `AGENT_KILL_SWITCH`. Otherwise the proposal goes to the queue with every reason it
+needed a person.
+
+**Review API.**
+
+| Endpoint                       | Does                                                                           |
+| ------------------------------ | ------------------------------------------------------------------------------ |
+| `GET /runs/:id/review/queue`   | proposals awaiting a person, largest amount at stake first (`limit`, `offset`) |
+| `GET /runs/:id/review/summary` | counts, `caughtByVerifier`, rejection reasons, queue size, reviews             |
+| `POST /runs/:id/verify`        | verifies proposals that were stored but not yet verified                       |
+| `GET /proposals/:id`           | proposal, evidence, findings, exception, decision                              |
+| `POST /proposals/:id/approve`  | re-verifies, writes the group, resolves the exceptions; `409` if stale         |
+| `POST /proposals/:id/reject`   | needs a note; the exception returns to `open`                                  |
+| `GET /records/:id/audit`       | the timeline of any source record, from its import to its group                |
+
+**Audit.** `auditStep` writes `{ before, after, reason, records }` and indexes each record in
+`audit_event_records`, so a record's timeline is one indexed lookup; its import is read from the record
+itself. Both tables are append-only. A record's story on the end-to-end test reads
+`record.imported, agent.propose, verifier.verified, policy.human_review, group.create, exception.resolve,
+review.approve`.
+
+**Not yet:** the endpoints are unauthenticated (`reviewer` is a recorded name, not an identity), and
+nothing persists the rules' own groups, so on real data there are no exceptions to propose about until P7.
+
+## Console and demo
+
+```
+browser ──hash routes──▶ apps/web (React, one CSS file)
+   │  GET /demo · POST /demo/runs · GET /runs/:id/progress
+   │  GET /runs/:id/overview · /exceptions · /records · GET /exceptions/:id
+   │  POST /proposals/:id/approve|reject · GET /records/:id/audit
+   │  GET /runs/:id/{report.json,report.csv,exceptions.csv,journal-entries.csv}
+   ▼
+apps/api  (serves the built web files; CSP; trust proxy 1)
+   demo/    DemoService: generate seeded data in-process → ingest → ReconService.match
+            → AgentService (ScriptedRunner by default) → verifier → review queue
+   recon/   ReconService: runMatcher output → match_groups / links / recon_exceptions + audit
+   report/  ReportService (reads only) · DownloadService · gap.ts · csv.ts
+```
+
+- **Progress** is derived from table counts, not stored separately, so it cannot disagree with the data.
+- **Featured runs** (demo and eval presets) are seeded at boot when missing (`DEMO_SEED_ON_BOOT`), tagged in
+  `reconRuns.config.featured` with a version; bump `FEATURED_VERSION` when the pipeline changes.
+- **Gap** (`report/gap.ts`): union-find over exceptions that share records; one case counts once at its
+  largest stake; see ADR-013.
+- **CSV** (`report/csv.ts`): text cells that begin with `= + - @ \t \r` are prefixed with `'`; numbers are
+  never touched.
+
 ## TODO
 
-- Matcher tiers and exception reason codes.
-- Agent harnesses and verifier contract.
+- Persist the rule matcher's groups and exceptions (P7) through `writeGroup`.
+- Harness B (the Claude Agent SDK) behind the same `AgentRunner` interface.
 - Deployment topology (Cloud Run, Neon, Upstash).

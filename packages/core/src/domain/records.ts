@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { UTR_QUALITIES } from '../normalize/utr.js';
 import {
   businessDateSchema,
+  currencySchema,
   instantSchema,
   nonNegativePaiseSchema,
   paiseSchema,
@@ -43,6 +44,7 @@ export const rzpPaymentSchema = z
     orderId: rzpOrderIdSchema.nullable(),
     /** The order's `receipt`, which equals the ledger's order_ref. */
     receipt: z.string().min(1).max(200).nullable(),
+    currency: currencySchema.default('INR'),
     amount: nonNegativePaiseSchema,
     fee: nonNegativePaiseSchema,
     tax: nonNegativePaiseSchema,
@@ -67,6 +69,7 @@ export const rzpRefundSchema = z.strictObject({
   ...sourceRecordShape,
   refundId: rzpRefundIdSchema,
   paymentId: rzpPaymentIdSchema,
+  currency: currencySchema.default('INR'),
   amount: nonNegativePaiseSchema,
   status: z.string().min(1).max(50),
   createdAt: instantSchema,
@@ -105,6 +108,7 @@ export const settlementItemSchema = z.strictObject({
   entityId: z.string().min(1).max(100),
   paymentId: rzpPaymentIdSchema.nullable(),
   orderId: rzpOrderIdSchema.nullable(),
+  currency: currencySchema.default('INR'),
   amount: nonNegativePaiseSchema,
   fee: nonNegativePaiseSchema,
   tax: nonNegativePaiseSchema,

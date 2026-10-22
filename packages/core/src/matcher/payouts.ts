@@ -36,7 +36,7 @@ const settlementRef = (s: RzpSettlement) => ref('rzp_settlement', s.id);
 const bankRef = (b: BankLine) => ref('bank_line', b.id);
 
 /** A settlement's UTR as the bank would print it: upper case, letters and digits only. */
-function settlementUtrKey(settlement: RzpSettlement): string | null {
+export function settlementUtrKey(settlement: RzpSettlement): string | null {
   const key = settlement.utr?.toUpperCase().replace(/[^A-Z0-9]/g, '') ?? '';
   return key.length >= 10 ? key : null;
 }
@@ -75,7 +75,8 @@ class CreditIndex {
 }
 
 /** A credit whose UTR cannot confirm anything: missing, or only a repair or a fragment. */
-const utrIsWeak = (b: BankLine): boolean => b.utr === null || !TRUSTED_UTR.has(b.utrQuality ?? '');
+export const utrIsWeak = (b: BankLine): boolean =>
+  b.utr === null || !TRUSTED_UTR.has(b.utrQuality ?? '');
 
 function payoutReason(
   settlement: RzpSettlement,
@@ -95,14 +96,28 @@ function payoutReason(
 
   const captured = composition.paymentIds
     .map(paymentDate)
-    .filter((d): d is string => d !== undefined)
-    .sort();
-  const latest = captured[captured.length - 1];
-  if (latest !== undefined) {
-    const expected = addBusinessDays(latest, config.settlementLagBusinessDays, config.calendar);
-    if (settlement.businessDate > expected) return ReasonCode.SETTLEMENT_DELAYED;
+    .filter((d): d is string => d !== undefined);
+  if (settlementCreatedLate(settlement.businessDate, captured, config)) {
+    return ReasonCode.SETTLEMENT_DELAYED;
   }
   return null;
+}
+
+/**
+ * Razorpay created the settlement later than its payments' latest capture date plus the normal lag.
+ * One of the two meanings of SETTLEMENT_DELAYED (the other is a bank credit past the window); the
+ * verifier asks this same question, so a rule's label and a verifier's check cannot drift apart.
+ */
+export function settlementCreatedLate(
+  settlementDate: string,
+  paymentDates: readonly string[],
+  config: Pick<MatcherConfig, 'settlementLagBusinessDays' | 'calendar'>,
+): boolean {
+  const latest = [...paymentDates].sort().at(-1);
+  if (latest === undefined) return false;
+  return (
+    settlementDate > addBusinessDays(latest, config.settlementLagBusinessDays, config.calendar)
+  );
 }
 
 export function matchPayouts(input: MatcherInput, config: MatcherConfig, state: MatchState): void {

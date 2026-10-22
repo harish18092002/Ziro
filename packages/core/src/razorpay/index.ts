@@ -153,6 +153,12 @@ export const collectionSchema = <T extends z.ZodType>(item: T) =>
 
 // --- tolerant: only what Ziro reads --------------------------------------------------------------
 
+/** Read faithfully rather than pinned to INR, so a foreign-currency record is stored and refused later. */
+const currencyIngest = z
+  .string()
+  .regex(/^[A-Z]{3}$/)
+  .default('INR');
+
 /** Keeps an object's unknown fields (Razorpay adds fields without notice) but pins what we use. */
 export const orderIngestSchema = z.looseObject({
   id: orderFields.id,
@@ -167,6 +173,7 @@ export const paymentIngestSchema = z.looseObject({
   order_id: paymentFields.order_id.nullish(),
   method: paymentFields.method,
   amount_refunded: paymentFields.amount_refunded.default(0),
+  currency: currencyIngest,
   captured: paymentFields.captured,
   fee: paymentFields.fee.nullish(),
   tax: paymentFields.tax.nullish(),
@@ -177,6 +184,7 @@ export const refundIngestSchema = z.looseObject({
   id: refundFields.id,
   amount: refundFields.amount,
   payment_id: refundFields.payment_id,
+  currency: currencyIngest,
   status: refundFields.status,
   created_at: refundFields.created_at,
 });
@@ -197,6 +205,7 @@ export const reconItemIngestSchema = z.looseObject({
   debit: reconItemFields.debit,
   credit: reconItemFields.credit,
   amount: reconItemFields.amount,
+  currency: currencyIngest,
   fee: reconItemFields.fee.default(0),
   tax: reconItemFields.tax.default(0),
   settled_at: reconItemFields.settled_at,

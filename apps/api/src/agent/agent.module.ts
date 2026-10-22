@@ -1,0 +1,106 @@
+import {
+  Inject,
+  Injectable,
+  Logger,
+  Module,
+  type OnApplicationShutdown,
+  type OnModuleInit,
+} from '@nestjs/common';
+import type { Worker } from 'bullmq';
+import { ENV } from '../config/config.module.js';
+import type { Env } from '../config/env.js';
+import { DbModule } from '../db/db.module.js';
+import { ReviewModule } from '../review/review.module.js';
+import { AnthropicLlmClient } from './anthropic-client.js';
+import { AGENT_RUNNER, AgentService } from './agent.service.js';
+import { AgentController } from './agent.controller.js';
+import type { LlmClient } from './llm.js';
+import { LoopRunner, type LoopRunnerOptions } from './loop-runner.js';
+import { ratesFor } from './pricing.js';
+import {
+  BullInvestigationQueue,
+  INVESTIGATION_QUEUE,
+  type InvestigationQueue,
+  startInvestigationWorker,
+} from './queue.js';
+import type { AgentRunner } from './types.js';
+
+/**
+ * The harness named by AGENT_HARNESS, or none when there is no API key (the free replay and the rest
+ * of the app work without one). A harness that cannot work is a boot failure, not a silent no-op.
+ */
+export function createRunner(env: Env): AgentRunner | null {
+  if (!env.ANTHROPIC_API_KEY) return null;
+  if (env.AGENT_HARNESS !== 'loop') {
+    throw new Error('AGENT_HARNESS=agent-sdk is not built yet (it arrives in P11); use "loop"');
+  }
+  for (const [name, model] of [
+    ['AGENT_MODEL_SMALL', env.AGENT_MODEL_SMALL],
+    ['AGENT_MODEL_LARGE', env.AGENT_MODEL_LARGE],
+  ] as const) {
+    if (ratesFor(model) === undefined) {
+      throw new Error(
+        `${name} "${model}" has no known price; add it to agent/pricing.ts before using it`,
+      );
+    }
+  }
+  return new LoopRunner(
+    loopRunnerOptions(env, AnthropicLlmClient.fromApiKey(env.ANTHROPIC_API_KEY)),
+  );
+}
+
+/** What the environment decides about the loop harness: its models and whether it may escalate. */
+export function loopRunnerOptions(env: Env, client: LlmClient): LoopRunnerOptions {
+  return {
+    client,
+    smallModel: env.AGENT_MODEL_SMALL,
+    largeModel: env.AGENT_MODEL_LARGE,
+    escalation: env.AGENT_ESCALATION,
+  };
+}
+
+/** Starts the worker in this process when AGENT_WORKER_ENABLED, and stops it with the app. */
+@Injectable()
+export class AgentWorkerHost implements OnModuleInit, OnApplicationShutdown {
+  private worker: Worker | null = null;
+
+  constructor(
+    @Inject(ENV) private readonly env: Env,
+    private readonly agent: AgentService,
+    @Inject(INVESTIGATION_QUEUE) private readonly queue: InvestigationQueue,
+  ) {}
+
+  onModuleInit(): void {
+    if (!this.env.AGENT_WORKER_ENABLED || !this.agent.configured) return;
+    this.worker = startInvestigationWorker({
+      redisUrl: this.env.REDIS_URL,
+      concurrency: this.env.AGENT_CONCURRENCY,
+      process: (job) => this.agent.process(job),
+    });
+    new Logger('AgentWorker').log(
+      `investigation worker started (concurrency ${this.env.AGENT_CONCURRENCY})`,
+    );
+  }
+
+  async onApplicationShutdown(): Promise<void> {
+    await this.worker?.close();
+    await this.queue.close?.();
+  }
+}
+
+@Module({
+  imports: [DbModule, ReviewModule],
+  controllers: [AgentController],
+  providers: [
+    { provide: AGENT_RUNNER, inject: [ENV], useFactory: createRunner },
+    {
+      provide: INVESTIGATION_QUEUE,
+      inject: [ENV],
+      useFactory: (env: Env): InvestigationQueue => new BullInvestigationQueue(env.REDIS_URL),
+    },
+    AgentService,
+    AgentWorkerHost,
+  ],
+  exports: [AgentService],
+})
+export class AgentModule {}

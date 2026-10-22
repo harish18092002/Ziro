@@ -314,11 +314,13 @@ export async function insertProposal(
       .values({
         runId,
         exceptionId,
+        verdict: 'EXPLAINED_NO_MATCH',
         reasonCode: 'FEE_GST_DEDUCTION',
         links: [],
-        claimedResidualPaise: 0n,
         explanation: 'Payment less fee matches the ledger.',
         evidence: [],
+        confidencePermille: 800,
+        suggestedAction: 'NONE',
         ...over,
       })
       .returning({ id: schema.agentProposals.id }),
