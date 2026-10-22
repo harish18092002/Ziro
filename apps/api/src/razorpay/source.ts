@@ -1,0 +1,71 @@
+import type { RzpPayment, RzpRefund, RzpSettlement, SettlementItem } from '@ziro/core/domain';
+
+/** Where an entity's data actually came from. This is what the UI shows, so it must be honest. */
+export type SourceLabel = 'synthetic' | 'razorpay_testmode';
+
+/** An inclusive range of IST business dates, `YYYY-MM-DD`. */
+export interface DateRange {
+  readonly from: string;
+  readonly to: string;
+}
+
+/** A domain record together with the payload it was built from (stored as `raw`, hashed for re-imports). */
+export interface Sourced<T> {
+  readonly record: T;
+  readonly raw: unknown;
+}
+
+export type Entity = 'payments' | 'refunds' | 'settlements' | 'settlement_recon';
+
+/**
+ * Why an entity has the source it has:
+ *  - `ok`: asked the primary source and used its answer (even if the answer is "nothing").
+ *  - `test-mode-empty`: test mode answered with no data, so this entity is synthetic.
+ *  - `follows-payments`: refunds belong to payments; the payments were synthetic, so these are too.
+ */
+export type ProvenanceReason = 'ok' | 'test-mode-empty' | 'follows-payments';
+
+export interface Provenance {
+  readonly entity: Entity;
+  readonly source: SourceLabel;
+  readonly reason: ProvenanceReason;
+  /** HTTP calls made to Razorpay for this entity (0 for synthetic data). */
+  readonly requests: number;
+  /** Non-fatal oddities worth showing, e.g. an order that could not be found. */
+  readonly warnings: readonly string[];
+}
+
+export interface FetchResult<T> {
+  /** Also on every record's own `source` field. */
+  readonly source: SourceLabel;
+  readonly items: readonly Sourced<T>[];
+  readonly provenance: Provenance;
+}
+
+/**
+ * The one door through which Razorpay data enters Ziro. Whatever is behind it, a caller gets the
+ * same domain records. Dates are IST business dates; every list is complete (paginated to the end).
+ */
+export interface RazorpaySource {
+  fetchPayments(range: DateRange): Promise<FetchResult<RzpPayment>>;
+  fetchRefunds(range: DateRange): Promise<FetchResult<RzpRefund>>;
+  fetchSettlements(range: DateRange): Promise<FetchResult<RzpSettlement>>;
+  /** Everything Razorpay says it settled on one IST day. */
+  fetchSettlementRecon(date: string): Promise<FetchResult<SettlementItem>>;
+}
+
+export interface ProvenanceSummary {
+  readonly bySource: Readonly<Record<SourceLabel, readonly Entity[]>>;
+  /** True when a run draws on both. Its records will not reconcile with each other (ADR-008). */
+  readonly mixed: boolean;
+}
+
+/** For the UI: which entities are real test-mode data and which are synthetic. */
+export function summarizeProvenance(provenance: readonly Provenance[]): ProvenanceSummary {
+  const bySource: Record<SourceLabel, Entity[]> = { synthetic: [], razorpay_testmode: [] };
+  for (const p of provenance) bySource[p.source].push(p.entity);
+  return {
+    bySource,
+    mixed: bySource.synthetic.length > 0 && bySource.razorpay_testmode.length > 0,
+  };
+}

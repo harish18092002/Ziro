@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "@ziro/core",
   "version": "0.0.0",
   "private": true,
@@ -14,6 +14,14 @@
     "./money": {
       "types": "./dist/money/index.d.ts",
       "default": "./dist/money/index.js"
+    },
+    "./time": {
+      "types": "./dist/time/index.d.ts",
+      "default": "./dist/time/index.js"
+    },
+    "./razorpay": {
+      "types": "./dist/razorpay/index.d.ts",
+      "default": "./dist/razorpay/index.js"
     },
     "./domain": {
       "types": "./dist/domain/index.d.ts",

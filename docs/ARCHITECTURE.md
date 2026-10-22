@@ -242,6 +242,25 @@ exact-count rates, plus labelled prompt-injection strings. Every published metri
 `truth.json`. See [`packages/datagen/README.md`](../packages/datagen/README.md) for the rate table,
 file formats, truth schema and assumptions, and ADR-007 for the truth semantics.
 
+## Razorpay source layer
+
+`apps/api/src/razorpay` is the one door through which Razorpay data enters Ziro (ADR-008):
+
+```
+RazorpaySource ── SyntheticSource ── reads a datagen directory ─────────┐
+   (4 calls)   └─ TestModeSource ── official SDK, TEST keys only ──┐    │   raw JSON
+                                    sdk-client.ts (timeout, retry,  │    │
+                                    network-failure fix, paging)    ▼    ▼
+                                                                  mappers.ts ──▶ @ziro/core domain records
+```
+
+Every record and result carries `source: synthetic | razorpay_testmode`. Test mode supplies payments,
+orders and refunds you created with the test keys; it appears to have no settlements, so those and the
+recon report fall back to synthetic, per entity and only on an _empty_ answer (never on an error). A
+run that draws on both is `mixed`: honest, but its records will not reconcile with each other, so it
+is never used for a published number. Time conversion (Unix seconds → IST business date) is
+`@ziro/core/time`.
+
 ## TODO
 
 - Matcher tiers and exception reason codes.

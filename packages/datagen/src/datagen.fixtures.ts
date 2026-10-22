@@ -12,7 +12,7 @@ import {
   reconItemSchema,
   refundSchema,
   settlementSchema,
-} from './razorpay-schemas.js';
+} from '@ziro/core/razorpay';
 
 /** Minimal RFC 4180 parser: quoted cells, doubled quotes, commas and newlines inside quotes. */
 export function parseCsv(text: string): string[][] {

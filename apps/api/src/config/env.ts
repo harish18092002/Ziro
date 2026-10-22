@@ -75,6 +75,9 @@ export const envSchema = z
       .string({ error: requiredError('must be a redis:// or rediss:// URL') })
       .trim()
       .regex(/^rediss?:\/\/\S+$/, 'must be a redis:// or rediss:// URL'),
+    // A directory written by `npm run datagen`. Needed in testmode too: it answers for whatever
+    // test mode has no data for (settlements, the recon report).
+    SYNTHETIC_DATA_DIR: text,
     RAZORPAY_SOURCE: z.enum(['synthetic', 'testmode'], {
       error: requiredError('must be "synthetic" or "testmode"'),
     }),

@@ -26,7 +26,10 @@ export interface OutputFile {
   chunks(): Generator<string>;
 }
 
-/** Razorpay lists come newest first, so ours do too: no consumer may rely on a friendlier order. */
+/**
+ * Newest first. Razorpay's docs do not state a list order, so this is a deliberately unfriendly one:
+ * no consumer may rely on creation order.
+ */
 const newestFirst = <T extends { readonly createdAt: number }>(
   items: readonly T[],
   id: (item: T) => string,

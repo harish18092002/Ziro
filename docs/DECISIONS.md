@@ -211,3 +211,69 @@ data and a matching wrong parser).
 **Consequences.** Truth is more elaborate than a flat label per record, and the eval must read
 `groups`, `anomalies` and `records` together. In return, a metric such as "exception classification
 accuracy" or "false auto-accept rate" is defined by the file, not by interpretation.
+
+---
+
+## ADR-008: Synthetic settlements + bank statements; test-mode payments where available
+
+**Status:** accepted
+
+**Context.** Ziro reconciles ledger ↔ Razorpay ↔ bank. We need a real Razorpay integration to show,
+but must stay on test keys only (CLAUDE.md §4.6). What test mode can supply is not spelled out
+anywhere, so this is what the documentation does and does not say (read 2026-10-22):
+
+- _Documented:_ "Both modes provide the same functionalities, except that real payments cannot be
+  accepted in Test mode"; test and live entities are separate; "No real money is used in the test
+  mode". So payments, orders and refunds listings work with test keys, but only return what was
+  created with those keys: a fresh account is empty.
+- _Silent:_ settlements and the recon report. Settlement is described only for live money (T+2, for
+  captured payments). Nothing documents a test payment ever being settled, so expect an empty list
+  (HTTP 200), not an error. **This is unverified**: `npm run razorpay:probe -w @ziro/api -- --confirm`
+  is the read-only check, and its result should be recorded here.
+- _The SDK_ (`razorpay` 2.9.8) hard-codes its host, has no timeout, and crashes with a `TypeError` on
+  any failure that has no HTTP response (its error handler reads `err.response.status`), discarding
+  headers such as `Retry-After`. It does not paginate or retry.
+
+**Decision.**
+
+- **One door.** `RazorpaySource` (`fetchPayments`, `fetchRefunds`, `fetchSettlements`,
+  `fetchSettlementRecon`) returns `@ziro/core` domain records. `SyntheticSource` reads datagen output;
+  `TestModeSource` uses the official SDK. Both pass raw JSON through the **same mappers**, so shapes
+  are identical by construction, and a contract test serves the same data both ways and requires
+  deep equality except for the `source` label.
+- **Per-entity fallback, labelled.** Every record and every result carries `source`
+  (`synthetic` | `razorpay_testmode`) and a provenance reason. Fallback happens **only when test mode
+  answers with no data**, never on an error: bad credentials, an exhausted rate limit or a bug of ours
+  must surface, not hide behind plausible synthetic numbers. Settlements fall back when test mode
+  has none. **Refunds follow payments** (real refunds would point at payments not in the run). **Recon
+  follows settlements, month by month** (a quiet day is a true empty only if test mode settles at all).
+- **Mixed runs are honest but incoherent.** Synthetic settlements are composed of synthetic payments,
+  so real test payments never appear in them and a mixed run will not reconcile. It is labelled
+  `mixed` for the UI and is **never used for a published number**: the eval is all-synthetic.
+- **Test mode only, three times.** The boot guard rejects `rzp_live_`; the env schema demands
+  `rzp_test_` for `testmode`; `createSdkClient` refuses anything but `rzp_test_` where the key is
+  first used.
+- **Resilience.** One file (`sdk-client.ts`) touches the SDK's internals (`api.rq`, an untyped axios
+  instance): it sets a timeout, turns network failures into the error shape the SDK expects, carries
+  `Retry-After`, and adds retries (429, 408, 5xx and no-response; exponential backoff with full
+  jitter, capped attempts and total deadline). The version is pinned exactly and a canary test fails if
+  the internals change. `count`/`skip` pagination uses the documented maximums (100; 1000 for recon),
+  a fixed window, de-duplication by id and a hard page cap.
+- **Time.** Unix seconds become IST business dates in `@ziro/core/time`, implemented by walking years
+  and months, deliberately unlike datagen's closed-form maths, and cross-checked against it and
+  against `Intl`.
+- **Receipts live on the Order.** Both adapters resolve each payment's order (one listing over a
+  7-day lookback, single lookups beyond it) to fill `receipt`.
+- **Identity.** Record ids are deterministic (run + type + source reference), so re-importing is
+  idempotent; `importHash` is the sha-256 of the payload as received, extras included.
+
+**Alternatives.** Falling back on any error (hides credential and rate-limit failures); synthesising
+settlements and a bank statement _around_ the real test payments (coherent, but a separate
+generator capability, a follow-up if wanted); dropping the SDK for plain axios (simpler, but not what
+was asked for, and the seam makes its sharp edges safe).
+
+**Consequences.** The fixtures behind the contract tests are transcribed from Razorpay's
+documentation, not recorded from a live account; real recordings need a one-off session with test
+keys. Failed and authorized payments are mapped with fee and tax 0 (nothing was charged), while a
+_captured_ payment with a null fee is an error. Upgrading `razorpay` is a deliberate act guarded by
+the canary test.

@@ -91,9 +91,10 @@ in the Razorpay JSON is integer paise, exactly as Razorpay sends it.
 | `bank_statement.csv`        | `value_date, narration, debit, credit, balance`. Dates are `DD/MM/YYYY`. Exactly one of debit/credit is set. The balance is an exact running total. |
 | `truth.json`                | The ground truth. See below.                                                                                                                        |
 
-Lists are written **newest first**, like Razorpay's API. Nothing downstream may rely on ledger or
-statement order being friendlier than that. Field names and types are taken from Razorpay's
-documentation and checked by `src/razorpay-schemas.ts` (strict zod schemas, with the URLs in comments):
+Razorpay lists are written **newest first**. (Razorpay's docs do not state a list order; newest-first
+is simply a deliberately unfriendly one, so no consumer can rely on creation order. The ingest layer
+sorts nothing and assumes nothing.) Field names and types are taken from Razorpay's documentation
+and checked by the strict schemas in `@ziro/core/razorpay` (URLs in its comments):
 
 - Payments: <https://razorpay.com/docs/api/payments/fetch-with-id> and `/fetch-all-payments`
 - Refunds: <https://razorpay.com/docs/api/refunds/fetch-with-id>
