@@ -2,6 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   addDaysToBusinessDate,
+  epochFromUtc,
   instantFromEpoch,
   isBusinessDate,
   istBusinessDate,
@@ -132,5 +133,43 @@ describe('addDaysToBusinessDate / isBusinessDate', () => {
     expect(isBusinessDate('2026-02-29')).toBe(false);
     expect(isBusinessDate('hello')).toBe(false);
     expect(() => addDaysToBusinessDate('2026-04-01', 1.5)).toThrow(RangeError);
+  });
+});
+
+describe('epochFromUtc', () => {
+  it('agrees with Date.UTC for any date and second of day up to 2100', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1970, max: 2100 }),
+        fc.integer({ min: 1, max: 12 }),
+        fc.integer({ min: 1, max: 28 }),
+        fc.integer({ min: 0, max: 86_399 }),
+        (year, month, day, secondOfDay) => {
+          const date = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          expect(epochFromUtc(date, secondOfDay)).toBe(
+            Date.UTC(year, month - 1, day) / 1000 + secondOfDay,
+          );
+        },
+      ),
+      { numRuns: 2000 },
+    );
+  });
+
+  it('is the inverse of instantFromEpoch', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: YEAR_2100 }), (epoch) => {
+        const instant = instantFromEpoch(epoch);
+        const secondOfDay = epoch % 86_400;
+        expect(epochFromUtc(instant.slice(0, 10), secondOfDay)).toBe(epoch);
+      }),
+      { numRuns: 2000 },
+    );
+  });
+
+  it('rejects a bad date or second of day', () => {
+    expect(() => epochFromUtc('2026-02-30', 0)).toThrow(RangeError);
+    expect(() => epochFromUtc('2026-01-01', 86_400)).toThrow(RangeError);
+    expect(() => epochFromUtc('2026-01-01', -1)).toThrow(RangeError);
+    expect(() => epochFromUtc('2026-01-01', 1.5)).toThrow(RangeError);
   });
 });

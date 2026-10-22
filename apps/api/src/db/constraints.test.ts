@@ -565,4 +565,21 @@ describe('recon_runs and bank lines', () => {
     const row = one(await db.select().from(bankLines).where(eq(bankLines.id, id)));
     expect(row.valueDate).toBe('2026-10-23');
   });
+
+  it('keeps utr and utr_quality in step, and only allows the known qualities', async () => {
+    const run = await seedRun(db);
+    for (const over of [{ utr: 'UTIBN34889755412' }, { utrQuality: 'exact' as const }]) {
+      const error = await pgErrorOf(insertBankLine(db, run, over));
+      expect(error).toMatchObject({ code: PG.check, constraint: 'bank_lines_utr_quality_in_step' });
+    }
+    for (const quality of ['exact', 'rejoined', 'repaired', 'truncated'] as const) {
+      await expect(
+        insertBankLine(db, run, { utr: 'UTIBN34889755412', utrQuality: quality }),
+      ).resolves.toEqual(expect.any(String));
+    }
+    const bad = await pgErrorOf(
+      insertBankLine(db, run, { utr: 'UTIBN34889755412', utrQuality: 'guess' as never }),
+    );
+    expect(bad.code).toBe(PG.badEnum);
+  });
 });

@@ -196,10 +196,30 @@ describe('BankLine', () => {
 
   it('allows missing UTR and balance, and rejects an unknown direction', () => {
     expect(
-      failures(bankLineSchema, mutate(bankLineFixture(), { utr: null, balance: null })),
+      failures(
+        bankLineSchema,
+        mutate(bankLineFixture(), { utr: null, utrQuality: null, balance: null }),
+      ),
     ).toEqual([]);
     expect(failures(bankLineSchema, mutate(bankLineFixture(), { direction: 'cr' }))).toEqual([
       'direction',
     ]);
+  });
+
+  it('keeps utr and utrQuality in step: both set or both null', () => {
+    expect(failures(bankLineSchema, mutate(bankLineFixture(), { utrQuality: null }))).toEqual([
+      'utrQuality',
+    ]);
+    expect(failures(bankLineSchema, mutate(bankLineFixture(), { utr: null }))).toEqual([
+      'utrQuality',
+    ]);
+    expect(failures(bankLineSchema, mutate(bankLineFixture(), { utrQuality: 'guess' }))).toEqual([
+      'utrQuality',
+    ]);
+    for (const quality of ['exact', 'rejoined', 'repaired', 'truncated']) {
+      expect(failures(bankLineSchema, mutate(bankLineFixture(), { utrQuality: quality }))).toEqual(
+        [],
+      );
+    }
   });
 });

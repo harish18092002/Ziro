@@ -38,6 +38,18 @@ const port = z.preprocess(
     .refine((value) => value >= 1 && value <= 65535, 'must be between 1 and 65535'),
 );
 
+// The largest CSV upload accepted. 25 MiB holds the ~100k-row stress preset with room to spare.
+const DEFAULT_IMPORT_MAX_BYTES = '26214400';
+const importMaxBytes = z.preprocess(
+  (value) => blankToUndefined(value) ?? DEFAULT_IMPORT_MAX_BYTES,
+  z
+    .string()
+    .trim()
+    .regex(/^\d{1,9}$/, 'must be a whole number of bytes')
+    .transform(Number)
+    .refine((value) => value >= 1024 && value <= 104_857_600, 'must be between 1 KiB and 100 MiB'),
+);
+
 // Paise are integers end to end (CLAUDE.md §4.1): a decimal here is a bug, not a rounding case.
 const paise = z
   .string({ error: requiredError('must be a non-negative integer number of paise') })
@@ -67,6 +79,7 @@ const razorpayKeyId = z.preprocess(
 export const envSchema = z
   .object({
     PORT: port,
+    IMPORT_MAX_BYTES: importMaxBytes,
     DATABASE_URL: z
       .string({ error: requiredError('must be a postgres:// or postgresql:// URL') })
       .trim()

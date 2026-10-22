@@ -277,3 +277,63 @@ documentation, not recorded from a live account; real recordings need a one-off 
 keys. Failed and authorized payments are mapped with fee and tax 0 (nothing was charged), while a
 _captured_ payment with a null fee is an error. Upgrading `razorpay` is a deliberate act guarded by
 the canary test.
+
+## ADR-009: Ingestion — strict parsing, immutable rows, one transaction per import
+
+**Status:** accepted
+
+**Context.** Three sources enter Ziro as untrusted files or API data, and every later claim (a match,
+a metric) rests on the rows being exactly what was sent. Real exports are messy: one bad row, a
+re-upload, a re-ordered export, a statement with a garbled reference. The importer must neither
+crash on that nor quietly accept it.
+
+**Decision.**
+
+- **Pure transforms live in `@ziro/core/normalize`**: a strict RFC 4180 reader, header binding,
+  dates (`DD-MM-YYYY`, `DD/MM/YYYY`, `YYYY-MM-DD`, ISO time _with_ an offset → IST date; never
+  month-first, two-digit years or offset-less times), strict rupees (no symbols, Indian grouping
+  only), reference cleaning, a free-text safety check, and UTR extraction. The API adds only the
+  database, the HTTP shell and the audit trail.
+- **A bad row never fails a file.** Every problem is collected as `{row, line, field, code, reason}`;
+  valid rows are imported and the report says what was not. Only a file with no usable header (empty,
+  not UTF-8, missing a required column) is refused whole, and even that returns the same report shape
+  (HTTP 422) and is audited.
+- **Identity and idempotency.** `(run_id, source_ref)` is the identity: the normalized `order_ref` for
+  the ledger, `row-<n>` for the bank. Existing rows are **immutable**: same hash → `unchanged`,
+  different hash → `conflict` (reported, not applied). A corrected file needs a new run. A repeated
+  `order_ref` inside one file keeps the first and rejects the rest, because two ledger lines for one
+  order is an ambiguity a human must resolve, not something to guess.
+- **One transaction per import**, taking the run's row lock: the rows and the `audit_events` row
+  commit or fail together, so the trail cannot disagree with the data. Network and file IO happen
+  outside the transaction. `POST /runs/demo` is a single transaction too.
+- **UTR quality is stored**, in a new `bank_lines.utr_quality` column (migration `0002`) with a CHECK
+  that it is set exactly when `utr` is. The extractor repairs only look-alike confusions, only when
+  one reading needs strictly fewer edits, and says it did; it returns nothing rather than choose
+  between equal candidates.
+- **The server, not the caller, picks the Razorpay source.** `POST /runs` has no source field (the
+  schema is strict), and the demo preset is always synthetic, even when the server is in test mode.
+- **Payment lines are linked through `entity_id`.** In Razorpay's recon report a payment line carries
+  the payment's id in `entity_id` and leaves `payment_id` null (it is set only on refund lines).
+
+**Alternatives.** Rejecting a file on its first bad row (hides the other 9,999 good ones, and a
+finance team would just retry blindly); overwriting a row whose content changed (silently rewrites
+what a past match was based on); keying bank lines by content hash plus occurrence (survives
+re-ordering, but breaks the `row-<n>` keys of the ground truth for no real gain, as statements are
+chronological); `csv-parse` instead of a hand-written reader (battle-tested, but cannot give the
+row/line recovery model above without wrapping it); deriving UTR quality at match time (one less
+column, but the audit trail could no longer say why a line matched at its tier).
+
+**Consequences.**
+
+- A re-upload with edits is a conflict, by design. The cost is that fixing a typo means a new run.
+- Bank `row-<n>` keys mean a second, different statement in the same run conflicts row by row: one
+  statement per run for now.
+- `@types/multer` is a dev dependency (types for `Express.Multer.File`); multer itself ships inside
+  `@nestjs/platform-express`. Uploads are held in memory, so `IMPORT_MAX_BYTES` (default 25 MiB) is
+  also the memory bound.
+- The endpoints take no authentication yet (the demo has no login). Before a public deploy they need a
+  rate limit and a cap on runs, or anyone can fill the database.
+- UTR layouts inside the 16/22-character references are documented only by third-party articles that
+  disagree, and the shapes assumed beyond length (3–5 letters, then digits) are verified only against
+  datagen and one real statement. Real narrations from the merchant's bank should extend the table of
+  formats in `utr.test.ts`.

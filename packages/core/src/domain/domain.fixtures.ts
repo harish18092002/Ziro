@@ -84,6 +84,7 @@ export const bankLineFixture = () => ({
   amount: '9973635',
   narration: 'NEFT CR UTIB0123456789 RAZORPAY SOFTWARE',
   utr: 'UTIB0123456789',
+  utrQuality: 'exact',
   balance: '1234567800',
 });
 

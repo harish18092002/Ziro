@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { UTR_QUALITIES } from '../normalize/utr.js';
 import {
   businessDateSchema,
   instantSchema,
@@ -117,15 +118,25 @@ export type SettlementItem = z.output<typeof settlementItemSchema>;
 export const BANK_DIRECTIONS = ['credit', 'debit'] as const;
 
 /** One row of the bank statement. `narration` is free text and UNTRUSTED. */
-export const bankLineSchema = z.strictObject({
-  ...sourceRecordShape,
-  valueDate: businessDateSchema,
-  direction: z.enum(BANK_DIRECTIONS),
-  amount: nonNegativePaiseSchema,
-  narration: z.string().max(2000),
-  /** Extracted from the narration by normalization; null when absent or unrecoverable. */
-  utr: z.string().min(1).max(100).nullable(),
-  /** Running balance when the statement provides one. Signed: overdrafts exist. */
-  balance: paiseSchema.nullable(),
-});
+export const bankLineSchema = z
+  .strictObject({
+    ...sourceRecordShape,
+    valueDate: businessDateSchema,
+    direction: z.enum(BANK_DIRECTIONS),
+    amount: nonNegativePaiseSchema,
+    narration: z.string().max(2000),
+    /** Extracted from the narration by normalization; null when absent or unrecoverable. */
+    utr: z.string().min(1).max(100).nullable(),
+    /**
+     * How far to trust `utr`: a `truncated` one is only a fragment (never equal to a full UTR) and a
+     * `repaired` one is a look-alike correction. Null exactly when `utr` is null.
+     */
+    utrQuality: z.enum(UTR_QUALITIES).nullable(),
+    /** Running balance when the statement provides one. Signed: overdrafts exist. */
+    balance: paiseSchema.nullable(),
+  })
+  .refine((line) => (line.utr === null) === (line.utrQuality === null), {
+    error: 'utr and utrQuality are either both set or both null',
+    path: ['utrQuality'],
+  });
 export type BankLine = z.output<typeof bankLineSchema>;

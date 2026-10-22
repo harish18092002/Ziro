@@ -30,6 +30,7 @@ import {
   SOURCES,
   VERIFIER_STATUSES,
 } from '@ziro/core/domain';
+import { UTR_QUALITIES } from '@ziro/core/normalize';
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
@@ -80,6 +81,7 @@ export const paymentStatus = pgEnum('payment_status', PAYMENT_STATUSES);
 export const settlementStatus = pgEnum('settlement_status', SETTLEMENT_STATUSES);
 export const settlementItemType = pgEnum('settlement_item_type', SETTLEMENT_ITEM_TYPES);
 export const bankDirection = pgEnum('bank_direction', BANK_DIRECTIONS);
+export const utrQuality = pgEnum('utr_quality', UTR_QUALITIES);
 export const recordType = pgEnum('record_type', RECORD_TYPES);
 export const matchGroupKind = pgEnum('match_group_kind', MATCH_GROUP_KINDS);
 export const matchGroupStatus = pgEnum('match_group_status', MATCH_GROUP_STATUSES);
@@ -289,6 +291,8 @@ export const bankLines = pgTable(
     narration: text('narration').notNull(),
     /** Extracted from the narration by normalization; null if absent or unrecoverable. */
     utr: text('utr'),
+    /** How far to trust `utr` (a `truncated` one is a fragment, a `repaired` one a correction). */
+    utrQuality: utrQuality('utr_quality'),
     /** Running balance when the statement has one. Signed: overdrafts exist. */
     balancePaise: paise('balance_paise'),
   },
@@ -298,6 +302,7 @@ export const bankLines = pgTable(
     index('bank_lines_run_date_amount_idx').on(t.runId, t.valueDate, t.amountPaise),
     sha256Check('bank_lines', t.importHash),
     check('bank_lines_amount_nonneg', sql`${t.amountPaise} >= 0`),
+    check('bank_lines_utr_quality_in_step', sql`(${t.utr} is null) = (${t.utrQuality} is null)`),
   ],
 );
 

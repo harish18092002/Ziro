@@ -155,6 +155,7 @@ erDiagram
         bigint amount_paise
         text narration "untrusted"
         text utr "extracted"
+        utr_quality utr_quality "exact rejoined repaired truncated"
     }
     match_groups {
         uuid id PK
@@ -260,6 +261,46 @@ recon report fall back to synthetic, per entity and only on an _empty_ answer (n
 run that draws on both is `mixed`: honest, but its records will not reconcile with each other, so it
 is never used for a published number. Time conversion (Unix seconds → IST business date) is
 `@ziro/core/time`.
+
+## Ingestion
+
+`@ziro/core/normalize` holds the pure transforms; `apps/api/src/ingest` is the thin, transactional
+shell around them (ADR-009).
+
+```
+upload ─▶ decode (strict UTF-8) ─▶ parseCsv ─▶ per-row zod ─▶ rows + errors[] ─┐   pure, no IO
+                                                                                 │
+                    classify against the DB (new / unchanged / conflict) ◀───────┘
+                    INSERT … ON CONFLICT (run_id, source_ref) DO NOTHING          ┐ ONE transaction:
+                    audit_events row (+ run.status_changed on the first import)   ┘ data + audit together
+```
+
+| Endpoint                         | What it does                                                                                              |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `POST /runs`                     | New run. The Razorpay source is stamped from server config, never from the request.                       |
+| `POST /runs/:id/import/ledger`   | Multipart `file` (CSV). 200 + report; 422 + the same report if the file is unusable.                      |
+| `POST /runs/:id/import/bank`     | Same, for the bank statement.                                                                             |
+| `POST /runs/:id/import/razorpay` | `{from, to}` (≤ 93 days) through the selected `RazorpaySource`; settlements/recon look 7 days further on. |
+| `POST /runs/demo`                | New run + the demo preset, one transaction, always the synthetic source.                                  |
+| `GET /runs/:id`                  | The run and its record counts per table and per `source`.                                                 |
+
+**Row identity.** A ledger row's identity is its normalized `order_ref`; a bank line's is its position
+(`row-<n>`, the key `truth.json` uses), because two identical statement lines are legitimate. Ids are
+`deterministicUuid(run, type, source_ref)` and `import_hash` is the sha-256 of the row's cells as
+received, so the same file always produces the same ids and hashes. Existing rows are immutable:
+identical content is `unchanged`, different content is a reported `conflict`, never an overwrite.
+
+**Report.** `status` is `ok`, `partial` (some rows rejected or conflicting) or `rejected` (file
+unusable, nothing written). Each problem is `{row, line, field, code, reason}`; `row` is the 1-based
+data row, `line` the physical line. Control totals (Σ ledger, Σ credits, Σ debits, in paise) let the
+merchant check the import against their own books, and a bank statement whose running balance does not
+chain gets a warning on the row where it breaks.
+
+**UTR quality.** `bank_lines.utr` is only as trustworthy as `utr_quality`: `exact`, `rejoined` (a split
+UTR joined back), `repaired` (look-alike characters fixed: O/0, I/1, S/5, B/8, only when one reading is
+cheapest) or `truncated` (a fragment, never equal to a full UTR). Measured against datagen's ground
+truth the extractor makes no wrong repairs; a garble that keeps the token well-formed (two digits
+swapped) is invisible to it and surfaces later as a UTR mismatch.
 
 ## TODO
 

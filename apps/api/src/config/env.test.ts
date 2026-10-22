@@ -44,6 +44,21 @@ describe('loadEnv', () => {
     expect(env.ANTHROPIC_API_KEY).toBeUndefined();
   });
 
+  it('defaults IMPORT_MAX_BYTES to 25 MiB, accepts a custom size and rejects nonsense', () => {
+    expect(loadEnv(validEnv()).IMPORT_MAX_BYTES).toBe(26_214_400);
+    expect(loadEnv({ ...validEnv(), IMPORT_MAX_BYTES: '' }).IMPORT_MAX_BYTES).toBe(26_214_400);
+    expect(loadEnv({ ...validEnv(), IMPORT_MAX_BYTES: '5000000' }).IMPORT_MAX_BYTES).toBe(
+      5_000_000,
+    );
+    for (const bad of ['abc', '1.5', '100', '104857601', '-5']) {
+      const issues = issuesOf({ ...validEnv(), IMPORT_MAX_BYTES: bad });
+      expect(
+        issues.filter((issue) => issue.startsWith('IMPORT_MAX_BYTES')),
+        bad,
+      ).toHaveLength(1);
+    }
+  });
+
   it('defaults PORT to 3000 and treats blank optional values as unset', () => {
     const { PORT: _port, ...rest } = validEnv();
     const env = loadEnv({ ...rest, RAZORPAY_KEY_ID: '', ANTHROPIC_API_KEY: '   ' });

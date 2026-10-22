@@ -4,6 +4,7 @@ import { ConfigModule } from './config/config.module.js';
 import type { Env } from './config/env.js';
 import { DbModule } from './db/db.module.js';
 import { HealthModule } from './health/health.module.js';
+import { IngestModule } from './ingest/ingest.module.js';
 import { RazorpayModule } from './razorpay/razorpay.module.js';
 import { RedisModule } from './redis/redis.module.js';
 
@@ -21,6 +22,7 @@ export class AppModule {
         RedisModule,
         HealthModule,
         RazorpayModule,
+        IngestModule,
       ],
     };
   }

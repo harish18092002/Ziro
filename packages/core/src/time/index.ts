@@ -104,6 +104,19 @@ function parseBusinessDate(date: string): Civil {
   return { year, month, day };
 }
 
+/**
+ * Unix seconds of a UTC calendar date and second-of-day. The inverse direction of `instantFromEpoch`,
+ * for timestamps that arrive as text with an explicit offset (the caller subtracts the offset).
+ */
+export function epochFromUtc(date: string, secondOfDay: number): number {
+  if (!Number.isSafeInteger(secondOfDay) || secondOfDay < 0 || secondOfDay >= SECONDS_PER_DAY) {
+    throw new RangeError('second of day must be an integer in 0..86399');
+  }
+  const epoch = daysFromCivil(parseBusinessDate(date)) * SECONDS_PER_DAY + secondOfDay;
+  assertEpoch(epoch);
+  return epoch;
+}
+
 /** The inclusive Unix-second bounds of one IST calendar day: its first and last second. */
 export function istDayBounds(date: string): {
   readonly fromEpoch: number;

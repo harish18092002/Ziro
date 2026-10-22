@@ -19,6 +19,10 @@
       "types": "./dist/time/index.d.ts",
       "default": "./dist/time/index.js"
     },
+    "./normalize": {
+      "types": "./dist/normalize/index.d.ts",
+      "default": "./dist/normalize/index.js"
+    },
     "./razorpay": {
       "types": "./dist/razorpay/index.d.ts",
       "default": "./dist/razorpay/index.js"

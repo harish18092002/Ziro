@@ -1,0 +1,2602 @@
+{
+  "id": "9fb39d37-4dff-4c0d-873f-39d3beb8b8c8",
+  "prevId": "df9d4b42-92df-4f65-9d3a-f6b8e1ef1aa6",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.agent_proposals": {
+      "name": "agent_proposals",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "exception_id": {
+          "name": "exception_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "llm_call_id": {
+          "name": "llm_call_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason_code": {
+          "name": "reason_code",
+          "type": "reason_code",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "links": {
+          "name": "links",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "claimed_residual_paise": {
+          "name": "claimed_residual_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "explanation": {
+          "name": "explanation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "evidence": {
+          "name": "evidence",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "verifier_status": {
+          "name": "verifier_status",
+          "type": "verifier_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "verifier_findings": {
+          "name": "verifier_findings",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "agent_proposals_exception_idx": {
+          "name": "agent_proposals_exception_idx",
+          "columns": [
+            {
+              "expression": "exception_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "agent_proposals_run_id_recon_runs_id_fk": {
+          "name": "agent_proposals_run_id_recon_runs_id_fk",
+          "tableFrom": "agent_proposals",
+          "tableTo": "recon_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "agent_proposals_exception_id_recon_exceptions_id_fk": {
+          "name": "agent_proposals_exception_id_recon_exceptions_id_fk",
+          "tableFrom": "agent_proposals",
+          "tableTo": "recon_exceptions",
+          "columnsFrom": [
+            "exception_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "agent_proposals_llm_call_id_llm_calls_id_fk": {
+          "name": "agent_proposals_llm_call_id_llm_calls_id_fk",
+          "tableFrom": "agent_proposals",
+          "tableTo": "llm_calls",
+          "columnsFrom": [
+            "llm_call_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.audit_events": {
+      "name": "audit_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "audit_events_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "actor": {
+          "name": "actor",
+          "type": "actor",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity_type": {
+          "name": "entity_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "detail": {
+          "name": "detail",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        }
+      },
+      "indexes": {
+        "audit_events_run_idx": {
+          "name": "audit_events_run_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "audit_events_entity_idx": {
+          "name": "audit_events_entity_idx",
+          "columns": [
+            {
+              "expression": "entity_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "entity_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "audit_events_run_id_recon_runs_id_fk": {
+          "name": "audit_events_run_id_recon_runs_id_fk",
+          "tableFrom": "audit_events",
+          "tableTo": "recon_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.bank_lines": {
+      "name": "bank_lines",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "record_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_ref": {
+          "name": "source_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "import_hash": {
+          "name": "import_hash",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "raw": {
+          "name": "raw",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "value_date": {
+          "name": "value_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "direction": {
+          "name": "direction",
+          "type": "bank_direction",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_paise": {
+          "name": "amount_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "narration": {
+          "name": "narration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "utr": {
+          "name": "utr",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "utr_quality": {
+          "name": "utr_quality",
+          "type": "utr_quality",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "balance_paise": {
+          "name": "balance_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "bank_lines_run_source_ref_uq": {
+          "name": "bank_lines_run_source_ref_uq",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_ref",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "bank_lines_run_utr_idx": {
+          "name": "bank_lines_run_utr_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "utr",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "bank_lines_run_date_amount_idx": {
+          "name": "bank_lines_run_date_amount_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "value_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "amount_paise",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "bank_lines_run_id_recon_runs_id_fk": {
+          "name": "bank_lines_run_id_recon_runs_id_fk",
+          "tableFrom": "bank_lines",
+          "tableTo": "recon_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "bank_lines_import_hash_sha256": {
+          "name": "bank_lines_import_hash_sha256",
+          "value": "\"bank_lines\".\"import_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "bank_lines_amount_nonneg": {
+          "name": "bank_lines_amount_nonneg",
+          "value": "\"bank_lines\".\"amount_paise\" >= 0"
+        },
+        "bank_lines_utr_quality_in_step": {
+          "name": "bank_lines_utr_quality_in_step",
+          "value": "(\"bank_lines\".\"utr\" is null) = (\"bank_lines\".\"utr_quality\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.ledger_entries": {
+      "name": "ledger_entries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "record_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_ref": {
+          "name": "source_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "import_hash": {
+          "name": "import_hash",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "raw": {
+          "name": "raw",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "order_ref": {
+          "name": "order_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_paise": {
+          "name": "amount_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "business_date": {
+          "name": "business_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "customer_ref": {
+          "name": "customer_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "memo": {
+          "name": "memo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "ledger_entries_run_source_ref_uq": {
+          "name": "ledger_entries_run_source_ref_uq",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_ref",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "ledger_entries_run_order_ref_idx": {
+          "name": "ledger_entries_run_order_ref_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "order_ref",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "ledger_entries_run_id_recon_runs_id_fk": {
+          "name": "ledger_entries_run_id_recon_runs_id_fk",
+          "tableFrom": "ledger_entries",
+          "tableTo": "recon_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ledger_entries_amount_nonneg": {
+          "name": "ledger_entries_amount_nonneg",
+          "value": "\"ledger_entries\".\"amount_paise\" >= 0"
+        },
+        "ledger_entries_import_hash_sha256": {
+          "name": "ledger_entries_import_hash_sha256",
+          "value": "\"ledger_entries\".\"import_hash\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.llm_calls": {
+      "name": "llm_calls",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "exception_id": {
+          "name": "exception_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "model": {
+          "name": "model",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "harness": {
+          "name": "harness",
+          "type": "harness",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tokens_in": {
+          "name": "tokens_in",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tokens_out": {
+          "name": "tokens_out",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cost_usd": {
+          "name": "cost_usd",
+          "type": "numeric(12, 6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "latency_ms": {
+          "name": "latency_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prompt_hash": {
+          "name": "prompt_hash",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "llm_calls_run_idx": {
+          "name": "llm_calls_run_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "llm_calls_created_idx": {
+          "name": "llm_calls_created_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "llm_calls_run_id_recon_runs_id_fk": {
+          "name": "llm_calls_run_id_recon_runs_id_fk",
+          "tableFrom": "llm_calls",
+          "tableTo": "recon_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "llm_calls_exception_id_recon_exceptions_id_fk": {
+          "name": "llm_calls_exception_id_recon_exceptions_id_fk",
+          "tableFrom": "llm_calls",
+          "tableTo": "recon_exceptions",
+          "columnsFrom": [
+            "exception_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "llm_calls_prompt_hash_sha256": {
+          "name": "llm_calls_prompt_hash_sha256",
+          "value": "\"llm_calls\".\"prompt_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "llm_calls_nonneg": {
+          "name": "llm_calls_nonneg",
+          "value": "\"llm_calls\".\"tokens_in\" >= 0 and \"llm_calls\".\"tokens_out\" >= 0 and \"llm_calls\".\"cost_usd\" >= 0 and \"llm_calls\".\"latency_ms\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.match_groups": {
+      "name": "match_groups",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "match_group_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "match_group_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "basis": {
+          "name": "basis",
+          "type": "match_basis",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tier": {
+          "name": "tier",
+          "type": "match_tier",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason_code": {
+          "name": "reason_code",
+          "type": "reason_code",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "residual_paise": {
+          "name": "residual_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "0"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "match_groups_run_idx": {
+          "name": "match_groups_run_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "match_groups_run_id_recon_runs_id_fk": {
+          "name": "match_groups_run_id_recon_runs_id_fk",
+          "tableFrom": "match_groups",
+          "tableTo": "recon_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "match_groups_id_status_uq": {
+          "name": "match_groups_id_status_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "status"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "match_groups_accepted_reconciles": {
+          "name": "match_groups_accepted_reconciles",
+          "value": "\"match_groups\".\"status\" <> 'accepted' or \"match_groups\".\"residual_paise\" = 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.match_links": {
+      "name": "match_links",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "group_id": {
+          "name": "group_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "group_status": {
+          "name": "group_status",
+          "type": "match_group_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ledger_entry_id": {
+          "name": "ledger_entry_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payment_id": {
+          "name": "payment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refund_id": {
+          "name": "refund_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "settlement_id": {
+          "name": "settlement_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bank_line_id": {
+          "name": "bank_line_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "match_links_one_accepted_ledger_entry": {
+          "name": "match_links_one_accepted_ledger_entry",
+          "columns": [
+            {
+              "expression": "ledger_entry_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"match_links\".\"group_status\" = 'accepted'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "match_links_one_accepted_payment": {
+          "name": "match_links_one_accepted_payment",
+          "columns": [
+            {
+              "expression": "payment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"match_links\".\"group_status\" = 'accepted'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "match_links_one_accepted_refund": {
+          "name": "match_links_one_accepted_refund",
+          "columns": [
+            {
+              "expression": "refund_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"match_links\".\"group_status\" = 'accepted'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "match_links_one_accepted_settlement": {
+          "name": "match_links_one_accepted_settlement",
+          "columns": [
+            {
+              "expression": "settlement_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"match_links\".\"group_status\" = 'accepted'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "match_links_one_accepted_bank_line": {
+          "name": "match_links_one_accepted_bank_line",
+          "columns": [
+            {
+              "expression": "bank_line_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"match_links\".\"group_status\" = 'accepted'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "match_links_group_idx": {
+          "name": "match_links_group_idx",
+          "columns": [
+            {
+              "expression": "group_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "match_links_ledger_entry_id_ledger_entries_id_fk": {
+          "name": "match_links_ledger_entry_id_ledger_entries_id_fk",
+          "tableFrom": "match_links",
+          "tableTo": "ledger_entries",
+          "columnsFrom": [
+            "ledger_entry_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "match_links_payment_id_rzp_payments_id_fk": {
+          "name": "match_links_payment_id_rzp_payments_id_fk",
+          "tableFrom": "match_links",
+          "tableTo": "rzp_payments",
+          "columnsFrom": [
+            "payment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "match_links_refund_id_rzp_refunds_id_fk": {
+          "name": "match_links_refund_id_rzp_refunds_id_fk",
+          "tableFrom": "match_links",
+          "tableTo": "rzp_refunds",
+          "columnsFrom": [
+            "refund_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "match_links_settlement_id_rzp_settlements_id_fk": {
+          "name": "match_links_settlement_id_rzp_settlements_id_fk",
+          "tableFrom": "match_links",
+          "tableTo": "rzp_settlements",
+          "columnsFrom": [
+            "settlement_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "match_links_bank_line_id_bank_lines_id_fk": {
+          "name": "match_links_bank_line_id_bank_lines_id_fk",
+          "tableFrom": "match_links",
+          "tableTo": "bank_lines",
+          "columnsFrom": [
+            "bank_line_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "match_links_group_fk": {
+          "name": "match_links_group_fk",
+          "tableFrom": "match_links",
+          "tableTo": "match_groups",
+          "columnsFrom": [
+            "group_id",
+            "group_status"
+          ],
+          "columnsTo": [
+            "id",
+            "status"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "match_links_exactly_one_record": {
+          "name": "match_links_exactly_one_record",
+          "value": "num_nonnulls(\"match_links\".\"ledger_entry_id\", \"match_links\".\"payment_id\", \"match_links\".\"refund_id\", \"match_links\".\"settlement_id\", \"match_links\".\"bank_line_id\") = 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.recon_exceptions": {
+      "name": "recon_exceptions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason_code": {
+          "name": "reason_code",
+          "type": "reason_code",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "exception_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "subject_type": {
+          "name": "subject_type",
+          "type": "record_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject_id": {
+          "name": "subject_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "candidates": {
+          "name": "candidates",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "amount_at_stake_paise": {
+          "name": "amount_at_stake_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "0"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "recon_exceptions_run_subject_uq": {
+          "name": "recon_exceptions_run_subject_uq",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "subject_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "subject_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "recon_exceptions_run_status_idx": {
+          "name": "recon_exceptions_run_status_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "recon_exceptions_run_id_recon_runs_id_fk": {
+          "name": "recon_exceptions_run_id_recon_runs_id_fk",
+          "tableFrom": "recon_exceptions",
+          "tableTo": "recon_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.recon_runs": {
+      "name": "recon_runs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "status": {
+          "name": "status",
+          "type": "run_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'created'"
+        },
+        "razorpay_source": {
+          "name": "razorpay_source",
+          "type": "razorpay_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "period_start": {
+          "name": "period_start",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "period_end": {
+          "name": "period_end",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "config": {
+          "name": "config",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "recon_runs_period_ordered": {
+          "name": "recon_runs_period_ordered",
+          "value": "\"recon_runs\".\"period_start\" <= \"recon_runs\".\"period_end\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.reviews": {
+      "name": "reviews",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "proposal_id": {
+          "name": "proposal_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decision": {
+          "name": "decision",
+          "type": "review_decision",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reviewer_kind": {
+          "name": "reviewer_kind",
+          "type": "reviewer_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reviewer": {
+          "name": "reviewer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "reviews_proposal_uq": {
+          "name": "reviews_proposal_uq",
+          "columns": [
+            {
+              "expression": "proposal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "reviews_run_id_recon_runs_id_fk": {
+          "name": "reviews_run_id_recon_runs_id_fk",
+          "tableFrom": "reviews",
+          "tableTo": "recon_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "reviews_proposal_id_agent_proposals_id_fk": {
+          "name": "reviews_proposal_id_agent_proposals_id_fk",
+          "tableFrom": "reviews",
+          "tableTo": "agent_proposals",
+          "columnsFrom": [
+            "proposal_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.rzp_payments": {
+      "name": "rzp_payments",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "record_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_ref": {
+          "name": "source_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "import_hash": {
+          "name": "import_hash",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "raw": {
+          "name": "raw",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "rzp_id": {
+          "name": "rzp_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rzp_order_id": {
+          "name": "rzp_order_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "receipt": {
+          "name": "receipt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "amount_paise": {
+          "name": "amount_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fee_paise": {
+          "name": "fee_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tax_paise": {
+          "name": "tax_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_refunded_paise": {
+          "name": "amount_refunded_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "0"
+        },
+        "method": {
+          "name": "method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "payment_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "captured": {
+          "name": "captured",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rzp_created_at": {
+          "name": "rzp_created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "business_date": {
+          "name": "business_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "rzp_payments_run_source_ref_uq": {
+          "name": "rzp_payments_run_source_ref_uq",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_ref",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "rzp_payments_run_rzp_id_uq": {
+          "name": "rzp_payments_run_rzp_id_uq",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rzp_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "rzp_payments_run_order_idx": {
+          "name": "rzp_payments_run_order_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rzp_order_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "rzp_payments_run_receipt_idx": {
+          "name": "rzp_payments_run_receipt_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "receipt",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "rzp_payments_run_id_recon_runs_id_fk": {
+          "name": "rzp_payments_run_id_recon_runs_id_fk",
+          "tableFrom": "rzp_payments",
+          "tableTo": "recon_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "rzp_payments_import_hash_sha256": {
+          "name": "rzp_payments_import_hash_sha256",
+          "value": "\"rzp_payments\".\"import_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "rzp_payments_amount_nonneg": {
+          "name": "rzp_payments_amount_nonneg",
+          "value": "\"rzp_payments\".\"amount_paise\" >= 0"
+        },
+        "rzp_payments_fee_nonneg": {
+          "name": "rzp_payments_fee_nonneg",
+          "value": "\"rzp_payments\".\"fee_paise\" >= 0"
+        },
+        "rzp_payments_tax_within_fee": {
+          "name": "rzp_payments_tax_within_fee",
+          "value": "\"rzp_payments\".\"tax_paise\" >= 0 and \"rzp_payments\".\"tax_paise\" <= \"rzp_payments\".\"fee_paise\""
+        },
+        "rzp_payments_refunded_within_amount": {
+          "name": "rzp_payments_refunded_within_amount",
+          "value": "\"rzp_payments\".\"amount_refunded_paise\" >= 0 and \"rzp_payments\".\"amount_refunded_paise\" <= \"rzp_payments\".\"amount_paise\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.rzp_refunds": {
+      "name": "rzp_refunds",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "record_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_ref": {
+          "name": "source_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "import_hash": {
+          "name": "import_hash",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "raw": {
+          "name": "raw",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "rzp_id": {
+          "name": "rzp_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rzp_payment_id": {
+          "name": "rzp_payment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payment_id": {
+          "name": "payment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "amount_paise": {
+          "name": "amount_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rzp_created_at": {
+          "name": "rzp_created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "business_date": {
+          "name": "business_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "rzp_refunds_run_source_ref_uq": {
+          "name": "rzp_refunds_run_source_ref_uq",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_ref",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "rzp_refunds_run_rzp_id_uq": {
+          "name": "rzp_refunds_run_rzp_id_uq",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rzp_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "rzp_refunds_run_rzp_payment_idx": {
+          "name": "rzp_refunds_run_rzp_payment_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rzp_payment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "rzp_refunds_run_id_recon_runs_id_fk": {
+          "name": "rzp_refunds_run_id_recon_runs_id_fk",
+          "tableFrom": "rzp_refunds",
+          "tableTo": "recon_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "rzp_refunds_payment_id_rzp_payments_id_fk": {
+          "name": "rzp_refunds_payment_id_rzp_payments_id_fk",
+          "tableFrom": "rzp_refunds",
+          "tableTo": "rzp_payments",
+          "columnsFrom": [
+            "payment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "rzp_refunds_import_hash_sha256": {
+          "name": "rzp_refunds_import_hash_sha256",
+          "value": "\"rzp_refunds\".\"import_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "rzp_refunds_amount_nonneg": {
+          "name": "rzp_refunds_amount_nonneg",
+          "value": "\"rzp_refunds\".\"amount_paise\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.rzp_settlements": {
+      "name": "rzp_settlements",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "record_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_ref": {
+          "name": "source_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "import_hash": {
+          "name": "import_hash",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "raw": {
+          "name": "raw",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "rzp_id": {
+          "name": "rzp_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_paise": {
+          "name": "amount_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fees_paise": {
+          "name": "fees_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tax_paise": {
+          "name": "tax_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "utr": {
+          "name": "utr",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "settlement_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rzp_created_at": {
+          "name": "rzp_created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "business_date": {
+          "name": "business_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "rzp_settlements_run_source_ref_uq": {
+          "name": "rzp_settlements_run_source_ref_uq",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_ref",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "rzp_settlements_run_rzp_id_uq": {
+          "name": "rzp_settlements_run_rzp_id_uq",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rzp_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "rzp_settlements_run_utr_idx": {
+          "name": "rzp_settlements_run_utr_idx",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "utr",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "rzp_settlements_run_id_recon_runs_id_fk": {
+          "name": "rzp_settlements_run_id_recon_runs_id_fk",
+          "tableFrom": "rzp_settlements",
+          "tableTo": "recon_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "rzp_settlements_import_hash_sha256": {
+          "name": "rzp_settlements_import_hash_sha256",
+          "value": "\"rzp_settlements\".\"import_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "rzp_settlements_amount_nonneg": {
+          "name": "rzp_settlements_amount_nonneg",
+          "value": "\"rzp_settlements\".\"amount_paise\" >= 0"
+        },
+        "rzp_settlements_fees_nonneg": {
+          "name": "rzp_settlements_fees_nonneg",
+          "value": "\"rzp_settlements\".\"fees_paise\" >= 0 and \"rzp_settlements\".\"tax_paise\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.settlement_items": {
+      "name": "settlement_items",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "record_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_ref": {
+          "name": "source_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "import_hash": {
+          "name": "import_hash",
+          "type": "char(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "raw": {
+          "name": "raw",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "settlement_id": {
+          "name": "settlement_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "item_type": {
+          "name": "item_type",
+          "type": "settlement_item_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rzp_entity_id": {
+          "name": "rzp_entity_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rzp_payment_id": {
+          "name": "rzp_payment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rzp_order_id": {
+          "name": "rzp_order_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "payment_id": {
+          "name": "payment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "refund_id": {
+          "name": "refund_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "amount_paise": {
+          "name": "amount_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fee_paise": {
+          "name": "fee_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tax_paise": {
+          "name": "tax_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "debit_paise": {
+          "name": "debit_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "credit_paise": {
+          "name": "credit_paise",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "settled_at": {
+          "name": "settled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "settlement_items_run_source_ref_uq": {
+          "name": "settlement_items_run_source_ref_uq",
+          "columns": [
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_ref",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "settlement_items_settlement_idx": {
+          "name": "settlement_items_settlement_idx",
+          "columns": [
+            {
+              "expression": "settlement_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "settlement_items_payment_idx": {
+          "name": "settlement_items_payment_idx",
+          "columns": [
+            {
+              "expression": "payment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "settlement_items_run_id_recon_runs_id_fk": {
+          "name": "settlement_items_run_id_recon_runs_id_fk",
+          "tableFrom": "settlement_items",
+          "tableTo": "recon_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "settlement_items_settlement_id_rzp_settlements_id_fk": {
+          "name": "settlement_items_settlement_id_rzp_settlements_id_fk",
+          "tableFrom": "settlement_items",
+          "tableTo": "rzp_settlements",
+          "columnsFrom": [
+            "settlement_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "settlement_items_payment_id_rzp_payments_id_fk": {
+          "name": "settlement_items_payment_id_rzp_payments_id_fk",
+          "tableFrom": "settlement_items",
+          "tableTo": "rzp_payments",
+          "columnsFrom": [
+            "payment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "settlement_items_refund_id_rzp_refunds_id_fk": {
+          "name": "settlement_items_refund_id_rzp_refunds_id_fk",
+          "tableFrom": "settlement_items",
+          "tableTo": "rzp_refunds",
+          "columnsFrom": [
+            "refund_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "settlement_items_import_hash_sha256": {
+          "name": "settlement_items_import_hash_sha256",
+          "value": "\"settlement_items\".\"import_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "settlement_items_amounts_nonneg": {
+          "name": "settlement_items_amounts_nonneg",
+          "value": "\"settlement_items\".\"amount_paise\" >= 0 and \"settlement_items\".\"fee_paise\" >= 0 and \"settlement_items\".\"tax_paise\" >= 0 and \"settlement_items\".\"debit_paise\" >= 0 and \"settlement_items\".\"credit_paise\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.actor": {
+      "name": "actor",
+      "schema": "public",
+      "values": [
+        "rule",
+        "agent",
+        "verifier",
+        "human",
+        "system"
+      ]
+    },
+    "public.bank_direction": {
+      "name": "bank_direction",
+      "schema": "public",
+      "values": [
+        "credit",
+        "debit"
+      ]
+    },
+    "public.exception_status": {
+      "name": "exception_status",
+      "schema": "public",
+      "values": [
+        "open",
+        "proposed",
+        "resolved",
+        "dismissed"
+      ]
+    },
+    "public.harness": {
+      "name": "harness",
+      "schema": "public",
+      "values": [
+        "loop",
+        "agent-sdk"
+      ]
+    },
+    "public.match_basis": {
+      "name": "match_basis",
+      "schema": "public",
+      "values": [
+        "rule",
+        "agent",
+        "human"
+      ]
+    },
+    "public.match_group_kind": {
+      "name": "match_group_kind",
+      "schema": "public",
+      "values": [
+        "order",
+        "payout"
+      ]
+    },
+    "public.match_group_status": {
+      "name": "match_group_status",
+      "schema": "public",
+      "values": [
+        "proposed",
+        "accepted",
+        "rejected",
+        "reversed"
+      ]
+    },
+    "public.match_tier": {
+      "name": "match_tier",
+      "schema": "public",
+      "values": [
+        "T1",
+        "T2",
+        "T3",
+        "T4"
+      ]
+    },
+    "public.payment_status": {
+      "name": "payment_status",
+      "schema": "public",
+      "values": [
+        "created",
+        "authorized",
+        "captured",
+        "refunded",
+        "failed"
+      ]
+    },
+    "public.razorpay_source": {
+      "name": "razorpay_source",
+      "schema": "public",
+      "values": [
+        "synthetic",
+        "testmode"
+      ]
+    },
+    "public.reason_code": {
+      "name": "reason_code",
+      "schema": "public",
+      "values": [
+        "FEE_GST_DEDUCTION",
+        "BATCHED_SETTLEMENT",
+        "PARTIAL_REFUND_NETTED",
+        "FULL_REFUND",
+        "CHARGEBACK_ADJUSTMENT",
+        "DUPLICATE_PAYMENT",
+        "LEDGER_WITHOUT_PAYMENT",
+        "PAYMENT_WITHOUT_LEDGER",
+        "UTR_MISSING_OR_GARBLED",
+        "LEDGER_AMOUNT_EDITED",
+        "TIMEZONE_DATE_SHIFT",
+        "SETTLEMENT_DELAYED",
+        "FEE_OVERCHARGE",
+        "UNKNOWN"
+      ]
+    },
+    "public.record_source": {
+      "name": "record_source",
+      "schema": "public",
+      "values": [
+        "csv",
+        "synthetic",
+        "razorpay_testmode"
+      ]
+    },
+    "public.record_type": {
+      "name": "record_type",
+      "schema": "public",
+      "values": [
+        "ledger_entry",
+        "rzp_payment",
+        "rzp_refund",
+        "rzp_settlement",
+        "bank_line"
+      ]
+    },
+    "public.review_decision": {
+      "name": "review_decision",
+      "schema": "public",
+      "values": [
+        "approved",
+        "rejected"
+      ]
+    },
+    "public.reviewer_kind": {
+      "name": "reviewer_kind",
+      "schema": "public",
+      "values": [
+        "human",
+        "auto_accept"
+      ]
+    },
+    "public.run_status": {
+      "name": "run_status",
+      "schema": "public",
+      "values": [
+        "created",
+        "ingesting",
+        "matching",
+        "investigating",
+        "complete",
+        "failed"
+      ]
+    },
+    "public.settlement_item_type": {
+      "name": "settlement_item_type",
+      "schema": "public",
+      "values": [
+        "payment",
+        "refund",
+        "transfer",
+        "adjustment"
+      ]
+    },
+    "public.settlement_status": {
+      "name": "settlement_status",
+      "schema": "public",
+      "values": [
+        "created",
+        "processed",
+        "failed"
+      ]
+    },
+    "public.utr_quality": {
+      "name": "utr_quality",
+      "schema": "public",
+      "values": [
+        "exact",
+        "rejoined",
+        "repaired",
+        "truncated"
+      ]
+    },
+    "public.verifier_status": {
+      "name": "verifier_status",
+      "schema": "public",
+      "values": [
+        "pending",
+        "passed",
+        "rejected"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

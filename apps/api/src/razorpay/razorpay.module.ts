@@ -13,15 +13,17 @@ import { TestModeSource } from './testmode.source.js';
 export class RazorpaySourceFactory {
   constructor(@Inject(ENV) private readonly env: Env) {}
 
+  /** The generated dataset, whatever `RAZORPAY_SOURCE` says: the demo preset never touches Razorpay. */
+  synthetic(runId: string): SyntheticSource {
+    return new SyntheticSource({ runId, dir: resolveDataDir(this.env.SYNTHETIC_DATA_DIR) });
+  }
+
   /**
    * `RAZORPAY_SOURCE=synthetic` reads the generated dataset. `testmode` talks to Razorpay with the
    * test keys and falls back to that same dataset for whatever test mode cannot supply.
    */
   forRun(runId: string): RazorpaySource {
-    const synthetic = new SyntheticSource({
-      runId,
-      dir: resolveDataDir(this.env.SYNTHETIC_DATA_DIR),
-    });
+    const synthetic = this.synthetic(runId);
     if (this.env.RAZORPAY_SOURCE === 'synthetic') return synthetic;
 
     const { RAZORPAY_KEY_ID: keyId, RAZORPAY_KEY_SECRET: keySecret } = this.env;
