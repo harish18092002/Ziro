@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+coverage/
+.vite/
+
+# secrets and local config
+.env
+.env.*
+!.env.example
+
+# generated data and raw eval output (reproducible via `npm run datagen` / `npm run eval`)
+data/
+**/evals/results/raw/
+
+# logs and OS noise
+*.log
+.DS_Store
+Thumbs.db

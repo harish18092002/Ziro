@@ -1,0 +1,45 @@
+{
+  "name": "ziro",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Ziro — every paisa, accounted for.",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "scripts": {
+    "predev": "node scripts/ensure-env.mjs",
+    "dev": "npm run build:libs && concurrently -k -n libs,api,web -c blue,green,magenta \"npm run dev:libs\" \"npm run dev -w @ziro/api\" \"npm run dev -w @ziro/web\"",
+    "dev:libs": "tsc -b --watch --preserveWatchOutput",
+    "build:libs": "tsc -b",
+    "build": "npm run build:libs && npm run build -w @ziro/api && npm run build -w @ziro/web",
+    "lint": "npm run build:libs && eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "typecheck": "npm run build:libs && npm run typecheck --workspaces --if-present",
+    "test": "npm run build:libs && npm test --workspaces --if-present",
+    "datagen": "npm run build:libs && npm run datagen -w @ziro/datagen --",
+    "eval": "npm run eval -w @ziro/evals",
+    "db:generate": "npm run build:libs && npm run db:generate -w @ziro/api",
+    "db:migrate": "npm run build:libs && npm run db:migrate -w @ziro/api",
+    "seed": "npm run seed -w @ziro/api"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.19.2",
+    "concurrently": "^10.0.6",
+    "eslint": "^10.13.0",
+    "eslint-config-prettier": "^10.1.8",
+    "fast-check": "^4.10.2",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.10",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}

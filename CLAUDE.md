@@ -60,14 +60,14 @@ Deterministic code matches the bulk. An LLM agent investigates only the leftover
 ## 5. Stack (fixed — ask before changing anything)
 | Layer | Choice |
 |---|---|
-| Language | TypeScript strict, Node LTS (check current), **npm** workspaces — never pnpm or yarn. Lockfile is `package-lock.json`. Internal deps use `"*"` (npm has no `workspace:` protocol). Run a package script with `npm run <script> -w @ziro/<pkg>`. CI/Docker use `npm ci`. |
+| Language | TypeScript strict, Node LTS (check current), **npm** workspaces — never pnpm or yarn. Lockfile is `package-lock.json`. Internal deps use `"*"` (npm has no `workspace:` protocol). Run a package script with `npm run <script> -w @ziro/<pkg>`. CI/Docker use `npm ci`. TypeScript is pinned to `~6.0.x` (ADR-003); Node `>=24.15`. |
 | API | NestJS (`apps/api`) |
 | Web | React + Vite + TS (`apps/web`), built and served by NestJS → one URL |
 | DB | PostgreSQL + Drizzle ORM + drizzle-kit migrations |
 | Jobs | Redis + BullMQ |
 | Validation | zod for all external input and all LLM output |
 | LLM | Anthropic API. Harness A (default): hand-rolled tool-use loop on `@anthropic-ai/sdk`. Harness B (bake-off): Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`). Model IDs from env only. |
-| Tests | Vitest (packages/*), Jest (apps/api, Nest default), fast-check property tests |
+| Tests | Vitest everywhere, ESM everywhere (ADR-002; amended from "Jest for apps/api" because Nest 12 is ESM-only and defaults to Vitest for ESM), fast-check property tests |
 | Logs | pino (nestjs-pino) |
 | Deploy | Docker → GCP Cloud Run (asia-south1); Postgres on Neon; Redis on Upstash; secrets in GCP Secret Manager |
 | CI | GitHub Actions: lint, typecheck, test, eval-smoke |
@@ -89,16 +89,17 @@ ziro/
 - **Ledger entry:** the merchant's own record of an order. Fields: order_ref, amount, date, customer_ref, memo (free text).
 - **Razorpay payment (`pay_…`):**
   - belongs to an order (`order_…`) whose `receipt` equals the ledger order_ref
-  - has amount, fee, tax (GST on the fee), method, created_at (Unix seconds)
+  - has amount, fee, tax, method, created_at (Unix seconds)
+  - `fee` **includes** GST and `tax` is the GST part of it (Razorpay payment docs), so the base fee is `fee − tax` (ADR-004)
 - **Refund (`rfnd_…`):** made against a payment; can be partial.
 - **Settlement (`setl_…`):** Razorpay's payout to the merchant bank.
   - Batches many payments.
-  - amount = Σpayments − Σfees − Σtax − Σrefunds ± adjustments (chargebacks, holds).
+  - amount = Σpayments − Σfees (GST-inclusive) − Σrefunds ± adjustments (chargebacks, holds). Tax is already inside the fee: do not subtract it again (ADR-004).
   - Has a UTR.
 - **Bank line:** one row of the bank statement.
   - Has a credit/debit, value date and narration.
   - The narration is free text and may contain the UTR, possibly garbled.
-- **Match group:** linked records across sources that reconcile exactly to the paise.
+- **Match group:** linked records across sources that reconcile exactly to the paise. Two kinds (ADR-005): `order` (ledger ↔ payments/refunds) and `payout` (settlement ↔ bank line). A record sits in at most one accepted group.
 - **Exception:** a record rules couldn't match. It carries a reason code.
 - **Business date:** always IST (Asia/Kolkata). Razorpay timestamps are Unix epoch seconds.
 
@@ -146,3 +147,6 @@ ziro/
 | Date | Prompt | Done | Next | Open issues |
 |---|---|---|---|---|
 | — | P0 | Project brain added | P1 scaffold | — |
+| 2026-10-22 | P1 | npm-workspaces scaffold: `@ziro/{core,datagen,evals}` + `apps/{api,web}`; strict ESM tsconfig + ESLint 10/Prettier; docker-compose (pg16, redis7, healthchecks); `.env.example`; zod config with `rzp_live_` boot guard (tested); `GET /health` (db+redis); CI YAML; ADR-001..003. lint, typecheck, test all green (21 tests). | P2: money, domain, DB schema | (1) `/health` 200 and compose were verified in P2 (Docker was started). (2) `npm audit`: 4 moderate, dev-only (old esbuild nested in drizzle-kit 0.31); do not `audit fix --force`. (3) `ZIRO_PROMPTS.md` was not in the repo root, so nothing moved to `docs/`. |
+| 2026-10-22 | P2 | **Money** (`@ziro/core/money`): branded-bigint `Paise` (int64 range), strict `parseRupees` (Indian grouping only), `formatRupees`, `add/sub/sum`, `percentOfHalfUp`, `gstOnFee`; ESLint bans floats in `money/`; fast-check properties + 20 hand-computed fee/GST rows. **Domain** (`@ziro/core/domain`): zod schemas + types for the 12 entities, `ReasonCode` == §8 (verified against this file), strict LLM-facing `AgentProposal`. **DB** (`apps/api`): 14 Drizzle tables, `0000_init` + custom `0001_audit_append_only` (trigger blocks UPDATE/DELETE/TRUNCATE), accepted-match uniqueness via composite FK + 5 partial unique indexes, sha-256 and money CHECKs; ER diagram in ARCHITECTURE.md; ADR-004..006; §7 fee/settlement formula corrected (fee is GST-inclusive). Migrations applied to a fresh **Postgres 16.15** via `npm run db:migrate`, and the audit trigger proven there. lint, typecheck, test green (322 tests: 173 core, 147 api). | P3: datagen (done, next row), then normalize | (1) Compose Postgres now maps host port **5433**: a native PostgreSQL 18 service already owns 5432 on the author's machine. (2) `audit_events` trigger stops the app, not a table owner: use a non-owner app role in prod (ADR-005). (3) Nothing writes audit rows yet; that is the audit service's job. (4) Razorpay's behaviour on exact .5 fee/GST ties is undocumented: confirm against test-mode data (ADR-004). (5) Source `raw` jsonb and `created_at` columns have no domain-schema counterpart yet; the ingest mappers decide. |
+| 2026-10-22 | P3 | **`@ziro/datagen`**: `npm run datagen -- --seed N --preset demo\|eval\|stress --out data/<name>` writes `ledger.csv`, `razorpay_{orders,payments,refunds,settlements}.json`, `settlement_recon.json`, `bank_statement.csv`, `truth.json`. Razorpay shapes copied from the docs (URLs in code; strict zod fidelity schemas). Normal world: card/UPI/netbanking, per-method fee rates, GST-inclusive fees, T+2 business-day batching, IST. 11 anomalies at exact-count configurable rates (default table in the package README), same-amount decoys, 8 labelled prompt-injection styles. Byte-identical per seed; every settlement equals its composition to the paise; counts re-counted from raw files; truth covers 100% of records. Mutation-tested (13/13 planted bugs caught). Full stress preset: 100,000 ledger rows + 99,755 bank lines in 13 s / 741 MB, all invariants verified at that size (`npm run test:stress -w @ziro/datagen`). ADR-007. lint, typecheck, test green (427 tests + 1 gated: 173 core, 147 api, 106 datagen). | P4: normalize (IST dates, UTR extraction, ref cleaning) evaluated against this truth | (1) Added `razorpay_orders.json` (receipt lives on the Order); duplicates are checkout retries (receipt `<ref>-R1`). (2) Assumptions the docs do not settle are listed in the package README (refund returns no fee, bank-style UTRs, chargeback as a debit adjustment, tie rounding, Saturday = holiday). (3) `bank.debitShareBps` added after the first stress run drained the account (debits were 1.7-2.3x credits in every preset); now an invariant. (4) Ledger `order_date` and bank `value_date` are `DD-MM-YYYY` / `DD/MM/YYYY`: normalize must parse them. (5) `data/demo` and `data/eval` exist locally (git-ignored). |

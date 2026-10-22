@@ -1,0 +1,213 @@
+# Architecture Decision Records
+
+Notable decisions, newest last. Each: context, decision, alternatives, consequences.
+
+---
+
+## ADR-001: Monorepo with a framework-free core package
+
+**Status:** accepted
+
+**Context.** Ziro's value is the matching and verification logic: money arithmetic, normalization,
+the T1–T4 waterfall, the verifier that can reject the agent. That logic must be provably correct,
+property-testable, and reusable by the API, the data generator and the eval runner. Frameworks
+(NestJS, Drizzle, BullMQ) change on their own schedule and must not leak into it.
+
+**Decision.** One npm-workspaces monorepo (`apps/*`, `packages/*`, one root `package-lock.json`).
+`@ziro/core` is pure TypeScript: no framework, no database, no HTTP, no filesystem. It is enforced,
+not just intended: `eslint.config.js` forbids those imports under `packages/core/src`. Apps and the
+other packages depend on core with `"*"` (npm has no `workspace:` protocol).
+
+**Alternatives.**
+
+- _A single Nest app with a `matcher/` folder._ Simpler, but nothing stops IO or framework code
+  creeping into the matcher, and datagen/evals would have to import the whole API.
+- _Polyrepo._ Cross-repo versioning overhead for one person; the git history is the evidence of
+  fresh work and is easier to read in one place.
+- _Nx / Turborepo._ More power than needed; plain workspaces plus TypeScript project references
+  cover build ordering.
+
+**Consequences.**
+
+- Libraries build to `dist/` via `tsc -b` (project references). Anything that type-checks, lints or
+  tests against `@ziro/*` runs `npm run build:libs` first; the root scripts do this.
+- Core stays unit-testable with no mocks, and fast-check property tests run in milliseconds.
+- One lockfile, one install, one `npm ci` in CI and Docker.
+
+---
+
+## ADR-002: ESM everywhere, Vitest everywhere
+
+**Status:** accepted (amends CLAUDE.md §5, which listed Jest for `apps/api`)
+
+**Context.** NestJS 12 ships ESM-only packages. Its generator now produces ESM projects with Vitest
+by default and CommonJS projects with Jest. Jest can load the ESM-only packages only on Node 24.9+
+and needs extra ESM configuration.
+
+**Decision.** Every package is `"type": "module"` with `module`/`moduleResolution: nodenext`,
+ES2023 and `.js` suffixes on relative imports. Vitest is the single test runner (the apps/web Vite
+build already depends on Vite 8). Decorator metadata is emitted by the same Vite 8 pipeline from
+`experimentalDecorators` / `emitDecoratorMetadata` in `apps/api/tsconfig.json`; a health-controller
+test that relies on constructor injection guards this.
+
+**Alternatives.**
+
+- _CommonJS API + Jest._ Works through `require(esm)` on Node 24, but mixes two module systems
+  across the workspaces and two test runners across the repo.
+- _ESM API + Jest._ Possible, but needs `--experimental-vm-modules` style configuration for no gain.
+
+**Consequences.** One runner and one config style for core property tests, API tests and evals. The
+price is the `.js`-suffix import convention and relying on Vite's decorator-metadata handling; if it
+ever regresses, `@swc/core` with `unplugin-swc` is the fallback.
+
+---
+
+## ADR-003: TypeScript pinned to 6.0.x
+
+**Status:** accepted
+
+**Context.** The `latest` tag of `typescript` is 7.x. `typescript-eslint` 8.72 supports
+`>=4.8.4 <6.1.0`, and Nest CLI 12 bundles `typescript ~6.0.2`.
+
+**Decision.** Pin `typescript` to `~6.0.3` at the repo root. Revisit when `typescript-eslint` and
+the Nest CLI both declare TypeScript 7 support.
+
+**Alternatives.** Use 7.x and lose type-aware linting or accept unsupported-peer warnings.
+
+**Consequences.** All packages compile with one compiler version. TypeScript 6 defaults `types` to
+`[]`, so each tsconfig lists its ambient types explicitly (`node`, `vite/client`).
+
+---
+
+## ADR-004: Razorpay `fee` is GST-inclusive
+
+**Status:** accepted (corrects the settlement formula in CLAUDE.md §7)
+
+**Context.** CLAUDE.md §7 wrote a settlement as `Σpayments − Σfees − Σtax − Σrefunds ± adjustments`.
+Razorpay's payment docs define `fee` as "Fee (including GST) charged by Razorpay" and `tax` as "GST
+charged for the payment". The doc samples agree: amount 2100, fee 50, tax 8 is a base fee of 42
+(2% of 2100) plus 18% GST (7.56, rounded to 8). The settlement recon samples show
+`credit = amount − fee` with no separate tax term. Subtracting tax again would double-count it.
+
+**Decision.** Model `fee` as GST-inclusive and `tax` as the GST portion of it, in the domain schemas
+and the database (`rzp_payments.fee_paise`, `tax_paise`, `CHECK tax <= fee`). The base fee is
+`fee − tax`, and the verifier's fee check is `tax == gstOnFee(fee − tax)`. `gstOnFee` takes the
+pre-GST base fee. Tax is not forced to equal 18% of anything: some documented samples show a fee
+with tax 0, so judging that is the verifier's job (`FEE_OVERCHARGE`), not a schema constraint.
+Settlement-level `fees` and `tax` are stored but informational (both 0 for a normal settlement per
+the docs); the real accounting is in `settlement_items`.
+
+**Alternatives.** Keep §7 as written and treat `fee` as GST-exclusive. Rejected: it contradicts the
+documented entity and would make every payment look like a fee overcharge.
+
+**Consequences.** Rounding is half-up to the paise, which is our explicit convention. Razorpay's
+behaviour on exact .5 ties is undocumented, so tie cases should be confirmed against test-mode data
+when the Razorpay integration lands.
+
+---
+
+## ADR-005: Database invariants — match groups and the append-only audit log
+
+**Status:** accepted
+
+**Context.** "Every paisa accounted for" needs the database, not only the code, to refuse bad
+states: a record matched twice, an "accepted" match that does not reconcile, a rewritten audit trail.
+
+**Decision.**
+
+- **Two kinds of match group.** `order` groups tie ledger entries to the payments and refunds that
+  settle them; `payout` groups tie a settlement to the bank line it landed as. Which payments a
+  settlement contains comes from `settlement_items` (Razorpay's own recon data), not from a match.
+  So a payment can be in an accepted `order` group while its settlement is in an accepted `payout`
+  group, and the rule "a record sits in at most one accepted group" still holds.
+- **How that rule is enforced.** `match_links` has one nullable foreign key per record type (real
+  referential integrity), a `CHECK` that exactly one is set, and `group_status` mirrored from the
+  group through a composite foreign key `(group_id, group_status) → match_groups(id, status)` with
+  `ON UPDATE CASCADE`. One partial unique index per record type, `WHERE group_status = 'accepted'`,
+  then says "at most one accepted group". No trigger is needed, and it keeps holding when a group
+  is promoted or reversed.
+- **Accepted means reconciled.** `CHECK (status <> 'accepted' OR residual_paise = 0)`: the verifier
+  must have computed a zero residual before a group can be accepted.
+- **Audit log.** `audit_events` has a `BEFORE UPDATE OR DELETE` row trigger and a `BEFORE TRUNCATE`
+  statement trigger that raise `restrict_violation`. Runs are never hard-deleted: every `run_id`
+  foreign key is `ON DELETE RESTRICT`, with no cascades anywhere.
+
+**Alternatives.** A polymorphic `(record_type, record_id)` link (simpler, no foreign keys, so no
+referential integrity); one group spanning the whole ledger-to-bank chain (a payment could then never
+also take part in a settlement-level match); a trigger to enforce uniqueness (more moving parts).
+
+**Consequences.** The audit trigger stops the application, not a table owner or superuser, who can
+still drop it. In production the app must connect as a role that does not own the tables; granting
+it only `INSERT, SELECT` on `audit_events` is a second layer to add with the deploy work. Writing
+the audit rows is the application's job and is not part of this schema task.
+
+---
+
+## ADR-006: Database tests run on in-process Postgres (PGlite)
+
+**Status:** accepted
+
+**Context.** Migration and constraint tests need a real Postgres. Requiring Docker for every
+`npm test` (and a service container in CI) makes the fast inner loop fragile.
+
+**Decision.** `apps/api` tests use `@electric-sql/pglite` (Postgres compiled to WASM, currently
+18.x) and apply the project's real migrations through Drizzle's own migrator, so a fresh database is
+built exactly as in production. Production targets Postgres 16 (docker compose), so each schema
+change is also applied once with `npm run db:migrate` against the compose database.
+
+**Alternatives.** Testcontainers or a CI service container (real 16, but needs Docker everywhere);
+mocking the database (would prove nothing about constraints).
+
+**Consequences.** The suite needs no infrastructure. Differences between PGlite and 16 do not matter
+for what is used here (triggers, partial unique indexes, composite foreign keys, check constraints),
+and the first version of this schema was verified on both. Each DB test file boots its own database
+(a few seconds); keep the DB suite focused.
+
+---
+
+## ADR-007: Ground-truth semantics for synthetic data
+
+**Status:** accepted
+
+**Context.** Every published number is measured against `truth.json`, so what it asserts must be
+unambiguous, and the data it describes must be able to embarrass a matcher. Several of those
+choices are not obvious from the Razorpay docs or from the brief.
+
+**Decision.**
+
+- **Reason codes label causes, not structure.** `reasonCodes` on a record hold only _injected_
+  anomalies. Batching and fee deduction happen in every settlement and are handled by rules, so they
+  sit on payout groups as `structural`; counting them per record would dilute exception-classification
+  accuracy. An anomaly lists the records whose normal 1:1 matching it impedes (its "cluster"), each
+  with a role.
+- **`groupId: null` is an answer.** A cash order, a payment-link payment, an unrefunded duplicate, a
+  failed attempt, a non-Razorpay bank line and a decoy credit have no true group. Groups follow
+  ADR-005 (`order` and `payout`), and each carries its exact-paise composition so the verifier's
+  residual definition can be checked against ground truth.
+- **Duplicates are checkout retries.** The Orders docs say an order stops accepting payments once
+  paid and that a receipt must be unique, so a duplicate is a second order (receipt `<ref>-R1`) that
+  was also paid. This needs `razorpay_orders.json`, which also carries the `receipt` the Payment
+  entity lacks.
+- **`TIMEZONE_DATE_SHIFT` crosses IST midnight.** A plain UTC-to-IST conversion only changes the date
+  for 00:00–05:29 IST, not 23:30–23:59. The anomaly is an order placed 23:30–23:59 and paid after
+  midnight, so the ledger says D and Razorpay and the bank imply D+1.
+- **Ambiguity comes from decoys.** A same-amount credit from another sender is planted near a
+  settlement with a damaged UTR, which is simpler and more controllable than forcing two settlements
+  to net identically.
+- **Counts are exact, and independently re-counted.** Anomalies are allocated by shuffled selection
+  with `⌊bps × pool / 10 000 + ½⌋` records each, never per-record coin flips. Tests re-count them
+  from the raw output files with separate logic.
+- **The generator owns its own time maths.** IST and calendar arithmetic is integer-only and
+  deliberately not shared with the future `@ziro/core` normalizer, so a bug in either shows up in the
+  eval instead of cancelling out.
+- **Bank debits are bounded by income** (`debitShareBps`, 65%). Drawing debits from fixed size tiers
+  made them 1.7 to 2.3 times the credits in every preset and drained the account at stress volume.
+
+**Alternatives.** Labelling structural reasons on every record (simpler, but it makes ~every record
+"have a reason"); a per-record probability for each anomaly (the counts then vary run to run, and so
+does every metric); sharing the normalizer's date code with the generator (one bug would produce wrong
+data and a matching wrong parser).
+
+**Consequences.** Truth is more elaborate than a flat label per record, and the eval must read
+`groups`, `anomalies` and `records` together. In return, a metric such as "exception classification
+accuracy" or "false auto-accept rate" is defined by the file, not by interpretation.
