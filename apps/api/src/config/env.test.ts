@@ -257,3 +257,51 @@ describe('AUTO_ACCEPT_MIN_CONFIDENCE', () => {
     expect(issuesOf(withValue(text)).join(' ')).toContain('AUTO_ACCEPT_MIN_CONFIDENCE');
   });
 });
+
+describe('the public demo and logging settings', () => {
+  it('default to 5 live runs an hour per visitor, 30 live and 200 runs overall, 20 runs per visitor, JSON logs', () => {
+    expect(loadEnv(validEnv())).toMatchObject({
+      DEMO_LIVE_RUNS_PER_IP_HOUR: 5,
+      DEMO_LIVE_RUNS_PER_HOUR: 30,
+      DEMO_RUNS_PER_IP_HOUR: 20,
+      DEMO_RUNS_PER_HOUR: 200,
+      LOG_FORMAT: 'json',
+      LOG_LEVEL: 'info',
+    });
+    expect(loadEnv(validEnv()).GCP_PROJECT_ID).toBeUndefined();
+  });
+
+  it('read what is set, and treat blank as not set', () => {
+    expect(
+      loadEnv({
+        ...validEnv(),
+        DEMO_LIVE_RUNS_PER_IP_HOUR: '0',
+        DEMO_RUNS_PER_HOUR: '1000',
+        LOG_FORMAT: 'gcp',
+        LOG_LEVEL: 'warn',
+        GCP_PROJECT_ID: 'my-proj',
+      }),
+    ).toMatchObject({
+      DEMO_LIVE_RUNS_PER_IP_HOUR: 0,
+      DEMO_RUNS_PER_HOUR: 1000,
+      LOG_FORMAT: 'gcp',
+      LOG_LEVEL: 'warn',
+      GCP_PROJECT_ID: 'my-proj',
+    });
+    expect(loadEnv({ ...validEnv(), LOG_FORMAT: '', DEMO_RUNS_PER_IP_HOUR: '' })).toMatchObject({
+      LOG_FORMAT: 'json',
+      DEMO_RUNS_PER_IP_HOUR: 20,
+    });
+  });
+
+  it.each([
+    ['DEMO_LIVE_RUNS_PER_IP_HOUR', '-1'],
+    ['DEMO_LIVE_RUNS_PER_IP_HOUR', '5.5'],
+    ['DEMO_LIVE_RUNS_PER_IP_HOUR', '1001'],
+    ['DEMO_RUNS_PER_HOUR', '10001'],
+    ['LOG_FORMAT', 'pretty'],
+    ['LOG_LEVEL', 'verbose'],
+  ])('refuse %s=%s, naming it', (name, value) => {
+    expect(issuesOf({ ...validEnv(), [name]: value }).join('\n')).toContain(name);
+  });
+});

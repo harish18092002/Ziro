@@ -330,3 +330,7 @@ progress {
 .banner.info {
   border-color: var(--accent);
 }
+
+.reset {
+  margin-left: auto;
+}

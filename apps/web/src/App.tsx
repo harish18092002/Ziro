@@ -90,7 +90,7 @@ function Home() {
           </button>
           {offer?.featured.eval ? (
             <a className="button" href={linkTo(offer.featured.eval)}>
-              View eval run (500 orders, precomputed)
+              Replay eval run (500 orders, free, no key needed)
             </a>
           ) : (
             <span className="button disabled">Eval run (500 orders) is still being prepared</span>
@@ -136,6 +136,11 @@ function Home() {
             The free demo's agent is a <b>scripted baseline, not a language model</b>. It reads
             records through the same read-only tools a model would, and everything after it (the
             checker, the review queue, the audit trail) is the real code.
+          </li>
+          <li>
+            The replay is a <b>precomputed, read-only</b> run of 500 synthetic orders. Opening it
+            costs nothing and works with no API key. “Reset demo” (inside a run) puts your run away
+            and starts a fresh one.
           </li>
           <li>
             Two proposals in each demo run are <b>planted on purpose</b>, confident and wrong, so

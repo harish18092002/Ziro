@@ -7,6 +7,7 @@
 // model is opt-in, only when the server has a key and budget.
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -124,6 +125,54 @@ export class DemoService implements OnApplicationBootstrap {
         }
       }
     })();
+  }
+
+  /**
+   * Builds each featured run that is not READY yet and waits until it is, for the deploy job: the service then
+   * never has to build a 500-order run while a visitor waits. A run left half-built by an earlier attempt does
+   * not count as present. Safe to run again: it builds nothing that exists.
+   */
+  async seedFeatured(timeoutMs = 10 * 60_000): Promise<{ built: string[]; existing: string[] }> {
+    const built: string[] = [];
+    const existing: string[] = [];
+    for (const preset of ['demo', 'eval'] as const) {
+      if ((await this.featured(preset, false)) !== null) {
+        existing.push(preset);
+        continue;
+      }
+      const runId = await this.start({ preset, agent: 'scripted', featured: true });
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        const { stage, error } = await this.progress(runId);
+        if (stage === 'ready') break;
+        if (stage === 'failed')
+          throw new Error(`the featured ${preset} run failed: ${error ?? 'no reason'}`);
+        if (Date.now() > deadline)
+          throw new Error(`the featured ${preset} run was still ${stage} after ${timeoutMs} ms`);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      built.push(preset);
+    }
+    return { built, existing };
+  }
+
+  /**
+   * "Reset demo": archives the run a visitor was working in and starts a fresh scripted one. Rows are kept
+   * (the audit trail is append-only, so a run is archived, never deleted); an archived run is still readable
+   * but can no longer be approved or rejected. It acts on the one run named, so nobody can reset anyone
+   * else's. The featured runs are read-only already and cannot be reset.
+   */
+  async reset(runId: string): Promise<{ archived: string; runId: string }> {
+    if (!this.env.DEMO_MODE) throw new ForbiddenException('reset is only available in DEMO_MODE');
+    const [run] = await this.db.select().from(reconRuns).where(eq(reconRuns.id, runId));
+    if (run === undefined) throw new NotFoundException('no such run');
+    const config = run.config as { demo?: unknown; featured?: unknown; archivedAt?: unknown };
+    if (config.demo === undefined) throw new ForbiddenException('only a demo run can be reset');
+    if (config.featured !== undefined)
+      throw new ForbiddenException('the featured runs are read-only and cannot be reset');
+    if (typeof config.archivedAt !== 'string')
+      await this.patchConfig(runId, { archivedAt: new Date().toISOString() });
+    return { archived: runId, runId: await this.start({ preset: 'demo', agent: 'scripted' }) };
   }
 
   // --- what the page may offer --------------------------------------------------------------------------

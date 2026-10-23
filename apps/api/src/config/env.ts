@@ -147,6 +147,23 @@ export const envSchema = z
     AGENT_WORKER_ENABLED: optionalFlag('true'),
     // Investigations running at once. Each holds one model request open at a time.
     AGENT_CONCURRENCY: boundedInt('4', 1, 32),
+    // Public demo limits (DEMO_MODE). Per client address, per rolling hour; 0 refuses all. The limiter keeps
+    // its counts in this process, so they are exact only with one instance (docs/DEPLOY.md: max-instances 1).
+    DEMO_LIVE_RUNS_PER_IP_HOUR: boundedInt('5', 0, 1000),
+    DEMO_LIVE_RUNS_PER_HOUR: boundedInt('30', 0, 10_000),
+    DEMO_RUNS_PER_IP_HOUR: boundedInt('20', 0, 1000),
+    DEMO_RUNS_PER_HOUR: boundedInt('200', 0, 10_000),
+    // json = pino's default fields; gcp = Cloud Logging's (severity, message, trace).
+    LOG_FORMAT: z.preprocess(
+      (value) => blankToUndefined(value) ?? 'json',
+      z.enum(['json', 'gcp'], { error: 'must be "json" or "gcp"' }),
+    ),
+    LOG_LEVEL: z.preprocess(
+      (value) => blankToUndefined(value) ?? 'info',
+      z.enum(['debug', 'info', 'warn', 'error'], { error: 'must be debug, info, warn or error' }),
+    ),
+    // Used only to build the trace field of a gcp log line.
+    GCP_PROJECT_ID: optionalSecret,
   })
   .superRefine((env, ctx) => {
     if (env.RAZORPAY_SOURCE !== 'testmode') return;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { get, type Overview, type Progress } from './api';
+import { ApiError, get, type Overview, type Progress, post } from './api';
 import { AuditTab } from './Audit';
 import { ExceptionsTab } from './Exceptions';
 import {
@@ -45,11 +45,23 @@ export function RunPage({ route }: { route: RunRoute }) {
             {TAB_NAMES[t]}
           </a>
         ))}
+        {overview.data && overview.data.run.featured === null ? (
+          <ResetDemo runId={route.runId} />
+        ) : null}
       </nav>
       {route.tab === 'summary' && (
         <Summary runId={route.runId} o={overview.data} error={overview.error} />
       )}
-      {route.tab === 'exceptions' && <ExceptionsTab runId={route.runId} selected={route.itemId} />}
+      {route.tab === 'exceptions' && (
+        <ExceptionsTab
+          runId={route.runId}
+          selected={route.itemId}
+          readOnly={
+            overview.data !== null &&
+            (overview.data.run.featured !== null || overview.data.run.archived)
+          }
+        />
+      )}
       {route.tab === 'audit' && <AuditTab runId={route.runId} selected={route.itemId} />}
       {route.tab === 'downloads' && <Downloads runId={route.runId} />}
     </>
@@ -110,6 +122,31 @@ function Working({ p }: { p: Progress }) {
   );
 }
 
+/** Archives this run and starts a fresh scripted one; the server keeps the old rows (the audit trail is append-only). */
+function ResetDemo({ runId }: { runId: string }) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const reset = async () => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const { runId: fresh } = await post<{ runId: string }>('/demo/reset', { runId });
+      window.location.hash = linkTo(fresh);
+    } catch (e) {
+      setBusy(false);
+      setProblem(e instanceof ApiError || e instanceof Error ? e.message : String(e));
+    }
+  };
+  return (
+    <span className="reset">
+      <button disabled={busy} onClick={() => void reset()}>
+        {busy ? 'Resetting…' : 'Reset demo'}
+      </button>
+      {problem ? <span className="bad"> {problem}</span> : null}
+    </span>
+  );
+}
+
 /**
  * What a person must know before reading any number on this run: Razorpay did not return everything
  * (PARTIAL), the agent stopped early, or the demo broke things on purpose. Shown on every tab.
@@ -118,6 +155,18 @@ function RunBanners({ o, runId }: { o: Overview; runId: string }) {
   const handled = failureSentence(o.failures);
   return (
     <>
+      {o.run.featured !== null ? (
+        <div className="banner info" role="status">
+          <b>Replay.</b> This is a precomputed run, shown read-only: it costs nothing and needs no
+          API key. <a href="#/">Start your own run</a> to approve or reject proposals.
+        </div>
+      ) : null}
+      {o.run.archived ? (
+        <div className="banner warn" role="status">
+          <b>Archived.</b> This run was put away by “Reset demo”. You can still read it, but it can
+          no longer be approved or rejected. <a href="#/">Start a new run</a>.
+        </div>
+      ) : null}
       {o.run.partial ? (
         <div className="banner warn" role="alert">
           <b>PARTIAL RUN.</b> Razorpay did not return everything. What arrived was imported; this is

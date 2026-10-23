@@ -583,6 +583,24 @@ BullMQ worker on local Redis), `ingest/razorpay-partial.test.ts`, `razorpay/test
 `ingest/ingest.http.test.ts`, `demo/chaos-runner.test.ts`, `demo/demo.chaos.test.ts`, and
 `eval/eval.pipeline.test.ts`.
 
+## Deployment
+
+Full steps and every command: [DEPLOY.md](DEPLOY.md). Reasons: ADR-017.
+
+```
+Dockerfile        build (npm ci, npm run build) -> deps (npm ci --omit=dev --omit=optional -w @ziro/api) -> runtime (user node)
+deploy/demo.env   the non-secret settings of the public demo: one file for docker-local.sh and deploy.sh
+scripts/          docker-local.sh (rehearse), setup-gcp.sh (once), deploy.sh (every release), smoke.mjs (the stranger's path)
+apps/api/src/scripts/prepare.ts   the deploy job: migrate -> grant the app role -> build the featured runs
+apps/api/src/demo/demo-mode.guard.ts   the public demo's allowlist
+```
+
+- **Probes:** `GET /health` (database and Redis; the startup probe) and `GET /health/live` (the process only;
+  the liveness probe and the image's `HEALTHCHECK`).
+- **Logs:** `LOG_FORMAT=gcp` writes `severity`, `message`, `time` and `logging.googleapis.com/trace`;
+  `common/logging.ts`.
+- **Limits, per client address and overall, are in `deploy/demo.env`** and enforced in `demo/demo.module.ts`.
+
 ## TODO
 
 - Persist the rule matcher's groups and exceptions (P7) through `writeGroup`.

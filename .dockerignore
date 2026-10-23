@@ -1,0 +1,21 @@
+# Everything the image builds from source or installs for itself stays out of the build context.
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+**/coverage
+.vite
+
+# Secrets and local config: never in an image. deploy/demo.env holds NO secrets and is read by the scripts.
+.env
+.env.*
+!.env.example
+
+# Data is generated in-process at runtime; docs, CI and tooling are not part of the app.
+data
+docs
+.github
+.claude
+.git
+EVALS.md
+packages/evals/results
+*.log

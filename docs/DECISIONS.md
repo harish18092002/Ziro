@@ -825,3 +825,63 @@ Razorpay fails: exactly the plausible-but-fake number this project exists to avo
   outage.
 - A 400-class Razorpay error on one entity is now a listed gap, not a failed import. It is visible and loud,
   but the run proceeds.
+
+---
+
+## ADR-017: Deployment — one image, a public demo that can only do three things, and a job that migrates first
+
+**Status:** accepted
+
+**Context.** The Razorpay bar is a live URL a stranger can open and use with no login, at a cost and risk the
+author controls. That makes the API a public surface: until now its import, run-creation, matching and
+investigate endpoints were unauthenticated and some spend money, the featured runs were shared and mutable,
+`drizzle-kit` (a dev dependency) was the only way to migrate, and the audit trail's append-only guarantee
+relied on a trigger that the owner role can switch off (ADR-005).
+
+**Decision.**
+
+- **One image, three roles.** A multi-stage Dockerfile (build, production-only dependencies, runtime) runs as
+  the unprivileged `node` user and serves the API and the built console. The Agent SDK's native binary
+  (about 285 MB, harness B, an eval tool) is not installed (`--omit=optional`). The same image is the service
+  and the deploy job.
+- **Default-deny in `DEMO_MODE`.** A global guard allows reads, `POST /demo/runs`, `POST /demo/reset`, and
+  approve or reject on a proposal. Everything that creates work, accepts an upload or spends money is 403, and
+  a route added later is closed until someone opens it. Featured runs are read-only to everyone.
+- **Limits.** Live runs 5 an hour per visitor and 30 overall; scripted runs 20 and 200; a global daily model
+  budget summed from the database. The limiters are asked first and counted only when all agree, so a refusal by
+  one does not spend another's allowance. They are in-process, which is why the service runs at most one
+  instance.
+- **Reset demo archives, it does not delete.** It marks the one run named as archived (readable, no longer
+  reviewable) and starts a fresh scripted run. Rows stay, because `audit_events` is append-only; nobody can
+  reset anyone else's run, and the featured runs cannot be reset.
+- **A job migrates before the service changes.** `scripts/prepare` runs `drizzle-orm`'s migrator on Neon's
+  direct (non-pooled) connection under a session advisory lock, grants the application role its privileges,
+  and builds the featured runs. The service deploys only if it succeeds.
+- **Least privilege, enforced every deploy.** The service connects as a role with select, insert and update
+  only, and no update on the audit tables; it does not own the tables, so it cannot disable the trigger. The
+  job grants again after every migration, so a table added later is covered at once. This is ADR-005's
+  recommendation made automatic and tested on a real Postgres.
+- **Cloud Run settings follow from how the app works.** CPU always allocated, because a demo run continues
+  after the request that started it; one instance at most; the queue worker off, because BullMQ polls Redis
+  while idle and Upstash bills per command; secrets pinned to a version, read at instance start; a startup
+  probe on `/health` (database and Redis) and a liveness probe on `/health/live` (the process only), so a
+  database outage restarts nothing.
+- **Logs are Cloud Logging's own fields:** `severity`, `message`, `time` and the trace, 4xx as warnings and
+  5xx as errors, probes not logged, request headers and bodies never logged.
+
+**Alternatives.** Cloud Build: avoids a local Docker build but adds an API and a source-upload step that must
+not involve git; building locally is simpler to reason about. A shared `DEMO_MODE` check inside each controller:
+one forgotten route is a hole; an allowlist cannot forget. Deleting runs on reset: needs the owner role to
+disable the audit trigger, which is the one thing the design promises nobody does. Redis-backed rate limits:
+needed only if there is more than one instance. Min instances 1 always: about $49 a month for an hour of
+benefit a week; the script switches it on for the days that matter.
+
+**Consequences.**
+
+- The first visitor after an idle period waits for a cold start unless `--min-instances 1` is set.
+- Storage grows with every run a stranger starts; the rate limits bound it, nothing reclaims it.
+- A migration must stay compatible with the revision still serving, since the job runs before the swap.
+- A pg deprecation warning ("client.query() while already executing a query") appears: some tool and snapshot
+  code runs parallel queries on one transaction's connection. It works on pg 8; pg 9 will refuse it.
+- Verified here: the image, the job, the service as the restricted role and the stranger's path against the
+  compose Postgres and Redis. **Not verified: any real Google Cloud, Neon or Upstash account.**

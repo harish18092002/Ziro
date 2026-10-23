@@ -84,6 +84,8 @@ export interface Overview {
     status: string;
     preset: string | null;
     featured: string | null;
+    /** Put away by "Reset demo": readable, no longer reviewable. */
+    archived: boolean;
     asOf: string;
     partial: boolean;
     gaps: Gap[];

@@ -8,7 +8,13 @@
 // Every state change is one transaction with its audit steps. Approval re-verifies against the data
 // as it is NOW, so a proposal that went stale (a record was matched elsewhere since) is refused and
 // the refusal is recorded, never papered over.
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { Actor, RecordRef } from '@ziro/core/domain';
 import { paise } from '@ziro/core/money';
 import {
@@ -385,6 +391,30 @@ export class ReviewService implements ProposalPipeline {
     return { proposal, exception };
   }
 
+  /**
+   * A featured run is a replay everyone sees, so on a public demo nobody may change it; an archived run was
+   * put away by a reset. Both are refused before anything is read or written about the proposal.
+   */
+  private async assertWritable(tx: Executor, runId: string): Promise<void> {
+    const [run] = await tx
+      .select({ config: reconRuns.config })
+      .from(reconRuns)
+      .where(eq(reconRuns.id, runId));
+    const config = (run?.config ?? {}) as { featured?: unknown; archivedAt?: unknown };
+    if (this.settings.DEMO_MODE && typeof config.featured === 'string') {
+      throw new ForbiddenException({
+        error: 'read_only',
+        message: 'the featured runs are read-only replays; start your own run to review proposals',
+      });
+    }
+    if (typeof config.archivedAt === 'string') {
+      throw new ConflictException({
+        error: 'archived',
+        message: 'this run was archived by a reset; start a new one',
+      });
+    }
+  }
+
   async approve(proposalId: string, input: ApproveInput): Promise<Decision> {
     const who: Decider = {
       kind: 'human',
@@ -397,6 +427,7 @@ export class ReviewService implements ProposalPipeline {
     try {
       outcome = await this.db.transaction(async (tx): Promise<Decision | Stale> => {
         const { proposal, exception } = await this.lock(tx, proposalId);
+        await this.assertWritable(tx, proposal.runId);
         if (exception.status !== 'proposed') {
           throw new ConflictException({
             error: 'not_awaiting_review',
@@ -497,6 +528,7 @@ export class ReviewService implements ProposalPipeline {
   async reject(proposalId: string, input: RejectInput): Promise<Decision> {
     return this.db.transaction(async (tx) => {
       const { proposal, exception } = await this.lock(tx, proposalId);
+      await this.assertWritable(tx, proposal.runId);
       if (exception.status !== 'proposed') {
         throw new ConflictException({
           error: 'not_awaiting_review',

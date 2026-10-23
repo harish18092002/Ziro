@@ -395,6 +395,8 @@ export class ReportService {
         source: run.razorpaySource,
         preset: (pipeline.demo?.['preset'] as string | undefined) ?? null,
         featured: (run.config as { featured?: string }).featured ?? null,
+        // Put away by "Reset demo": still readable, no longer reviewable.
+        archived: typeof (run.config as { archivedAt?: unknown }).archivedAt === 'string',
         stage: (pipeline.pipeline?.['stage'] as string | undefined) ?? null,
         // True when the last Razorpay import could not get everything: the exceptions that follow from
         // what is missing (a ledger entry with "no payment") may be artefacts of the gap.

@@ -65,3 +65,28 @@ describe('withTimeout', () => {
     );
   });
 });
+
+describe('GET /health/live', () => {
+  it('is 200 whatever the database and redis are doing, since it looks at neither', async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [HealthController],
+      providers: [
+        HealthService,
+        { provide: DB_PROBE, useValue: down },
+        { provide: REDIS_PROBE, useValue: down },
+      ],
+    }).compile();
+    const app = moduleRef.createNestApplication();
+    await app.init();
+    try {
+      const server = app.getHttpServer() as Server;
+      const live = await request(server).get('/health/live');
+      expect(live.status).toBe(200);
+      expect(live.body).toEqual({ status: 'ok' });
+      // while the readiness check, on the same app, says it cannot work
+      expect((await request(server).get('/health')).status).toBe(503);
+    } finally {
+      await app.close();
+    }
+  });
+});

@@ -28,7 +28,16 @@ const AUTHOR: Record<string, string> = {
   harness: 'nobody: the system handed this to a person without a conclusion',
 };
 
-export function ExceptionsTab({ runId, selected }: { runId: string; selected: string | null }) {
+export function ExceptionsTab({
+  runId,
+  selected,
+  readOnly,
+}: {
+  runId: string;
+  selected: string | null;
+  /** A featured replay or an archived run: nothing here can be approved or rejected. */
+  readOnly: boolean;
+}) {
   const [filter, setFilter] = useState<Filter>('all');
   const list = useLoad<ExceptionList>(`/runs/${runId}/exceptions?filter=${filter}&limit=200`);
 
@@ -92,7 +101,13 @@ export function ExceptionsTab({ runId, selected }: { runId: string; selected: st
       </section>
       <aside>
         {selected ? (
-          <Detail key={selected} runId={runId} id={selected} onChanged={list.reload} />
+          <Detail
+            key={selected}
+            runId={runId}
+            id={selected}
+            readOnly={readOnly}
+            onChanged={list.reload}
+          />
         ) : (
           <p className="muted">
             Pick an exception to see the records, the agent's reasoning and the checker's verdict.
@@ -120,7 +135,17 @@ function Verdict({ v }: { v: string }) {
   return <span className="pill">{v}</span>;
 }
 
-function Detail({ runId, id, onChanged }: { runId: string; id: string; onChanged: () => void }) {
+function Detail({
+  runId,
+  id,
+  readOnly,
+  onChanged,
+}: {
+  runId: string;
+  id: string;
+  readOnly: boolean;
+  onChanged: () => void;
+}) {
   const d = useLoad<ExceptionDetail>(`/exceptions/${id}`);
   if (d.error) return <p className="bad">{d.error}</p>;
   if (!d.data) return <p className="muted">Loading…</p>;
@@ -153,6 +178,7 @@ function Detail({ runId, id, onChanged }: { runId: string; id: string; onChanged
           runId={runId}
           p={latest}
           decidable={
+            !readOnly &&
             e.status === 'proposed' &&
             latest.review === null &&
             latest.verifier.status !== 'rejected'
@@ -169,6 +195,12 @@ function Detail({ runId, id, onChanged }: { runId: string; id: string; onChanged
             : 'The agent has not investigated this one.'}
         </p>
       )}
+      {readOnly ? (
+        <p className="muted">
+          This run is read-only, so proposals cannot be approved or rejected here. Start your own
+          run to review them.
+        </p>
+      ) : null}
     </div>
   );
 }
