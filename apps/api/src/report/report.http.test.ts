@@ -219,6 +219,7 @@ describe('the downloads', () => {
     ['report.csv', 'text/csv'],
     ['exceptions.csv', 'text/csv'],
     ['journal-entries.csv', 'text/csv'],
+    ['journal-lines.csv', 'text/csv'],
   ])('%s is an attachment of the right type', async (name, type) => {
     const res = await get(`/runs/${runId}/${name}`);
     expect(res.status).toBe(200);
@@ -231,11 +232,11 @@ describe('the downloads', () => {
     const body = (await get(`/runs/${runId}/report.json`)).body as {
       overview: Overview;
       exceptions: unknown[];
-      journalEntries: unknown[];
+      vouchers: unknown[];
     };
     expect(body.overview.sources.ledger.records).toBe(50);
     expect(body.exceptions).toHaveLength(20);
-    expect(body.journalEntries.length).toBeGreaterThan(0);
+    expect(body.vouchers.length).toBeGreaterThan(0);
   });
 
   it('the exceptions CSV has one row per exception and a stable header', async () => {
@@ -245,25 +246,29 @@ describe('the downloads', () => {
     expect(new Set(rows.map((r) => r.length)).size).toBe(1);
   });
 
-  it('the journal CSV is not empty and every entry balances to the paise', async () => {
-    const rows = parseCsv((await get(`/runs/${runId}/journal-entries.csv`)).text);
-    const [header, ...lines] = rows;
+  it('the journal CSV has vouchers in the pair layout, with positive amounts and ISO dates', async () => {
+    const [header, ...lines] = parseCsv((await get(`/runs/${runId}/journal-entries.csv`)).text);
+    expect(header?.join(',')).toBe(
+      'date,voucher_type,voucher_no,debit_ledger,credit_ledger,amount,narration,record_ids,source',
+    );
     expect(lines.length).toBeGreaterThan(0);
-    const at = (name: string) => header?.indexOf(name) ?? -1;
-    const totals = new Map<string, { debit: number; credit: number }>();
     for (const line of lines) {
-      const t = totals.get(line[at('entry')] ?? '') ?? { debit: 0, credit: 0 };
-      t.debit += Math.round(Number(line[at('debit_inr')]) * 100);
-      t.credit += Math.round(Number(line[at('credit_inr')]) * 100);
-      totals.set(line[at('entry')] ?? '', t);
+      expect(line[0]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(['Receipt', 'Journal']).toContain(line[1]);
+      expect(line[3]).not.toBe(line[4]);
+      expect(Number(line[5])).toBeGreaterThan(0);
     }
-    for (const [entry, t] of totals) expect(t.debit, entry).toBe(t.credit);
-    // The planted wrong proposals are refused, so none of them is offered for posting.
-    expect(lines.some((l) => l[at('proposed_by')] === 'planted')).toBe(false);
+    // Nothing here was drafted by the planted wrong proposals: they are refused and never booked.
+    expect(lines.some((l) => (l[6] ?? '').includes('planted'))).toBe(false);
   });
 
   it('no cell in any CSV begins with a character a spreadsheet would run as a formula', async () => {
-    for (const name of ['report.csv', 'exceptions.csv', 'journal-entries.csv']) {
+    for (const name of [
+      'report.csv',
+      'exceptions.csv',
+      'journal-entries.csv',
+      'journal-lines.csv',
+    ]) {
       const rows = parseCsv((await get(`/runs/${runId}/${name}`)).text);
       for (const row of rows)
         for (const cell of row) {

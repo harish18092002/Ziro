@@ -54,7 +54,14 @@ export interface Progress {
   };
 }
 export interface Overview {
-  run: { id: string; status: string; preset: string | null; featured: string | null };
+  run: {
+    id: string;
+    status: string;
+    preset: string | null;
+    featured: string | null;
+    asOf: string;
+  };
+  reconciles: boolean;
   sources: {
     ledger: { records: number; amountPaise: string };
     payments: { records: number; captured: number; capturedPaise: string; feesPaise: string };
@@ -72,7 +79,65 @@ export interface Overview {
     inException: number;
     ignored: number;
     matchRate: number | null;
+    amountPaise: { total: string; matched: string; inException: string; ignored: string };
+    reconciles: boolean;
   }[];
+  resolution: {
+    ruleGroups: number;
+    agentMatchesApprovedByPerson: number;
+    agentExplanationsApprovedByPerson: number;
+    autoAccepted: number;
+    rejectedByPerson: number;
+    dismissed: number;
+    waiting: number;
+  };
+  openExceptions: {
+    asOf: string;
+    count: number;
+    oldestDays: number | null;
+    byAge: { bucket: string; cases: number; stakePaise: string }[];
+  };
+  leakage: {
+    contract: { source: 'run' | 'default'; gstBps: number };
+    assessed: number;
+    notAssessable: number;
+    overchargedCount: number;
+    excessPaise: string;
+    excessBasePaise: string;
+    excessGstPaise: string;
+    undercharged: { count: number; shortfallPaise: string };
+    byMethod: { method: string; assessed: number; overchargedCount: number; excessPaise: string }[];
+    worst: {
+      rzpId: string;
+      method: string;
+      expectedFeePaise: string;
+      actualFeePaise: string;
+      excessPaise: string;
+    }[];
+  };
+  delays: {
+    delayedCount: number;
+    delayedPaise: string;
+    delayed: {
+      rzpId: string;
+      amountPaise: string;
+      dueDate: string | null;
+      settlementDate: string;
+      createdLate: boolean;
+      creditLate: boolean;
+      businessDaysLate: number;
+    }[];
+    overdueCount: number;
+    overduePaise: string;
+    overdue: { rzpId: string; amountPaise: string; expectedBy: string; daysOverdue: number }[];
+  };
+  journal: {
+    vouchers: number;
+    settlementsBooked: number;
+    adjustmentsBooked: number;
+    settlementsNotBooked: { count: number; paise: string };
+    skipped: { rzpId: string; reason: string }[];
+  };
   matching: {
     matchedRecords: number;
     byTier: { label: string; groups: number; records: number; share: number }[];
@@ -115,6 +180,11 @@ export interface ExceptionRow {
   subject: Described | null;
   candidates: number;
   listedForAPerson: boolean;
+  /** Days from the subject record's date to the run's as-of date. */
+  ageDays: number | null;
+  /** The agent's suggested action, blank when it was refused or there is none. */
+  suggestedAction: string | null;
+  nextStep: string;
   proposal: {
     id: string;
     verdict: string;

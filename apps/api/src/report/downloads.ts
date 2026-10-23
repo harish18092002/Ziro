@@ -1,15 +1,12 @@
-// The files a finance person takes away: the run report (JSON and CSV), the exceptions, and the journal
-// entries the agent drafted. They are built from the same reads the console shows, so a download can never
-// disagree with the page. Amounts are plain rupees with two decimals in CSV (a spreadsheet can sum them)
-// and integer-paise strings in JSON. Every text cell goes through `csvCell`, which defuses formulas.
-import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, inArray } from 'drizzle-orm';
-import { z } from 'zod';
-import { DB } from '../db/db.module.js';
-import type { Executor } from '../db/executor.js';
-import { agentProposals, reconExceptions, reviews } from '../db/schema.js';
+// The files a finance person takes away: the run report (JSON and CSV), the exceptions with the next step
+// for each, and the vouchers for the books. They are built from the same reads the console shows, so a
+// download can never disagree with the page. Amounts are plain rupees with two decimals in CSV (a
+// spreadsheet can sum them) and integer-paise strings in JSON. Every text cell goes through `csvCell`,
+// which defuses formulas. The voucher formats are described in ADR-014.
+import { Injectable } from '@nestjs/common';
 import { type Cell, plainRupees, toCsv } from './csv.js';
-import { authorOf, ReportService } from './report.service.js';
+import { ReportService } from './report.service.js';
+import { LINE_HEADER, lineRows, PAIR_HEADER, pairRows, type Voucher } from './tally.js';
 
 const PAGE = 200;
 /** A CSV past this is not something to open in a spreadsheet; the response says how many rows it left out. */
@@ -25,28 +22,25 @@ export interface DownloadFile {
 
 type Items = Awaited<ReturnType<ReportService['exceptions']>>['items'];
 
-// What the agent stored, as it was stored: integer paise as digit strings.
-const storedEntry = z.object({
-  memo: z.string(),
-  lines: z.array(
-    z.object({
-      account: z.string(),
-      debit: z.string().regex(/^\d+$/),
-      credit: z.string().regex(/^\d+$/),
-    }),
-  ),
-});
-
 const rupees = (paiseText: string): string => plainRupees(BigInt(paiseText));
 const percent = (share: number | null): string => (share === null ? '' : (share * 100).toFixed(1));
 const shortId = (id: string): string => id.slice(0, 8);
+const csvFile = (runId: string, name: string, body: string, omitted = 0): DownloadFile => ({
+  filename: `ziro-${shortId(runId)}-${name}.csv`,
+  contentType: 'text/csv; charset=utf-8',
+  body,
+  omitted,
+});
+
+const voucherJson = (v: Voucher) => ({
+  ...v,
+  debits: v.debits.map((l) => ({ ledger: l.ledger, paise: l.paise.toString() })),
+  credits: v.credits.map((l) => ({ ledger: l.ledger, paise: l.paise.toString() })),
+});
 
 @Injectable()
 export class DownloadService {
-  constructor(
-    @Inject(DB) private readonly db: Executor,
-    private readonly report: ReportService,
-  ) {}
+  constructor(private readonly report: ReportService) {}
 
   private async everyException(runId: string): Promise<{ items: Items; omitted: number }> {
     const items: Items = [];
@@ -65,14 +59,15 @@ export class DownloadService {
   async reportJson(runId: string): Promise<DownloadFile> {
     const overview = await this.report.overview(runId);
     const { items, omitted } = await this.everyException(runId);
-    const journal = await this.journalLines(runId);
+    const books = await this.report.vouchers(runId);
     const body = JSON.stringify(
       {
         generatedAt: new Date().toISOString(),
         note: 'Synthetic data and Razorpay test mode. Amounts are integer paise, as strings.',
         overview,
         exceptions: items,
-        journalEntries: journal,
+        vouchers: books.vouchers.map(voucherJson),
+        notBooked: books.skipped,
       },
       null,
       2,
@@ -110,13 +105,17 @@ export class DownloadService {
     );
     add('source', 'bank debits', o.sources.bank.debits.records, o.sources.bank.debits.amountPaise);
 
+    // matched + in an exception + ignored = total, for records and for money, per source.
     for (const c of o.coverage) {
+      add('coverage', `${c.type}: total`, c.total, c.amountPaise.total);
+      add('coverage', `${c.type}: matched`, c.matched, c.amountPaise.matched);
+      add('coverage', `${c.type}: in an exception`, c.inException, c.amountPaise.inException);
       add(
         'coverage',
-        c.type,
-        c.total,
-        null,
-        `matched ${c.matched}; in an exception ${c.inException}; ignored ${c.ignored}; match rate ${percent(c.matchRate)}%`,
+        `${c.type}: ignored`,
+        c.ignored,
+        c.amountPaise.ignored,
+        `match rate ${percent(c.matchRate)}%; ${c.reconciles ? 'adds up' : 'DOES NOT ADD UP'}`,
       );
     }
     for (const t of o.matching.byTier) {
@@ -128,6 +127,19 @@ export class DownloadService {
         `${t.groups} groups; ${percent(t.share)}% of matched records`,
       );
     }
+    const r = o.resolution;
+    add('resolved by', 'rules (groups)', r.ruleGroups, null);
+    add('resolved by', 'agent match approved by a person', r.agentMatchesApprovedByPerson, null);
+    add(
+      'resolved by',
+      'agent explanation approved by a person',
+      r.agentExplanationsApprovedByPerson,
+      null,
+    );
+    add('resolved by', 'agent auto-accepted', r.autoAccepted, null);
+    add('resolved by', 'proposal rejected by a person', r.rejectedByPerson, null);
+    add('resolved by', 'dismissed', r.dismissed, null);
+    add('resolved by', 'waiting for a person', r.waiting, null);
 
     add('gap', 'still open', o.gap.cases.open, o.gap.openPaise);
     add('gap', 'proposed, awaiting a person', o.gap.cases.awaiting, o.gap.awaitingPaise);
@@ -139,16 +151,69 @@ export class DownloadService {
       'the number to bring to zero',
     );
     add('gap', 'explained', o.gap.cases.explained, o.gap.explainedPaise);
+    for (const b of o.openExceptions.byAge) {
+      add('open by age', b.bucket, b.cases, b.stakePaise, `as of ${o.openExceptions.asOf}`);
+    }
 
-    for (const r of o.exceptionsByReason) {
+    for (const x of o.exceptionsByReason) {
       add(
         'exceptions',
-        r.reasonCode,
-        r.total,
+        x.reasonCode,
+        x.total,
         null,
-        `open ${r.open}; proposed ${r.proposed}; resolved ${r.resolved}; dismissed ${r.dismissed}`,
+        `open ${x.open}; proposed ${x.proposed}; resolved ${x.resolved}; dismissed ${x.dismissed}`,
       );
     }
+
+    const l = o.leakage;
+    add(
+      'fee leakage',
+      'fees charged above contract (GST included)',
+      l.overchargedCount,
+      l.excessPaise,
+      `${l.assessed} payments assessed, ${l.notAssessable} not assessable; contract ${l.contract.source}`,
+    );
+    add('fee leakage', '  of which base fee', null, l.excessBasePaise);
+    add('fee leakage', '  of which GST on the excess', null, l.excessGstPaise);
+    add(
+      'fee leakage',
+      'fees charged below contract (not netted)',
+      l.undercharged.count,
+      l.undercharged.shortfallPaise,
+    );
+    for (const m of l.byMethod) {
+      add(
+        'fee leakage',
+        `method ${m.method}`,
+        m.overchargedCount,
+        m.excessPaise,
+        `${m.assessed} assessed`,
+      );
+    }
+
+    add('delayed settlements', 'delayed', o.delays.delayedCount, o.delays.delayedPaise);
+    add(
+      'delayed settlements',
+      'overdue: no bank credit yet',
+      o.delays.overdueCount,
+      o.delays.overduePaise,
+      `as of ${o.run.asOf}`,
+    );
+
+    add(
+      'books',
+      'settlements booked',
+      o.journal.settlementsBooked,
+      null,
+      `${o.journal.vouchers} vouchers incl. ${o.journal.adjustmentsBooked} approved adjustments`,
+    );
+    add(
+      'books',
+      'settlements not yet bookable',
+      o.journal.settlementsNotBooked.count,
+      o.journal.settlementsNotBooked.paise,
+      'no matched bank credit, or lines do not add up',
+    );
     add(
       'agent',
       o.llm.agent ?? 'none',
@@ -164,12 +229,11 @@ export class DownloadService {
       o.time.seconds === null ? 'not finished' : `${o.time.seconds} s`,
     );
 
-    return {
-      filename: `ziro-${shortId(runId)}-report.csv`,
-      contentType: 'text/csv; charset=utf-8',
-      body: toCsv(['section', 'item', 'count', 'amount_inr', 'note'], rows),
-      omitted: 0,
-    };
+    return csvFile(
+      runId,
+      'report',
+      toCsv(['section', 'item', 'count', 'amount_inr', 'note'], rows),
+    );
   }
 
   // --- the exceptions -------------------------------------------------------------------------------------
@@ -186,21 +250,24 @@ export class DownloadService {
       e.subject?.key,
       e.subject === null || e.subject === undefined ? '' : rupees(e.subject.amountPaise),
       e.subject?.date,
+      e.ageDays,
+      e.asOf,
       e.candidates,
+      e.suggestedAction,
+      e.nextStep,
       e.proposal?.verdict,
       e.proposal?.reasonCode,
       e.proposal?.confidence,
-      e.proposal?.suggestedAction,
       e.proposal?.author,
       e.proposal?.verifier,
       e.review?.decision,
       e.review?.reviewer,
       e.note,
     ]);
-    return {
-      filename: `ziro-${shortId(runId)}-exceptions.csv`,
-      contentType: 'text/csv; charset=utf-8',
-      body: toCsv(
+    return csvFile(
+      runId,
+      'exceptions',
+      toCsv(
         [
           'exception_id',
           'reason_code',
@@ -211,11 +278,14 @@ export class DownloadService {
           'subject_key',
           'subject_amount_inr',
           'subject_date',
+          'age_days',
+          'as_of',
           'candidates',
+          'suggested_action',
+          'next_step',
           'proposal_verdict',
           'proposal_reason_code',
           'proposal_confidence',
-          'suggested_action',
           'proposed_by',
           'verifier',
           'review_decision',
@@ -225,129 +295,24 @@ export class DownloadService {
         rows,
       ),
       omitted,
-    };
+    );
   }
 
-  // --- the journal entries --------------------------------------------------------------------------------
+  // --- the vouchers ---------------------------------------------------------------------------------------
 
-  /**
-   * One line per journal line, for the latest proposal of each exception. A draft the verifier refused is
-   * not listed (it is not something to post), and a person's rejection is shown as such. Every entry
-   * balances to the paise because the schema that stored it required that.
-   */
-  private async journalLines(runId: string) {
-    const proposals = await this.db
-      .select({ p: agentProposals, e: reconExceptions })
-      .from(agentProposals)
-      .innerJoin(reconExceptions, eq(reconExceptions.id, agentProposals.exceptionId))
-      .where(and(eq(reconExceptions.runId, runId)))
-      .orderBy(desc(agentProposals.attempt), desc(agentProposals.createdAt));
-    const latest = new Map<string, (typeof proposals)[number]>();
-    for (const row of proposals) if (!latest.has(row.e.id)) latest.set(row.e.id, row);
-
-    const withEntry = [...latest.values()].filter(
-      (r) => r.p.draftJournalEntry !== null && r.p.verifierStatus !== 'rejected',
-    );
-    if (withEntry.length === 0) return [];
-
-    const decisions = await this.db
-      .select()
-      .from(reviews)
-      .where(
-        inArray(
-          reviews.proposalId,
-          withEntry.map((r) => r.p.id),
-        ),
-      );
-    const subjects = await this.report.describe(
-      new Map([
-        [
-          'ledger_entry',
-          withEntry.filter((r) => r.e.subjectType === 'ledger_entry').map((r) => r.e.subjectId),
-        ],
-        [
-          'rzp_payment',
-          withEntry.filter((r) => r.e.subjectType === 'rzp_payment').map((r) => r.e.subjectId),
-        ],
-        [
-          'rzp_refund',
-          withEntry.filter((r) => r.e.subjectType === 'rzp_refund').map((r) => r.e.subjectId),
-        ],
-        [
-          'rzp_settlement',
-          withEntry.filter((r) => r.e.subjectType === 'rzp_settlement').map((r) => r.e.subjectId),
-        ],
-        [
-          'bank_line',
-          withEntry.filter((r) => r.e.subjectType === 'bank_line').map((r) => r.e.subjectId),
-        ],
-      ]),
-    );
-
-    // A stable order, so the same run always numbers its entries the same way.
-    withEntry.sort((a, b) =>
-      (subjects.get(a.e.subjectId)?.key ?? a.e.id).localeCompare(
-        subjects.get(b.e.subjectId)?.key ?? b.e.id,
-      ),
-    );
-    return withEntry.flatMap((row, index) => {
-      const entry = storedEntry.parse(row.p.draftJournalEntry);
-      const decision = decisions.find((d) => d.proposalId === row.p.id)?.decision;
-      const state =
-        decision === 'approved'
-          ? 'approved'
-          : decision === 'rejected'
-            ? 'rejected by a person'
-            : 'awaiting review';
-      const number = `JE-${String(index + 1).padStart(4, '0')}`;
-      return entry.lines.map((line) => ({
-        entry: number,
-        exceptionId: row.e.id,
-        reasonCode: row.p.reasonCode,
-        about: subjects.get(row.e.subjectId)?.key ?? '',
-        memo: entry.memo,
-        account: line.account,
-        debitPaise: line.debit,
-        creditPaise: line.credit,
-        proposedBy: authorOf(row.p.model),
-        state,
-      }));
-    });
-  }
-
+  /** One row per debit/credit pair. */
   async journalCsv(runId: string): Promise<DownloadFile> {
-    await this.report.run(runId);
-    const lines = await this.journalLines(runId);
-    return {
-      filename: `ziro-${shortId(runId)}-journal-entries.csv`,
-      contentType: 'text/csv; charset=utf-8',
-      body: toCsv(
-        [
-          'entry',
-          'exception_id',
-          'reason_code',
-          'about',
-          'memo',
-          'account',
-          'debit_inr',
-          'credit_inr',
-          'proposed_by',
-          'state',
-        ],
-        lines.map((l): Cell[] => [
-          l.entry,
-          l.exceptionId,
-          l.reasonCode,
-          l.about,
-          l.memo,
-          l.account,
-          rupees(l.debitPaise),
-          rupees(l.creditPaise),
-          l.proposedBy,
-          l.state,
-        ]),
-      ),
-      omitted: 0,
-    };
+    const { vouchers } = await this.report.vouchers(runId);
+    return csvFile(runId, 'journal-entries', toCsv(PAIR_HEADER, vouchers.flatMap(pairRows)));
+  }
+
+  /** One row per ledger line: the layout TallyPrime's Excel import maps column by column. */
+  async journalLinesCsv(runId: string): Promise<DownloadFile> {
+    const { vouchers } = await this.report.vouchers(runId);
+    return csvFile(
+      runId,
+      'journal-lines-for-tally',
+      toCsv(LINE_HEADER, vouchers.flatMap(lineRows)),
+    );
   }
 }

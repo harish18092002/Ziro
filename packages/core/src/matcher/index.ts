@@ -11,7 +11,7 @@ export {
   type SettlementComposition,
 } from './composition.js';
 export { isDateShift, retryBase } from './orders.js';
-export { settlementCreatedLate, settlementUtrKey, utrIsWeak } from './payouts.js';
+export { isChargebackLine, settlementCreatedLate, settlementUtrKey, utrIsWeak } from './payouts.js';
 export { runMatcher } from './run.js';
 export {
   DEFAULT_MATCHER_CONFIG,

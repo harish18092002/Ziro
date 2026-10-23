@@ -284,6 +284,199 @@ function Summary({ runId }: { runId: string }) {
           </p>
         </section>
       </div>
+
+      <section>
+        <h2>
+          Do the totals add up?{' '}
+          {o.reconciles ? (
+            <span className="pill ok">yes, to the paise</span>
+          ) : (
+            <span className="pill bad">NO</span>
+          )}
+        </h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th className="n">Matched</th>
+              <th className="n">In an exception</th>
+              <th className="n">Ignored</th>
+              <th className="n">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {o.coverage.map((c) => (
+              <tr key={c.type}>
+                <td>{words(c.type)}</td>
+                <td className="n">{inr(c.amountPaise.matched)}</td>
+                <td className="n">{inr(c.amountPaise.inException)}</td>
+                <td className="n">{inr(c.amountPaise.ignored)}</td>
+                <td className="n">
+                  {inr(c.amountPaise.total)} {c.reconciles ? '✓' : '✗'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="muted">
+          Each record is in exactly one place: a proven group, an exception, or ignored (failed
+          payments, bank debits, credits that are not Razorpay payouts). Counted separately, so a
+          row that did not add up would show ✗.
+        </p>
+      </section>
+
+      <div className="cols">
+        <section>
+          <h2>How things were settled</h2>
+          <table>
+            <tbody>
+              <tr>
+                <td>Rule groups (proved by code)</td>
+                <td className="n">{o.resolution.ruleGroups}</td>
+              </tr>
+              <tr>
+                <td>Agent match, approved by a person</td>
+                <td className="n">{o.resolution.agentMatchesApprovedByPerson}</td>
+              </tr>
+              <tr>
+                <td>Agent explanation, approved by a person</td>
+                <td className="n">{o.resolution.agentExplanationsApprovedByPerson}</td>
+              </tr>
+              <tr>
+                <td>Agent proposal, auto-accepted</td>
+                <td className="n">{o.resolution.autoAccepted}</td>
+              </tr>
+              <tr>
+                <td>Proposal rejected by a person</td>
+                <td className="n">{o.resolution.rejectedByPerson}</td>
+              </tr>
+              <tr>
+                <td>Waiting for a person</td>
+                <td className="n">{o.resolution.waiting}</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+        <section>
+          <h2>Unsettled by age</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>As of {o.openExceptions.asOf}</th>
+                <th className="n">Cases</th>
+                <th className="n">At stake</th>
+              </tr>
+            </thead>
+            <tbody>
+              {o.openExceptions.byAge.map((b) => (
+                <tr key={b.bucket}>
+                  <td>{b.bucket}</td>
+                  <td className="n">{b.cases}</td>
+                  <td className="n">{inr(b.stakePaise)}</td>
+                </tr>
+              ))}
+              {o.openExceptions.byAge.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="muted">
+                    Nothing unsettled.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+          <p className="muted">
+            Age is counted from the record's own date to the run's as-of date, not from today.
+          </p>
+        </section>
+      </div>
+
+      <div className="cols">
+        <section>
+          <h2>Fee leakage</h2>
+          <div className="big">{inr(o.leakage.excessPaise)}</div>
+          <p className="muted">
+            charged above the contract on {o.leakage.overchargedCount} of {o.leakage.assessed}{' '}
+            payments (base fee {inr(o.leakage.excessBasePaise)} + GST{' '}
+            {inr(o.leakage.excessGstPaise)}).
+            {o.leakage.contract.source === 'default'
+              ? ' The run stored no fee contract, so the default was used.'
+              : ''}
+            {o.leakage.notAssessable > 0
+              ? ` ${o.leakage.notAssessable} payments could not be judged (method or currency not in the contract).`
+              : ''}
+            {o.leakage.undercharged.count > 0
+              ? ` Separately, ${o.leakage.undercharged.count} were charged ${inr(o.leakage.undercharged.shortfallPaise)} below the contract; that is not netted.`
+              : ''}
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Largest</th>
+                <th>Method</th>
+                <th className="n">Expected</th>
+                <th className="n">Charged</th>
+                <th className="n">Excess</th>
+              </tr>
+            </thead>
+            <tbody>
+              {o.leakage.worst.slice(0, 5).map((w) => (
+                <tr key={w.rzpId}>
+                  <td>{w.rzpId}</td>
+                  <td>{w.method}</td>
+                  <td className="n">{inr(w.expectedFeePaise)}</td>
+                  <td className="n">{inr(w.actualFeePaise)}</td>
+                  <td className="n">{inr(w.excessPaise)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+        <section>
+          <h2>Delayed settlements</h2>
+          <div className="big">{o.delays.delayedCount}</div>
+          <p className="muted">
+            settlements worth {inr(o.delays.delayedPaise)} arrived later than the normal lag.{' '}
+            {o.delays.overdueCount > 0
+              ? `${o.delays.overdueCount} (${inr(o.delays.overduePaise)}) have no bank credit yet and are overdue.`
+              : 'None is overdue.'}
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Settlement</th>
+                <th>Due</th>
+                <th>Created</th>
+                <th className="n">Days late</th>
+                <th className="n">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {o.delays.delayed.map((d) => (
+                <tr key={d.rzpId}>
+                  <td>{d.rzpId}</td>
+                  <td>{d.dueDate ?? '–'}</td>
+                  <td>{d.settlementDate}</td>
+                  <td className="n">{d.createdLate ? d.businessDaysLate : 'credit late'}</td>
+                  <td className="n">{inr(d.amountPaise)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      </div>
+
+      <section>
+        <h2>Books</h2>
+        <p>
+          {o.journal.settlementsBooked} settlements are booked as {o.journal.vouchers} vouchers
+          {o.journal.adjustmentsBooked > 0
+            ? `, including ${o.journal.adjustmentsBooked} adjustments a person approved`
+            : ''}
+          . {o.journal.settlementsNotBooked.count} ({inr(o.journal.settlementsNotBooked.paise)})
+          cannot be booked yet: no bank credit has been matched to them.{' '}
+          <a href={linkTo(runId, 'downloads')}>Download the vouchers →</a>
+        </p>
+      </section>
     </>
   );
 }
@@ -293,18 +486,23 @@ function Downloads({ runId }: { runId: string }) {
     [
       'report.json',
       'Run report (JSON)',
-      'Everything on the summary, every exception and the journal entries.',
+      'Everything on the summary, every exception and every voucher, in integer paise.',
     ],
     ['report.csv', 'Run report (CSV)', 'The summary as rows a spreadsheet can read.'],
     [
       'exceptions.csv',
       'Exceptions (CSV)',
-      'One row per exception with the agent’s proposal, the checker’s verdict and any decision.',
+      'One row per exception with its age, the suggested action, the next step, the checker’s verdict and any decision.',
     ],
     [
       'journal-entries.csv',
       'Journal entries (CSV)',
-      'Draft entries for the books. Each balances to the paise; a person still posts them.',
+      'Vouchers for the books: date, voucher type, debit ledger, credit ledger, amount, narration with record ids. Fees, GST on fees, refunds and chargebacks.',
+    ],
+    [
+      'journal-lines.csv',
+      'Journal lines for Tally (CSV)',
+      'The same vouchers, one row per ledger line, the layout TallyPrime’s Import Data from Excel maps. Open in Excel and save as .xlsx first.',
     ],
   ] as const;
   return (

@@ -72,6 +72,14 @@ export class ReportController {
     return this.send(res, await this.downloads.exceptionsCsv(runId));
   }
 
+  @Get('runs/:id/journal-lines.csv')
+  async journalLines(
+    @Param('id', ParseUUIDPipe) runId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.send(res, await this.downloads.journalLinesCsv(runId));
+  }
+
   @Get('runs/:id/journal-entries.csv')
   async journalCsv(
     @Param('id', ParseUUIDPipe) runId: string,

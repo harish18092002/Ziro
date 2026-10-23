@@ -468,6 +468,26 @@ apps/api  (serves the built web files; CSP; trust proxy 1)
 - **CSV** (`report/csv.ts`): text cells that begin with `= + - @ \t \r` are prefixed with `'`; numbers are
   never touched.
 
+## Run report and books
+
+```
+ReportService.overview(run)
+  partition()        per source: records and paise matched / in an exception / ignored (independent counts)
+  exceptionFacts()   stake, records touched, subject date -> age against run.periodEnd -> casesOf() -> age buckets
+  resolution()       who settled what (rules, agent + person, auto-accept, rejected, waiting)
+  leakage()          auditFees(captured payments, run feeContract)            report/leakage.ts
+  settlementFacts()  findDelays(settlements, matcher windows, asOf)           report/delays.ts
+  vouchers()         accepted payout groups -> composeLines -> settlementVouchers   report/tally.ts
+                     + person-approved agent drafts -> adjustmentVoucher
+DownloadService      report.json/.csv, exceptions.csv (next_step), journal-entries.csv, journal-lines.csv
+```
+
+- `leakage.ts`, `delays.ts`, `tally.ts`, `next-step.ts` and `gap.ts` are pure (no database, no clock); the
+  service only loads rows and calls them.
+- One arithmetic for settlements: vouchers use `composeLines`, the same function tier T2 and the verifier
+  use, and one chargeback test, `isChargebackLine`, shared with the rule label.
+- Format and assumptions for the Tally files: ADR-014.
+
 ## TODO
 
 - Persist the rule matcher's groups and exceptions (P7) through `writeGroup`.

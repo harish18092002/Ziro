@@ -51,6 +51,7 @@ export function ExceptionsTab({ runId, selected }: { runId: string; selected: st
               <th>Record</th>
               <th>Reason</th>
               <th className="n">At stake</th>
+              <th className="n">Age</th>
               <th>Status</th>
               <th>Checker</th>
             </tr>
@@ -65,6 +66,7 @@ export function ExceptionsTab({ runId, selected }: { runId: string; selected: st
                 </td>
                 <td>{words(e.reasonCode)}</td>
                 <td className="n">{inr(e.amountAtStakePaise)}</td>
+                <td className="n">{e.ageDays === null ? '–' : `${e.ageDays} d`}</td>
                 <td>
                   <Status e={e} />
                 </td>
@@ -130,6 +132,11 @@ function Detail({ runId, id, onChanged }: { runId: string; id: string; onChanged
             · <span className="free">{e.note}</span>
           </>
         ) : null}
+      </p>
+
+      <p>
+        <b>Next step:</b> <span className="free">{e.nextStep}</span>
+        {e.ageDays === null ? '' : ` · ${e.ageDays} days old`}
       </p>
 
       <h3>Records involved</h3>

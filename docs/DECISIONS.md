@@ -591,3 +591,87 @@ follow-up. Summing every exception's stake as the gap: double counts one differe
 - The scripted baseline's answers are rules in disguise. Do not quote its behaviour as agent performance.
 - Creating a run is unauthenticated and rate-limited in memory (per process); a multi-instance deployment
   needs a shared limiter.
+
+---
+
+## ADR-014: The run report, fee leakage, and the voucher format for the books
+
+**Context.** At month-end finance needs four things from a run: whether the totals add up, what is still
+unexplained and for how long, what Razorpay charged or delayed that it should not have, and entries to bring
+into Tally. The report must be defensible number by number.
+
+**Decision.**
+
+- **Totals reconcile by partition.** Per source (ledger, payments, refunds, settlements, bank lines) every
+  record is in an accepted group, in an exception, or ignored, and each class is counted and summed on its own
+  (not as a remainder), so `matched + in an exception + ignored = total` is a check that can fail. It is
+  shown in records and in paise, per source, with `reconciles` per source and overall.
+- **Who settled what.** Rule groups; agent matches approved by a person; agent explanations approved by a
+  person; auto-accepted proposals; rejected proposals; waiting; dismissed. There is no human-only resolution
+  path (a person approves or rejects an agent proposal), so no such bucket is invented.
+- **Age** is the days from the subject record's own business date to the run's as-of date (`periodEnd`), never
+  to the wall clock, so re-running next month does not make last month's data look older. A case (exceptions
+  that share records, ADR-013) is as old as its oldest unsettled member, and the age buckets sum to the gap
+  exactly.
+- **Fee leakage** is deterministic. For each captured INR payment the run's stored fee contract gives an
+  expected fee (rate per method, then GST, half-up to the paise at each step). A payment whose base fee (fee
+  minus GST) is above the expected base is overcharged; the leakage is everything charged above the expected
+  total, split into base and GST. Undercharges are reported separately and never netted. A method or currency
+  the contract does not cover is counted as not assessable, not as clean. It is report-only: it opens no
+  exception (ADR-010). Judged against the contract snapshot on the run; a run without one uses the default
+  and the report says so.
+- **Delayed settlements** use the matcher's own `settlementCreatedLate` (the verifier uses the same function),
+  plus a bank credit that lands after the T4 window. A settlement with no matched credit past the window and
+  the delay horizon is overdue as of the as-of date.
+- **Vouchers.** One chargeback test (`isChargebackLine` in core) serves the rule label and the books.
+  A settlement is booked only when a bank credit is matched to it and its lines add up to the paise by the
+  same composition the matcher uses; anything else is listed as not bookable with the reason.
+  - Receipt: Dr Bank, Cr Razorpay Clearing, the net payout, dated the bank value date.
+  - Journal: Dr Payment Gateway Charges (fee minus GST), Dr GST Input Credit, Dr Refunds, Dr Chargeback Loss,
+    Dr or Cr Suspense for other adjustments, Cr Razorpay Clearing for what balances it.
+  - Together they credit Razorpay Clearing by exactly the gross of the settled payments, which is what the
+    sales debited. The sale itself is not generated: it is already in the merchant's books.
+  - An agent's draft entry is booked only after a person approves it, dated the approval day (IST).
+  - Every voucher is checked to balance as it is built; one that does not throws.
+- **Two CSV layouts, one source.** `journal-entries.csv` has one row per debit/credit pair (date, voucher type,
+  voucher no, debit ledger, credit ledger, amount, narration, record ids, source). `journal-lines.csv` has one
+  row per ledger line with a Dr/Cr column, the layout TallyPrime's Import Data from Excel maps column by
+  column. Dates are ISO `YYYY-MM-DD`, amounts plain rupees with two decimals, positive.
+- **Exceptions export** adds `age_days`, `as_of`, `suggested_action` and an always-filled `next_step`. The
+  suggested action of a proposal the verifier refused is blanked and the next step says to investigate by hand.
+
+**What the Tally format assumes, from Tally's docs and not from a test against Tally** (TallyHelp: "Import
+Data from Excel", and the XML developer reference).
+
+- TallyPrime's Excel import takes the voucher type name, voucher date, ledger name and ledger amount as
+  mandatory, with Dr/Cr, and reads multi-ledger vouchers from several rows (the lines file). CSV must be opened
+  in Excel and saved as .xls or .xlsx first. Columns are mapped by the user in a mapping template, so the
+  header names here are not enforced by Tally.
+- ISO dates are chosen because Excel parses them the same in every locale; `DD-MM-YYYY` would be misread on a
+  machine set to US dates. Tally's XML format uses `YYYYMMDD`; we do not emit XML.
+- Voucher numbers follow the numbering configured on the voucher type in Tally, so `voucher_no` here is for
+  tracing back to the settlement and may be ignored on import.
+- The ledgers must exist in Tally under these names. Defaults are in `tally.ts`; a run can rename any of them
+  with `config.ledgerNames`.
+- One GST Input Credit ledger: there is no place-of-supply data, so the split into CGST, SGST and IGST is for
+  the accountant.
+- Narrations are cut at 250 characters (our own limit, not a documented Tally one); the full list of record ids
+  is in its own column.
+
+**Alternatives.** Emit Tally XML: exact, but the docs give no complete example with a narration, and it cannot
+be tested here without a Tally. One voucher mixing Receipt and Journal legs: not a valid voucher type.
+Wall-clock age: meaningless on synthetic data and unstable across re-runs. Netting over- and undercharges:
+hides a real overcharge behind an unrelated error in Ziro's favour.
+
+**Consequences.**
+
+- **Measured on eval seed 42**, against `truth.json`: 15 overcharged payments for ₹694.87, exactly the 15
+  planted and exactly their paise; 4 delayed settlements, exactly the 4 planted, with the same business days
+  late; all five sources reconcile; 48 settlements booked as 96 vouchers, including 4 chargeback legs; the fee,
+  GST, refund and chargeback legs equal sums taken straight from the tables. The same figures were read from a
+  real Postgres.
+- The Tally files have not been imported into a real Tally. Treat the format as an assumption until an
+  accountant runs one through.
+- The suspense legs (other debit adjustments, credit adjustments) are covered by unit tests only: the
+  generated data has none.
+- The pair layout repeats the narration and record ids on every row (about 90 KB for 96 vouchers).

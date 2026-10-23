@@ -29,6 +29,19 @@ import {
 } from './types.js';
 
 const CHARGEBACK = /charge\s*back|dispute/i;
+
+/**
+ * A debit adjustment (or transfer) whose description names a chargeback or dispute. The one definition:
+ * the rule matcher labels a settlement CHARGEBACK_ADJUSTMENT with it and the books book the line to the
+ * chargeback ledger with it, so the two cannot disagree.
+ */
+export const isChargebackLine = (
+  item: Pick<SettlementItem, 'itemType' | 'debit' | 'description'>,
+): boolean =>
+  (item.itemType === 'adjustment' || item.itemType === 'transfer') &&
+  item.debit > 0n &&
+  CHARGEBACK.test(item.description ?? '');
+
 const NON_TRANSFER_CHANNELS = new Set(['upi', 'ach', 'cheque']);
 const TRUSTED_UTR = new Set(['exact', 'rejoined']);
 
@@ -86,12 +99,7 @@ function payoutReason(
   config: MatcherConfig,
 ): ReasonCode | null {
   // The line's description is only a label hint; the amounts are what reconcile.
-  const chargeback = items.some(
-    (i) =>
-      (i.itemType === 'adjustment' || i.itemType === 'transfer') &&
-      i.debit > 0n &&
-      CHARGEBACK.test(i.description ?? ''),
-  );
+  const chargeback = items.some(isChargebackLine);
   if (chargeback) return ReasonCode.CHARGEBACK_ADJUSTMENT;
 
   const captured = composition.paymentIds
