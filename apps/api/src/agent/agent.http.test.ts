@@ -251,9 +251,28 @@ describe('createRunner', () => {
     ).toMatchObject({ smallModel: 'claude-sonnet-5-5', largeModel: 'claude-haiku-5-5' });
   });
 
-  it('refuses the agent-sdk harness until it exists', () => {
+  it('builds the Agent SDK harness when asked, and needs only the small model priced', () => {
+    const runner = createRunner(env({ ANTHROPIC_API_KEY: 'sk-test', AGENT_HARNESS: 'agent-sdk' }));
+    expect(runner?.harness).toBe('agent-sdk');
+    (runner as { close?: () => void } | null)?.close?.();
     expect(() =>
-      createRunner(env({ ANTHROPIC_API_KEY: 'sk-test', AGENT_HARNESS: 'agent-sdk' })),
-    ).toThrow(/P11/);
+      createRunner(
+        env({
+          ANTHROPIC_API_KEY: 'sk-test',
+          AGENT_HARNESS: 'agent-sdk',
+          AGENT_MODEL_SMALL: 'claude-unpriced-9',
+        }),
+      ),
+    ).toThrow(/no known price/);
+    // The large model is not used by harness B, so it need not be priced.
+    expect(
+      createRunner(
+        env({
+          ANTHROPIC_API_KEY: 'sk-test',
+          AGENT_HARNESS: 'agent-sdk',
+          AGENT_MODEL_LARGE: 'claude-unpriced-9',
+        }),
+      )?.harness,
+    ).toBe('agent-sdk');
   });
 });

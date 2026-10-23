@@ -17,6 +17,7 @@ import { AgentController } from './agent.controller.js';
 import type { LlmClient } from './llm.js';
 import { LoopRunner, type LoopRunnerOptions } from './loop-runner.js';
 import { ratesFor } from './pricing.js';
+import { SdkRunner } from './sdk-runner.js';
 import {
   BullInvestigationQueue,
   INVESTIGATION_QUEUE,
@@ -31,18 +32,23 @@ import type { AgentRunner } from './types.js';
  */
 export function createRunner(env: Env): AgentRunner | null {
   if (!env.ANTHROPIC_API_KEY) return null;
-  if (env.AGENT_HARNESS !== 'loop') {
-    throw new Error('AGENT_HARNESS=agent-sdk is not built yet (it arrives in P11); use "loop"');
-  }
-  for (const [name, model] of [
-    ['AGENT_MODEL_SMALL', env.AGENT_MODEL_SMALL],
-    ['AGENT_MODEL_LARGE', env.AGENT_MODEL_LARGE],
-  ] as const) {
+  // Harness B runs one model and does not escalate; it needs only the small model's price.
+  const models =
+    env.AGENT_HARNESS === 'agent-sdk'
+      ? ([['AGENT_MODEL_SMALL', env.AGENT_MODEL_SMALL]] as const)
+      : ([
+          ['AGENT_MODEL_SMALL', env.AGENT_MODEL_SMALL],
+          ['AGENT_MODEL_LARGE', env.AGENT_MODEL_LARGE],
+        ] as const);
+  for (const [name, model] of models) {
     if (ratesFor(model) === undefined) {
       throw new Error(
         `${name} "${model}" has no known price; add it to agent/pricing.ts before using it`,
       );
     }
+  }
+  if (env.AGENT_HARNESS === 'agent-sdk') {
+    return new SdkRunner({ apiKey: env.ANTHROPIC_API_KEY, model: env.AGENT_MODEL_SMALL });
   }
   return new LoopRunner(
     loopRunnerOptions(env, AnthropicLlmClient.fromApiKey(env.ANTHROPIC_API_KEY)),

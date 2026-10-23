@@ -488,6 +488,32 @@ DownloadService      report.json/.csv, exceptions.csv (next_step), journal-entri
   use, and one chargeback test, `isChargebackLine`, shared with the rule label.
 - Format and assumptions for the Tally files: ADR-014.
 
+## Evals
+
+```
+npm run eval            apps/api/src/eval/cli.ts          (paid when a model config is named; needs --confirm and --max-cost-usd)
+   args.ts              what was asked, and the rules about what may spend money
+   overlay.ts           injection payloads on a COPY of the dataset; each placement checked against the rules
+   pipeline.ts          one run: fresh PGlite -> ingest -> match -> agent -> verifier -> simulated reviewer -> score
+   measuring.ts         wraps any AgentRunner: timing, tools, observed exposure, the cost cap
+   runners.ts           small / large (harness A), harnessB (agent/sdk-runner.ts)
+   collect.ts           reads a finished run back as truth keys
+   stress.ts            rules throughput, no database, no model
+        |  scores with
+        v
+packages/evals/src      truth.ts  score.ts  stats.ts  injection.ts  results.ts  results-io.ts  report.ts
+        |  writes / reads
+        v
+packages/evals/results/<preset>-<seed>/<config>[+cluster]-<leg>.json
+        |  npm run eval:report (free)
+        v
+EVALS.md                tables, "what the numbers show", limits, and the author's Opinion block
+```
+
+- The dependency runs api → evals → core, so the pure parts are unit-tested without a database.
+- `agent/sdk-runner.ts` is a real harness (`AGENT_HARNESS=agent-sdk`), not only an eval fixture.
+- Definitions, the simulated reviewer, the injection overlay and the limits of the evidence: ADR-015.
+
 ## TODO
 
 - Persist the rule matcher's groups and exceptions (P7) through `writeGroup`.

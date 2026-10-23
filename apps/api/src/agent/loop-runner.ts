@@ -65,7 +65,7 @@ function finalizeFor(outcome: LoopOutcome, subject: Subject): Finalized {
   }
 }
 
-function draftsFrom(
+export function draftsFrom(
   outcome: LoopOutcome,
   model: string,
   members: readonly ExceptionToInvestigate[],
@@ -147,26 +147,34 @@ export class LoopRunner implements AgentRunner {
   }
 
   /** Call 0: the harness fetches each exception's brief, saving the model a round trip. */
-  private async fetchBriefs(
+  private fetchBriefs(
     members: readonly ExceptionToInvestigate[],
     ctx: InvestigationContext,
   ): Promise<{ briefCalls: CallRecord[]; briefs: Brief[] }> {
-    const briefCalls: CallRecord[] = [];
-    const briefs: Brief[] = [];
-    for (const member of members) {
-      const args = { exception_id: member.id };
-      const result = await ctx.toolbox.run('get_exception', args);
-      if (!result.ok) throw new Error(`cannot load exception ${member.id}: ${result.error}`);
-      briefCalls.push({
-        n: 0,
-        tool: 'get_exception',
-        args,
-        ok: true,
-        summary: result.summary,
-        seen: result.seen,
-      });
-      briefs.push({ exceptionId: member.id, json: result.content });
-    }
-    return { briefCalls, briefs };
+    return fetchBriefs(members, ctx);
   }
+}
+
+/** Call 0, shared by every harness: each exception's brief, fetched before the model is asked anything. */
+export async function fetchBriefs(
+  members: readonly ExceptionToInvestigate[],
+  ctx: Pick<InvestigationContext, 'toolbox'>,
+): Promise<{ briefCalls: CallRecord[]; briefs: Brief[] }> {
+  const briefCalls: CallRecord[] = [];
+  const briefs: Brief[] = [];
+  for (const member of members) {
+    const args = { exception_id: member.id };
+    const result = await ctx.toolbox.run('get_exception', args);
+    if (!result.ok) throw new Error(`cannot load exception ${member.id}: ${result.error}`);
+    briefCalls.push({
+      n: 0,
+      tool: 'get_exception',
+      args,
+      ok: true,
+      summary: result.summary,
+      seen: result.seen,
+    });
+    briefs.push({ exceptionId: member.id, json: result.content });
+  }
+  return { briefCalls, briefs };
 }

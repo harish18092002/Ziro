@@ -27,3 +27,24 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+
+  # A cheap end-to-end check of the whole pipeline against ground truth: the demo preset, one repeat, the
+  # small model, and a hard cost cap (apps/api/src/eval/args.ts: SMOKE_MAX_COST_USD). It fails on any false
+  # match. Without ANTHROPIC_API_KEY (a fork's pull request, or no secret set) the model configs are
+  # skipped, the free rules check still runs, and the job passes. The key reaches this one step only.
+  eval-smoke:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      - run: npm run eval:smoke -- --confirm
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

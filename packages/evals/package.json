@@ -2,7 +2,7 @@
   "name": "@ziro/evals",
   "version": "0.0.0",
   "private": true,
-  "description": "Eval runner, metrics and EVALS.md writer. Every README number is reproducible from here.",
+  "description": "Eval scoring, statistics, result files and the EVALS.md writer. The runner that drives the pipeline lives in apps/api (src/eval), which depends on this package. Every README number is reproducible from here.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,10 +19,11 @@
     "build": "tsc -b tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "eval": "tsx src/cli.ts"
+    "report": "tsx src/cli.ts"
   },
   "dependencies": {
     "@ziro/core": "*",
-    "@ziro/datagen": "*"
+    "@ziro/datagen": "*",
+    "zod": "^4.6.7"
   }
 }

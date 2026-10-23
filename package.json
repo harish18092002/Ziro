@@ -22,11 +22,13 @@
     "typecheck": "npm run build:libs && npm run typecheck --workspaces --if-present",
     "test": "npm run build:libs && npm test --workspaces --if-present",
     "datagen": "npm run build:libs && npm run datagen -w @ziro/datagen --",
-    "eval": "npm run eval -w @ziro/evals",
+    "eval": "npm run build:libs && npm run eval -w @ziro/api --",
     "db:generate": "npm run build:libs && npm run db:generate -w @ziro/api",
     "db:migrate": "npm run build:libs && npm run db:migrate -w @ziro/api",
     "seed": "npm run seed -w @ziro/api",
-    "bench:matcher": "npm run build:libs && npm run bench:matcher -w @ziro/api --"
+    "bench:matcher": "npm run build:libs && npm run bench:matcher -w @ziro/api --",
+    "eval:report": "npm run build:libs && npm run report -w @ziro/evals --",
+    "eval:smoke": "npm run build:libs && npm run eval:smoke -w @ziro/api --"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

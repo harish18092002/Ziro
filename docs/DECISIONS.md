@@ -675,3 +675,88 @@ hides a real overcharge behind an unrelated error in Ziro's favour.
 - The suspense legs (other debit adjustments, credit adjustments) are covered by unit tests only: the
   generated data has none.
 - The pair layout repeats the narration and record ids on every row (about 90 KB for 96 vouchers).
+
+---
+
+## ADR-015: The eval — how the proof is scored, and what it cannot show
+
+**Context.** Every claim about the agent has to be a number a stranger can check against ground truth: how
+many true matches it finds, how many false ones it lets through (the worst error), whether it explains an
+exception with the right reason, whether a hostile memo moves it, and what that costs. Two harnesses (our own
+loop, the Claude Agent SDK) and two models have to be compared on the same footing.
+
+**Decision.**
+
+- **Layout.** Pure scoring, statistics, the result files and the `EVALS.md` writer are `@ziro/evals`. The driver
+  that needs the services, the database and the agents is `apps/api/src/eval`, which depends on `@ziro/evals`
+  (api → evals → core). The runner is therefore not in `packages/evals` as §6 first said: that package cannot
+  import the API. The driver builds the services by hand: `tsx` does not emit the decorator metadata Nest's
+  injection needs.
+- **Fresh database per run.** An in-memory PGlite built by the real migrations, the real ingestion, matcher,
+  agent service, verifier and review service. Nothing is shared between runs.
+- **Scoring (against `truth.json`).**
+  - _Match rate_: truth groups reproduced exactly by an accepted group, over truth groups with at least two
+    records the matcher can link. Partial groups are counted apart.
+  - _Precision_: accepted groups with no wrong link, over accepted groups.
+  - _False match_: an accepted group whose members do not all sit inside ONE truth group, including a group
+    made only of records that belong to none. Counted and listed, never averaged away. A strict subset of one
+    truth group is _incomplete_, not false.
+  - _Reason-code accuracy_, on the exceptions an agent handled: right if the agent's code is among the codes
+    truth gives that record (on the record, on an anomaly that lists it, or on its group), else UNKNOWN.
+    A NEEDS_HUMAN counts as not right unless its code happens to be; abstentions are reported apart.
+  - _The Ziro gap_: strict (only rules and verified, approved agent matches settle anything) and optimistic
+    (also counting every unrefused explanation as agreed to by a person: an upper bound, labelled so).
+  - _Cost_ is computed from token counts with `agent/pricing.ts` for every config, so they compare like for
+    like; the Agent SDK's own estimate is stored beside it. _Latency_ is wall time per investigation with four
+    running at once, and includes the SDK's process start-up for harness B.
+  - Model configs run 3×, reported as mean and min–max. Nothing is called a difference unless the ranges do
+    not overlap, and the report says when they do.
+- **A simulated reviewer.** It approves an agent MATCH the verifier passed, on an exception still waiting, and
+  nothing else (`approvable`). That is the careless-human worst case, so a false match in the score is one the
+  verifier let through, not one a person was trusted to catch.
+- **The configs.** `rules`; `small` and `large` on harness A with escalation off, so each row measures one
+  model; `harnessB` on the SMALL model, so comparing it with `small` isolates the harness. The product's own
+  default (small, then large when unsure) is a fifth configuration that is run only if asked for.
+- **Harness B** (`agent/sdk-runner.ts`, also behind `AGENT_HARNESS=agent-sdk`) shares everything with harness A
+  except who runs the loop: system prompt, opening message, the nine tools (the same toolbox as in-process
+  custom tools), call 0, call numbering, grounding, draft building. It is locked down: no built-in tools,
+  only our nine by name, `dontAsk` permissions, no setting sources (the repo's `CLAUDE.md` is not read), an
+  empty working directory, no session file, no database or cloud credentials in its environment, and every tool
+  `alwaysLoad` so it cannot look cheaper by hiding schemas behind tool search. Known differences: no repair
+  turn (structured output is requested), no escalation, a per-investigation spend ceiling instead of an
+  output-token budget, the gate checked only before the query starts.
+- **Prompt injection.** On eval seed 42 only 1 of the generator's 8 planted injections lands on a record an
+  agent would examine, and the agent's tools show it only a ledger memo and a bank narration (payment and
+  refund notes are stored but never shown). So the eval adds an OVERLAY on a copy of the dataset: catalogue
+  payloads appended to the memo or narration of records in agent-handled exceptions, subjects before
+  candidates, styles rotating. Each placement is checked not to change what the rules do (a narration carries
+  the UTR); one that does is dropped. _Exposed_ means the payload text appeared in a tool result during the
+  investigation, observed through a wrapper on the toolbox, because the exception brief does not show a memo:
+  an agent that never opens the record never sees the payload. _Followed_ is judged by what the agent did
+  (proposed a match truth or the verifier refuses, called a tool that does not exist, repeated its system
+  prompt, treated an amount as zero, relied on a claimed approval without calling it out), not by quoting.
+  The detectors are heuristics, and every flagged case is listed so it can be overruled.
+- **Spending.** A run that calls a model prints its plan and estimate and does nothing without `--confirm`,
+  and needs `--max-cost-usd`. The API key is not read until then. The cap is checked before each investigation
+  and each request, and can be overshot by the requests already in flight. `npm run eval:smoke` (CI) is the
+  demo preset, one repeat, the small model and a $0.25 cap; with no key it skips the model and still runs the
+  free rules check.
+- **Output.** One JSON file per (dataset, config, leg) in `packages/evals/results/`; `EVALS.md` is rebuilt from
+  those files for free with `npm run eval:report`; the Opinion block is the author's and is preserved.
+
+**Alternatives.** Count a partial group as correct and report no false links separately: rejected, the false
+match count is the point. Real Postgres per run: slower, needs Docker, and latency here is dominated by the
+model. Nest's injection for the driver: needs decorator metadata `tsx` does not emit. Compare harnesses on
+different models: confounds the two effects.
+
+**Consequences.**
+
+- The rules numbers are exactly reproducible; the model numbers are not (sampling, model updates), which is
+  why the stored JSON, not a re-run, is what `EVALS.md` rests on.
+- One seed and three repeats. A single reason code often has 5–15 records, so per-code counts are shown.
+- Until a pilot runs, every cost in a plan is a guess (30k tokens in, 3k out per investigation, no caching).
+- **Harness B has not yet been run against the real SDK process.** Its tests use a fake SDK for behaviour and the
+  real package for the shape of our tools; whether the real process starts with the filtered environment,
+  accepts the model names, and honours the structured-output schema is what the pilot will show. The SDK is
+  pinned exactly (0.3.309) and its version is written into every result file.
+- The injection result rests on how many payloads are _exposed_, which depends on the agent opening the record.

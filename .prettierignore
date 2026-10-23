@@ -7,3 +7,7 @@ package-lock.json
 apps/api/drizzle
 # the author's project brain; not reformatted by tooling
 CLAUDE.md
+# written by npm run eval:report from packages/evals/results; regenerated, never hand-formatted
+EVALS.md
+# raw eval results, written by npm run eval; kept exactly as the runner wrote them
+packages/evals/results

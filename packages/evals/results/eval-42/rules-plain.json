@@ -1,0 +1,271 @@
+{
+  "schemaVersion": 1,
+  "preset": "eval",
+  "seed": 42,
+  "config": "rules",
+  "leg": "plain",
+  "clusterExceptions": false,
+  "generatedAt": "2026-10-23T12:17:41.372Z",
+  "versions": {
+    "node": "v24.21.0",
+    "agentSdk": null,
+    "models": {
+      "small": "claude-haiku-5-5",
+      "large": "claude-sonnet-5-5"
+    }
+  },
+  "runs": [
+    {
+      "config": "rules",
+      "leg": "plain",
+      "repeat": 1,
+      "clusterExceptions": false,
+      "harness": null,
+      "model": null,
+      "incomplete": false,
+      "incompleteReason": null,
+      "startedAt": "2026-10-23T12:17:35.454Z",
+      "durationMs": 2309,
+      "orders": 500,
+      "exceptions": {
+        "total": 104,
+        "handled": 58,
+        "skipped": 46
+      },
+      "groups": {
+        "truthGroups": 534,
+        "exact": 520,
+        "partial": 3,
+        "matchRate": 0.9737827715355806,
+        "matchRateWithPartial": 0.9794007490636704,
+        "byKind": {
+          "order": {
+            "truth": 485,
+            "exact": 472,
+            "partial": 3
+          },
+          "payout": {
+            "truth": 49,
+            "exact": 48,
+            "partial": 0
+          }
+        },
+        "accepted": {
+          "total": 523,
+          "rule": 523,
+          "agent": 0
+        },
+        "incomplete": 3,
+        "falseMatches": 0,
+        "falseMatchExamples": [],
+        "precision": 1,
+        "exactShare": 0.994263862332696,
+        "agentAdded": {
+          "accepted": 0,
+          "exact": 0,
+          "falseMatches": 0
+        }
+      },
+      "reasonCodes": null,
+      "verifier": {
+        "proposals": 0,
+        "passed": 0,
+        "rejected": 0,
+        "notApplicable": 0,
+        "rejectedExamples": []
+      },
+      "simulatedApprovals": 0,
+      "gap": {
+        "strictPaise": "20419089",
+        "optimisticPaise": "20419089"
+      },
+      "injection": null,
+      "cost": {
+        "totalMicroUsd": 0,
+        "per1kOrdersMicroUsd": 0,
+        "llmCalls": 0,
+        "tokens": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "sdkReportedMicroUsd": null
+      },
+      "latency": {
+        "investigations": 0,
+        "p50Ms": null,
+        "p95Ms": null,
+        "meanMs": null
+      }
+    },
+    {
+      "config": "rules",
+      "leg": "plain",
+      "repeat": 2,
+      "clusterExceptions": false,
+      "harness": null,
+      "model": null,
+      "incomplete": false,
+      "incompleteReason": null,
+      "startedAt": "2026-10-23T12:17:37.768Z",
+      "durationMs": 1743,
+      "orders": 500,
+      "exceptions": {
+        "total": 104,
+        "handled": 58,
+        "skipped": 46
+      },
+      "groups": {
+        "truthGroups": 534,
+        "exact": 520,
+        "partial": 3,
+        "matchRate": 0.9737827715355806,
+        "matchRateWithPartial": 0.9794007490636704,
+        "byKind": {
+          "order": {
+            "truth": 485,
+            "exact": 472,
+            "partial": 3
+          },
+          "payout": {
+            "truth": 49,
+            "exact": 48,
+            "partial": 0
+          }
+        },
+        "accepted": {
+          "total": 523,
+          "rule": 523,
+          "agent": 0
+        },
+        "incomplete": 3,
+        "falseMatches": 0,
+        "falseMatchExamples": [],
+        "precision": 1,
+        "exactShare": 0.994263862332696,
+        "agentAdded": {
+          "accepted": 0,
+          "exact": 0,
+          "falseMatches": 0
+        }
+      },
+      "reasonCodes": null,
+      "verifier": {
+        "proposals": 0,
+        "passed": 0,
+        "rejected": 0,
+        "notApplicable": 0,
+        "rejectedExamples": []
+      },
+      "simulatedApprovals": 0,
+      "gap": {
+        "strictPaise": "20419089",
+        "optimisticPaise": "20419089"
+      },
+      "injection": null,
+      "cost": {
+        "totalMicroUsd": 0,
+        "per1kOrdersMicroUsd": 0,
+        "llmCalls": 0,
+        "tokens": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "sdkReportedMicroUsd": null
+      },
+      "latency": {
+        "investigations": 0,
+        "p50Ms": null,
+        "p95Ms": null,
+        "meanMs": null
+      }
+    },
+    {
+      "config": "rules",
+      "leg": "plain",
+      "repeat": 3,
+      "clusterExceptions": false,
+      "harness": null,
+      "model": null,
+      "incomplete": false,
+      "incompleteReason": null,
+      "startedAt": "2026-10-23T12:17:39.515Z",
+      "durationMs": 1853,
+      "orders": 500,
+      "exceptions": {
+        "total": 104,
+        "handled": 58,
+        "skipped": 46
+      },
+      "groups": {
+        "truthGroups": 534,
+        "exact": 520,
+        "partial": 3,
+        "matchRate": 0.9737827715355806,
+        "matchRateWithPartial": 0.9794007490636704,
+        "byKind": {
+          "order": {
+            "truth": 485,
+            "exact": 472,
+            "partial": 3
+          },
+          "payout": {
+            "truth": 49,
+            "exact": 48,
+            "partial": 0
+          }
+        },
+        "accepted": {
+          "total": 523,
+          "rule": 523,
+          "agent": 0
+        },
+        "incomplete": 3,
+        "falseMatches": 0,
+        "falseMatchExamples": [],
+        "precision": 1,
+        "exactShare": 0.994263862332696,
+        "agentAdded": {
+          "accepted": 0,
+          "exact": 0,
+          "falseMatches": 0
+        }
+      },
+      "reasonCodes": null,
+      "verifier": {
+        "proposals": 0,
+        "passed": 0,
+        "rejected": 0,
+        "notApplicable": 0,
+        "rejectedExamples": []
+      },
+      "simulatedApprovals": 0,
+      "gap": {
+        "strictPaise": "20419089",
+        "optimisticPaise": "20419089"
+      },
+      "injection": null,
+      "cost": {
+        "totalMicroUsd": 0,
+        "per1kOrdersMicroUsd": 0,
+        "llmCalls": 0,
+        "tokens": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        },
+        "sdkReportedMicroUsd": null
+      },
+      "latency": {
+        "investigations": 0,
+        "p50Ms": null,
+        "p95Ms": null,
+        "meanMs": null
+      }
+    }
+  ]
+}

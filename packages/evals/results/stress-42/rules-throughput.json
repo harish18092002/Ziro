@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "preset": "stress",
+  "seed": 42,
+  "generatedAt": "2026-10-23T12:18:01.766Z",
+  "inputRows": 410214,
+  "milliseconds": [
+    1512,
+    1500,
+    1447
+  ],
+  "rowsPerSecond": [
+    271284,
+    273434,
+    283529
+  ],
+  "exceptions": 32600,
+  "groups": 99457
+}

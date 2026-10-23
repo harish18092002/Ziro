@@ -64,6 +64,14 @@ export interface AgentRunner {
   ): Promise<ProposalDraft[]>;
 }
 
+/** What a harness may tell a measurement beyond what the toolbox shows. Optional; production passes none. */
+export interface RunnerTelemetry {
+  /** The model asked for a tool that does not exist (harness B never reaches the toolbox with one). */
+  unknownTool(exceptionIds: readonly string[], name: string): void;
+  /** The cost the harness's own library estimated, in micro-USD, for comparison with ours. */
+  reportedCost(exceptionIds: readonly string[], microUsd: number): void;
+}
+
 /** Thrown by `gate` when no more LLM calls may be made. The job stops; the exception stays open. */
 export class AgentHalted extends Error {
   constructor(readonly reason: 'kill_switch' | 'daily_budget') {
