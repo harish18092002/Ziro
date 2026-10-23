@@ -2,7 +2,17 @@ import { useEffect, useState } from 'react';
 import { get, type Overview, type Progress } from './api';
 import { AuditTab } from './Audit';
 import { ExceptionsTab } from './Exceptions';
-import { dollars, inr, linkTo, percent, type Route, type Tab, words } from './format';
+import {
+  dollars,
+  failureSentence,
+  inr,
+  linkTo,
+  percent,
+  type Route,
+  type Tab,
+  words,
+} from './format';
+import { useLoad } from './hooks';
 
 type RunRoute = Extract<Route, { page: 'run' }>;
 
@@ -15,6 +25,12 @@ const TAB_NAMES: Record<Tab, string> = {
 
 export function RunPage({ route }: { route: RunRoute }) {
   const progress = useProgress(route.runId);
+  // One overview for the banners above the tabs and for the Summary tab.
+  const overview = useLoad<Overview>(
+    progress?.stage === 'ready' || progress?.stage === 'unknown'
+      ? `/runs/${route.runId}/overview`
+      : null,
+  );
   if (progress === null) return <p className="muted">Loading…</p>;
   if (progress.stage === 'failed')
     return <p className="bad">This run failed: {progress.error ?? 'no reason recorded'}.</p>;
@@ -22,6 +38,7 @@ export function RunPage({ route }: { route: RunRoute }) {
 
   return (
     <>
+      {overview.data ? <RunBanners o={overview.data} runId={route.runId} /> : null}
       <nav className="tabs">
         {(Object.keys(TAB_NAMES) as Tab[]).map((t) => (
           <a key={t} href={linkTo(route.runId, t)} className={t === route.tab ? 'on' : ''}>
@@ -29,7 +46,9 @@ export function RunPage({ route }: { route: RunRoute }) {
           </a>
         ))}
       </nav>
-      {route.tab === 'summary' && <Summary runId={route.runId} />}
+      {route.tab === 'summary' && (
+        <Summary runId={route.runId} o={overview.data} error={overview.error} />
+      )}
       {route.tab === 'exceptions' && <ExceptionsTab runId={route.runId} selected={route.itemId} />}
       {route.tab === 'audit' && <AuditTab runId={route.runId} selected={route.itemId} />}
       {route.tab === 'downloads' && <Downloads runId={route.runId} />}
@@ -91,14 +110,50 @@ function Working({ p }: { p: Progress }) {
   );
 }
 
-function Summary({ runId }: { runId: string }) {
-  const [o, setO] = useState<Overview | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    get<Overview>(`/runs/${runId}/overview`).then(setO, (e: unknown) =>
-      setError(e instanceof Error ? e.message : String(e)),
-    );
-  }, [runId]);
+/**
+ * What a person must know before reading any number on this run: Razorpay did not return everything
+ * (PARTIAL), the agent stopped early, or the demo broke things on purpose. Shown on every tab.
+ */
+function RunBanners({ o, runId }: { o: Overview; runId: string }) {
+  const handled = failureSentence(o.failures);
+  return (
+    <>
+      {o.run.partial ? (
+        <div className="banner warn" role="alert">
+          <b>PARTIAL RUN.</b> Razorpay did not return everything. What arrived was imported; this is
+          missing:
+          <ul>
+            {o.run.gaps.map((g, i) => (
+              <li key={i}>{g.detail}</li>
+            ))}
+          </ul>
+          Exceptions such as “ledger without payment” or an unexplained settlement may be caused by
+          the gap, not by a real discrepancy. Import again to fill in what is missing.
+        </div>
+      ) : null}
+      {o.failures.note ? (
+        <div className="banner warn" role="status">
+          {o.failures.note}. The exceptions it left are still open.
+        </div>
+      ) : null}
+      {o.failures.injected ? (
+        <div className="banner info" role="status">
+          <b>Chaos is on.</b> The demo broke two investigations on purpose: one model request timed
+          out on every try, and one reply was cut off mid-JSON. {handled ?? ''} Nothing stopped: the
+          run finished and both went to a person with the reason. In{' '}
+          <a href={linkTo(runId, 'exceptions')}>Exceptions</a>, the filter “Handed to a person by
+          the system” shows them.
+        </div>
+      ) : handled ? (
+        <div className="banner info" role="status">
+          {handled}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function Summary({ runId, o, error }: { runId: string; o: Overview | null; error: string | null }) {
   if (error) return <p className="bad">{error}</p>;
   if (o === null) return <p className="muted">Loading…</p>;
   const { gap, sources: s } = o;
@@ -266,6 +321,10 @@ function Summary({ runId }: { runId: string }) {
               <tr>
                 <td>Model cost</td>
                 <td className="n">{dollars(o.llm.costUsd)}</td>
+              </tr>
+              <tr>
+                <td>Handed to a person without a conclusion</td>
+                <td className="n">{o.failures.handedToAPerson}</td>
               </tr>
               <tr>
                 <td>Wall time for the run</td>

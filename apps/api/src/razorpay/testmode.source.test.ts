@@ -337,6 +337,110 @@ describe('errors never fall back to synthetic data', () => {
   });
 });
 
+describe('a list that fails part-way', () => {
+  const unavailable = {
+    status: 503,
+    body: { error: { code: 'SERVER_ERROR', description: 'down' } },
+  };
+  const secondPageOnwards = (params: Record<string, unknown>) => Number(params['skip']) >= 100;
+
+  it('keeps the pages it already has and says the list is incomplete', async () => {
+    const payments = Array.from({ length: 250 }, (_, i) => rawPayment(i));
+    const { emulator, source, used } = setup({ ...EMPTY, payments });
+    emulator.failWhen('/v1/payments', secondPageOnwards, unavailable);
+
+    const result = await source.fetchPayments(DAY);
+
+    expect(result.items).toHaveLength(100);
+    expect(result.source).toBe('razorpay_testmode');
+    expect(result.provenance.reason).toBe('ok');
+    expect(result.provenance.incomplete).toHaveLength(1);
+    expect(result.provenance.incomplete?.[0]).toMatchObject({ what: 'payments', fetched: 100 });
+    expect(result.provenance.incomplete?.[0]?.reason).toMatch(
+      /503 SERVER_ERROR.*\(after 2 tries\)/,
+    );
+    // It did not quietly swap in synthetic data for the part it could not get.
+    expect(used).toEqual([]);
+  });
+
+  it('records nothing as incomplete when every page arrives', async () => {
+    const { source } = setup({
+      ...EMPTY,
+      payments: Array.from({ length: 150 }, (_, i) => rawPayment(i)),
+    });
+    expect((await source.fetchPayments(DAY)).provenance.incomplete).toBeUndefined();
+  });
+
+  it('still fails when the FIRST page fails: there is nothing to keep', async () => {
+    const { emulator, source, used } = setup({
+      ...EMPTY,
+      payments: Array.from({ length: 250 }, (_, i) => rawPayment(i)),
+    });
+    emulator.failWhen('/v1/payments', () => true, unavailable);
+    await expect(source.fetchPayments(DAY)).rejects.toMatchObject({ statusCode: 503 });
+    expect(used).toEqual([]);
+  });
+
+  it('still fails when a later page is unreadable: that is not an outage', async () => {
+    const { emulator, source } = setup({
+      ...EMPTY,
+      payments: Array.from({ length: 250 }, (_, i) => rawPayment(i)),
+    });
+    emulator.failWhen('/v1/payments', secondPageOnwards, { status: 200, body: { nope: true } });
+    await expect(source.fetchPayments(DAY)).rejects.toBeInstanceOf(RazorpayResponseError);
+  });
+
+  it('still fails when a later page dies of something that is not a Razorpay answer: a bug is not an outage', async () => {
+    let calls = 0;
+    const client = stubClient({
+      listPayments: () => {
+        calls += 1;
+        return calls === 1
+          ? collection(Array.from({ length: 100 }, (_, i) => rawPayment(i)))
+          : Promise.reject(new TypeError('x is not a function'));
+      },
+    });
+    const source = new TestModeSource({ runId: RUN_ID, client, fallback: spyFallback().fallback });
+    await expect(source.fetchPayments(DAY)).rejects.toBeInstanceOf(TypeError);
+  });
+
+  it('does not stop on a 4xx: a refused request is not a transient failure of the list', async () => {
+    const { emulator, source } = setup({
+      ...EMPTY,
+      payments: Array.from({ length: 250 }, (_, i) => rawPayment(i)),
+    });
+    emulator.failWhen('/v1/payments', secondPageOnwards, {
+      status: 400,
+      body: { error: { code: 'BAD_REQUEST_ERROR', description: 'bad' } },
+    });
+    // The list is incomplete all the same, and says why: the caller decides what that means.
+    const result = await source.fetchPayments(DAY);
+    expect(result.items).toHaveLength(100);
+    expect(result.provenance.incomplete?.[0]?.reason).toContain('400');
+  });
+
+  it('names the orders list when it is the one that stopped, not the payments', async () => {
+    const T = istDayBounds('2026-10-08').fromEpoch;
+    const orders = Array.from({ length: 150 }, (_, i) => ({
+      id: `order_${String(i).padStart(14, '0')}`,
+      entity: 'order',
+      receipt: `ORD-${i}`,
+      created_at: T + 3600 + i,
+    }));
+    const payments = [rawPayment(1, { order_id: orders[0]?.id })];
+    const { emulator, source } = setup({ ...EMPTY, payments, orders });
+    emulator.failWhen('/v1/orders', secondPageOnwards, unavailable);
+
+    const result = await source.fetchPayments(DAY);
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.record.receipt).toBe('ORD-0'); // it was on the first page
+    expect(result.provenance.incomplete?.map((i) => [i.what, i.fetched])).toEqual([
+      ['orders', 100],
+    ]);
+  });
+});
+
 describe('order receipts (they live on the order, not the payment)', () => {
   const T = istDayBounds('2026-10-08').fromEpoch;
   const order = (id: string, receipt: string | null, createdAt: number) => ({

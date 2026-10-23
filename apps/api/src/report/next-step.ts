@@ -10,6 +10,8 @@ export interface StepInput {
     readonly verdict: string;
     readonly suggestedAction: string;
     readonly verifier: string;
+    /** Why the system handed this to a person without a conclusion (words, not a code); null if it concluded. */
+    readonly degradedLabel?: string | null;
   } | null;
   readonly review: { readonly decision: string } | null;
 }
@@ -54,6 +56,14 @@ export function nextStepOf(e: StepInput): Step {
   }
   const waiting =
     e.status === 'proposed' ? ' (the proposal is waiting for a person to approve it)' : '';
+  // The agent did not reach a conclusion: nothing it said is advice. Say why, so the person knows
+  // whether asking again is worth it (a model that did not answer) or not (a reply that was invalid).
+  if (p.degradedLabel != null) {
+    return {
+      suggestedAction: null,
+      nextStep: `Investigate by hand: the agent could not reach a conclusion (${p.degradedLabel})${waiting}`,
+    };
+  }
   const text = ACTION_TEXT[p.suggestedAction];
   if (text !== undefined)
     return { suggestedAction: p.suggestedAction, nextStep: `${text}${waiting}` };

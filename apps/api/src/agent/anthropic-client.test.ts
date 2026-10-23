@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it } from 'vitest';
-import { AnthropicLlmClient, type AnthropicLike } from './anthropic-client.js';
+import { AnthropicLlmClient, type AnthropicLike, retryAfterMsOf } from './anthropic-client.js';
 import { LlmAbortedError, LlmError, type LlmRequest } from './llm.js';
 import { OUTPUT_JSON_SCHEMA } from './output.js';
 
@@ -163,29 +163,62 @@ describe('AnthropicLlmClient: the response', () => {
 });
 
 describe('AnthropicLlmClient: errors', () => {
-  const api = (status: number) =>
+  const api = (status: number, extra: Record<string, string> = {}) =>
     Anthropic.APIError.generate(
       status,
       { type: 'error', error: { type: 'x', message: 'boom' } },
       'boom',
-      new Headers({ 'request-id': 'req_9' }),
+      new Headers({ 'request-id': 'req_9', ...extra }),
     );
   const run = (error: Error, req = request()) =>
     new AnthropicLlmClient(fake(() => error).sdk).complete(req);
 
+  // The kinds follow platform.claude.com/docs/en/api/errors: a spend-cap 429 has no retry-after and keeps
+  // failing, so only a 429 that says when to come back is worth waiting for.
   it.each([
-    [429, true],
-    [500, true],
-    [529, true],
-    [408, true],
-    [400, false],
-    [401, false],
-    [403, false],
-    [404, false],
-  ])('status %i is retryable=%s', async (status, retryable) => {
+    [500, 'transient'],
+    [504, 'transient'],
+    [529, 'transient'],
+    [408, 'transient'],
+    [409, 'transient'],
+    [429, 'sustained'],
+    [402, 'sustained'],
+    [401, 'auth'],
+    [403, 'auth'],
+    [400, 'rejected'],
+    [404, 'rejected'],
+    [413, 'rejected'],
+  ] as const)('status %i is %s', async (status, kind) => {
     const error = await run(api(status)).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(LlmError);
-    expect(error).toMatchObject({ retryable, status, requestId: 'req_9' });
+    expect(error).toMatchObject({
+      kind,
+      retryable: kind === 'transient',
+      status,
+      requestId: 'req_9',
+    });
+  });
+
+  it('a 429 that says when to come back is transient, and carries how long to wait', async () => {
+    const seconds = await run(api(429, { 'retry-after': '7' })).catch((e: unknown) => e);
+    expect(seconds).toMatchObject({ kind: 'transient', retryable: true, retryAfterMs: 7000 });
+    const millis = await run(api(429, { 'retry-after-ms': '250', 'retry-after': '9' })).catch(
+      (e: unknown) => e,
+    );
+    expect(millis).toMatchObject({ kind: 'transient', retryAfterMs: 250 });
+  });
+
+  it('reads retry-after as seconds, as milliseconds, or as a date, and ignores nonsense', () => {
+    const h = (o: Record<string, string>) => new Headers(o);
+    expect(retryAfterMsOf(h({ 'retry-after': '3' }))).toBe(3000);
+    expect(retryAfterMsOf(h({ 'retry-after': '0.5' }))).toBe(500);
+    expect(retryAfterMsOf(h({ 'retry-after-ms': '1200' }))).toBe(1200);
+    const now = Date.parse('2026-10-23T10:00:00Z');
+    expect(retryAfterMsOf(h({ 'retry-after': 'Fri, 23 Oct 2026 10:00:09 GMT' }), now)).toBe(9000);
+    expect(retryAfterMsOf(h({ 'retry-after': 'Fri, 23 Oct 2026 09:00:00 GMT' }), now)).toBe(0);
+    expect(retryAfterMsOf(h({ 'retry-after': 'soon' }))).toBeNull();
+    expect(retryAfterMsOf(h({}))).toBeNull();
+    expect(retryAfterMsOf(undefined)).toBeNull();
   });
 
   it('treats a connection failure as retryable', async () => {

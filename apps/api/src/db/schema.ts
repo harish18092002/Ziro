@@ -16,6 +16,7 @@ import {
   ACTORS,
   AGENT_VERDICTS,
   BANK_DIRECTIONS,
+  DEGRADED_REASONS,
   EXCEPTION_STATUSES,
   MATCH_BASES,
   MATCH_GROUP_KINDS,
@@ -519,6 +520,12 @@ export const agentProposals = pgTable(
     draftJournalEntry: jsonb('draft_journal_entry').$type<Json>(),
     /** Why the harness changed or limited what the model said. */
     harnessFindings: jsonb('harness_findings').$type<string[]>().notNull().default([]),
+    /**
+     * Set when the harness could not get a conclusion and handed the exception to a person: the model API did
+     * not answer, its reply was unusable, a budget ran out, it declined. Null for a conclusion, including the
+     * model's own "I cannot tell". A code, so it can be counted; the prose is in the explanation.
+     */
+    degraded: text('degraded'),
     verifierStatus: verifierStatus('verifier_status').notNull().default('pending'),
     verifierFindings: jsonb('verifier_findings').$type<string[]>().notNull().default([]),
     createdAt: createdAt(),
@@ -527,6 +534,10 @@ export const agentProposals = pgTable(
     index('agent_proposals_exception_idx').on(t.exceptionId),
     uniqueIndex('agent_proposals_exception_attempt_uq').on(t.exceptionId, t.attempt),
     check('agent_proposals_attempt_positive', sql`${t.attempt} >= 1`),
+    check(
+      'agent_proposals_degraded_known',
+      sql`${t.degraded} is null or ${t.degraded} in (${sql.raw(DEGRADED_REASONS.map((r) => `'${r}'`).join(', '))})`,
+    ),
     check(
       'agent_proposals_confidence_range',
       sql`${t.confidencePermille} >= 0 and ${t.confidencePermille} <= 1000`,

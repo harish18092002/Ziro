@@ -1,0 +1,2 @@
+ALTER TABLE "agent_proposals" ADD COLUMN "degraded" text;--> statement-breakpoint
+ALTER TABLE "agent_proposals" ADD CONSTRAINT "agent_proposals_degraded_known" CHECK ("agent_proposals"."degraded" is null or "agent_proposals"."degraded" in ('model_unavailable', 'model_rejected', 'invalid_reply', 'tool_budget', 'token_budget', 'time_budget', 'context', 'refused'));

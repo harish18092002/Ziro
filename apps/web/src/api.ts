@@ -37,6 +37,30 @@ export const post = <T>(path: string, body: unknown = {}): Promise<T> =>
 export interface Availability {
   featured: { demo: string | null; eval: string | null };
   live: { available: boolean; reason: string | null };
+  /** The fault-injection toggle; offered only when the server runs in DEMO_MODE. */
+  chaos: { available: boolean; reason: string | null };
+}
+
+/** Whether the agent will take work. `paused` says why not; the rules run either way. */
+export interface AgentStatus {
+  configured: boolean;
+  paused: { reason: string; message: string; since: string | null; until: string | null } | null;
+  spentTodayUsd: string;
+  dailyBudgetUsd: string;
+}
+
+/** Something the Razorpay import could not get; the run is PARTIAL while any is recorded. */
+export interface Gap {
+  entity: string;
+  kind: 'not_fetched' | 'cut_short' | 'days_missing';
+  detail: string;
+  days: string[];
+}
+
+/** The two exceptions the demo toggle broke on purpose. */
+export interface ChaosPlan {
+  timeoutFor: string | null;
+  malformedFor: string | null;
 }
 export interface Progress {
   stage: 'matching' | 'investigating' | 'ready' | 'failed' | 'unknown';
@@ -44,6 +68,7 @@ export interface Progress {
   error: string | null;
   expected: number | null;
   note: string | null;
+  chaos: ChaosPlan | null;
   counts: {
     groups: number;
     exceptions: number;
@@ -60,6 +85,14 @@ export interface Overview {
     preset: string | null;
     featured: string | null;
     asOf: string;
+    partial: boolean;
+    gaps: Gap[];
+  };
+  failures: {
+    handedToAPerson: number;
+    byReason: { reason: string; label: string; count: number }[];
+    injected: ChaosPlan | null;
+    note: string | null;
   };
   reconciles: boolean;
   sources: {
@@ -170,6 +203,8 @@ export interface Described {
   date: string | null;
   detail: string;
 }
+/** `harness`: nobody's conclusion, the system handed the exception to a person. */
+export type Author = 'scripted' | 'planted' | 'model' | 'harness';
 export interface ExceptionRow {
   id: string;
   reasonCode: string;
@@ -190,7 +225,10 @@ export interface ExceptionRow {
     verdict: string;
     confidence: number;
     verifier: string;
-    author: 'scripted' | 'planted' | 'model';
+    author: Author;
+    /** Why the system handed this to a person without a conclusion; null when something concluded. */
+    degraded: string | null;
+    degradedLabel: string | null;
   } | null;
   review: { decision: string; reviewer: string } | null;
 }
@@ -201,7 +239,9 @@ export interface ExceptionList {
 export interface ProposalDetail {
   id: string;
   attempt: number;
-  author: 'scripted' | 'planted' | 'model';
+  author: Author;
+  degraded: string | null;
+  degradedLabel: string | null;
   model: string | null;
   verdict: string;
   reasonCode: string;

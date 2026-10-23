@@ -29,6 +29,7 @@ import type {
   DateRange,
   Entity,
   FetchResult,
+  Incomplete,
   ProvenanceReason,
   RazorpaySource,
   SourceLabel,
@@ -54,7 +55,11 @@ export interface TestModeSourceOptions {
 interface Tally {
   requests: number;
   readonly warnings: string[];
+  /** Lists that stopped part-way (see listAll). */
+  readonly incomplete: Incomplete[];
 }
+
+const newTally = (requests = 0): Tally => ({ requests, warnings: [], incomplete: [] });
 
 const SOURCE: SourceLabel = 'razorpay_testmode';
 
@@ -88,7 +93,12 @@ export class TestModeSource implements RazorpaySource {
     return { runId: this.options.runId, source: SOURCE } as const;
   }
 
-  /** Walks count/skip to the end of a list. */
+  /**
+   * Walks count/skip to the end of a list. If a later page fails once the retries are spent, the pages
+   * already received are kept and the list is recorded as incomplete: they are real records, and
+   * throwing them away would make a transient outage cost the whole import. A failure on the FIRST page
+   * has nothing to keep and is thrown.
+   */
   private async listAll(
     tally: Tally,
     label: string,
@@ -103,7 +113,15 @@ export class TestModeSource implements RazorpaySource {
         );
       }
       tally.requests += 1;
-      const items = parseCollection(await fetchPage(all.length), label);
+      let body: unknown;
+      try {
+        body = await fetchPage(all.length);
+      } catch (error) {
+        if (page === 0 || !(error instanceof RazorpayApiError)) throw error;
+        tally.incomplete.push({ what: label, fetched: all.length, reason: error.summary });
+        return all;
+      }
+      const items = parseCollection(body, label);
       all.push(...items);
       if (items.length < pageSize) return all;
     }
@@ -119,6 +137,7 @@ export class TestModeSource implements RazorpaySource {
         reason: 'ok',
         requests: tally.requests,
         warnings: tally.warnings,
+        ...(tally.incomplete.length === 0 ? {} : { incomplete: tally.incomplete }),
       },
     };
   }
@@ -136,6 +155,7 @@ export class TestModeSource implements RazorpaySource {
         reason,
         requests: tally.requests,
         warnings: tally.warnings,
+        ...(tally.incomplete.length === 0 ? {} : { incomplete: tally.incomplete }),
       },
     };
   }
@@ -152,7 +172,7 @@ export class TestModeSource implements RazorpaySource {
 
   private async loadPayments(range: DateRange): Promise<FetchResult<RzpPayment>> {
     const bounds = epochRange(range);
-    const tally: Tally = { requests: 0, warnings: [] };
+    const tally = newTally();
     const raws = await this.listAll(tally, 'payments', this.pageSize, (skip) =>
       this.options.client.listPayments({
         from: bounds.fromEpoch,
@@ -246,11 +266,12 @@ export class TestModeSource implements RazorpaySource {
       return this.fellBack(await this.options.fallback.fetchRefunds(range), 'follows-payments', {
         requests: 0,
         warnings: [],
+        incomplete: [],
       });
     }
 
     const bounds = epochRange(range);
-    const tally: Tally = { requests: 0, warnings: [] };
+    const tally = newTally();
     const raws = await this.listAll(tally, 'refunds', this.pageSize, (skip) =>
       this.options.client.listRefunds({
         from: bounds.fromEpoch,
@@ -273,7 +294,7 @@ export class TestModeSource implements RazorpaySource {
 
   async fetchSettlements(range: DateRange): Promise<FetchResult<RzpSettlement>> {
     const bounds = epochRange(range);
-    const tally: Tally = { requests: 0, warnings: [] };
+    const tally = newTally();
     const raws = await this.listAll(tally, 'settlements', this.pageSize, (skip) =>
       this.options.client.listSettlements({
         from: bounds.fromEpoch,
@@ -326,7 +347,7 @@ export class TestModeSource implements RazorpaySource {
     // A day with nothing settled is a true empty answer ONLY if test mode settles at all. So recon
     // follows settlements: if test mode has none this month, the synthetic report is the coherent one.
     const probe = await this.monthHasSettlements(date);
-    const tally: Tally = { requests: probe.requests, warnings: [] };
+    const tally = newTally(probe.requests);
     if (!probe.has) {
       return this.fellBack(
         await this.options.fallback.fetchSettlementRecon(date),

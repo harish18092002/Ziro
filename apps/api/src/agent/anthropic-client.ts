@@ -8,6 +8,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import {
   type AssistantBlock,
+  classifyLlmFailure,
   type LlmClient,
   LlmAbortedError,
   LlmError,
@@ -25,14 +26,44 @@ export interface AnthropicLike {
   };
 }
 
+/**
+ * How long the server asked us to wait. `retry-after-ms` (milliseconds) wins over `retry-after`
+ * (seconds, or an HTTP date). Null when it said nothing usable.
+ */
+export function retryAfterMsOf(
+  headers: { get(name: string): string | null } | undefined,
+  now = Date.now(),
+): number | null {
+  if (headers === undefined) return null;
+  const ms = Number(headers.get('retry-after-ms'));
+  if (headers.get('retry-after-ms') !== null && Number.isFinite(ms) && ms >= 0)
+    return Math.round(ms);
+  const raw = headers.get('retry-after');
+  if (raw === null) return null;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1000);
+  const date = Date.parse(raw);
+  return Number.isNaN(date) ? null : Math.max(0, date - now);
+}
+
 function toLlmError(error: unknown, signal: AbortSignal): Error {
   if (signal.aborted || error instanceof Anthropic.APIUserAbortError) return new LlmAbortedError();
   if (error instanceof Anthropic.APIError) {
     const status = typeof error.status === 'number' ? error.status : null;
-    const retryable =
-      status === null || status === 408 || status === 409 || status === 429 || status >= 500;
+    // The SDK types `headers` loosely; what it holds is a Headers object (or nothing, for a dropped connection).
+    const retryAfterMs = retryAfterMsOf(
+      error.headers as { get(name: string): string | null } | undefined,
+    );
+    const kind = classifyLlmFailure(status, retryAfterMs);
     const text = `Anthropic API error${status === null ? '' : ` ${status}`}: ${error.message}`;
-    return new LlmError(text.slice(0, 300), retryable, status, error.requestID ?? null);
+    return new LlmError(
+      text.slice(0, 300),
+      kind === 'transient',
+      status,
+      error.requestID ?? null,
+      retryAfterMs,
+      kind,
+    );
   }
   return error instanceof Error ? error : new Error(String(error));
 }

@@ -11,7 +11,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { findForbiddenCharacter } from '@ziro/core/normalize';
-import { count, eq, and, inArray } from 'drizzle-orm';
+import { and, count, eq, inArray, sql } from 'drizzle-orm';
 import { appendAudit } from '../audit/audit.js';
 import { DEFAULT_FEE_CONTRACT } from '../common/fee-contract.js';
 import { DEFAULT_WINDOWS } from '../common/verifier-config.js';
@@ -42,9 +42,12 @@ import {
   refusedFile,
   type RowBase,
 } from './csv-files.js';
+import { gapsOf, razorpayConfigOf } from './gaps.js';
 import {
   fetchBundle,
+  type Gap,
   ImportRangeError,
+  nothingFetched,
   type RazorpayBundle,
   type RazorpayWindow,
   SETTLEMENT_LOOKAHEAD_DAYS,
@@ -75,6 +78,9 @@ export interface RunView {
   readonly periodStart: string;
   readonly periodEnd: string;
   readonly createdAt: string;
+  /** True when the last Razorpay import could not get everything; `gaps` says what is missing. */
+  readonly partial: boolean;
+  readonly gaps: readonly Gap[];
 }
 
 export interface TableCount {
@@ -112,6 +118,9 @@ export interface RazorpayImportReport {
   }[];
   /** True when real test-mode and synthetic data are in one run: it will not reconcile (ADR-008). */
   readonly mixed: boolean;
+  /** True when Razorpay failed for part of the window. What arrived was imported; `gaps` is what did not. */
+  readonly partial: boolean;
+  readonly gaps: readonly Gap[];
   readonly errors: readonly RowError[];
   readonly errorCount: number;
   readonly warnings: readonly ImportWarning[];
@@ -183,6 +192,11 @@ function prepareCsv(kind: 'ledger' | 'bank', buffer: Buffer): PreparedCsv {
     : { kind, parsed: parseBankCsv(text) };
 }
 
+const partialOf = (config: unknown): { partial: boolean; gaps: Gap[] } => {
+  const gaps = gapsOf(config);
+  return { partial: gaps.length > 0, gaps };
+};
+
 const toRunView = (row: typeof reconRuns.$inferSelect): RunView => ({
   id: row.id,
   status: row.status,
@@ -190,6 +204,7 @@ const toRunView = (row: typeof reconRuns.$inferSelect): RunView => ({
   periodStart: row.periodStart,
   periodEnd: row.periodEnd,
   createdAt: row.createdAt.toISOString(),
+  ...partialOf(row.config),
 });
 
 const tally = (rows: readonly { source: string; n: number }[]): TableCount => ({
@@ -511,8 +526,16 @@ export class IngestService {
     window: RazorpayWindow,
   ): Promise<RazorpayBundle> {
     try {
-      return await fetchBundle(makeSource(), window);
+      const bundle = await fetchBundle(makeSource(), window);
+      // A partial answer is imported and flagged. No answer at all has nothing to import.
+      if (nothingFetched(bundle)) {
+        throw new BadGatewayException(
+          `Razorpay did not answer usefully: ${bundle.gaps[0]?.detail ?? 'no data'}`,
+        );
+      }
+      return bundle;
     } catch (err) {
+      if (err instanceof BadGatewayException) throw err;
       if (err instanceof ImportRangeError) throw new UnprocessableEntityException(err.message);
       if (err instanceof RazorpayConfigError) {
         throw new ServiceUnavailableException('the Razorpay source is not configured correctly');
@@ -535,6 +558,13 @@ export class IngestService {
     const was = await this.lockOpenRun(tx, runId);
     const outcome: BundleOutcome = await writeBundle(tx, runId, bundle);
     await this.markIngesting(tx, runId, was);
+    // The latest import decides what the run is missing: one that gets everything clears an earlier gap.
+    await tx
+      .update(reconRuns)
+      .set({
+        config: sql`${reconRuns.config} || ${JSON.stringify(razorpayConfigOf(bundle.gaps))}::jsonb`,
+      })
+      .where(eq(reconRuns.id, runId));
 
     const allErrors = [...outcome.errors].sort((a, b) => a.row - b.row);
     const { errors, errorCount } = capErrors(allErrors);
@@ -542,7 +572,11 @@ export class IngestService {
     const report: RazorpayImportReport = {
       runId,
       source: 'razorpay',
-      status: statusOf([], allErrors.length),
+      // Gaps from Razorpay mean not everything landed, which is what 'partial' says.
+      status:
+        statusOf([], allErrors.length) === 'ok' && bundle.gaps.length > 0
+          ? 'partial'
+          : statusOf([], allErrors.length),
       window,
       entities: outcome.entities,
       provenance: bundle.provenance.map((p) => ({
@@ -552,11 +586,20 @@ export class IngestService {
         requests: p.requests,
       })),
       mixed: summary.mixed,
+      partial: bundle.gaps.length > 0,
+      gaps: bundle.gaps,
       errors,
       errorCount,
-      warnings: bundle.provenance.flatMap((p) =>
-        p.warnings.map((reason) => ({ code: 'source_note' as const, row: null, reason })),
-      ),
+      warnings: [
+        ...bundle.gaps.map((gap) => ({
+          code: 'partial_import' as const,
+          row: null,
+          reason: gap.detail,
+        })),
+        ...bundle.provenance.flatMap((p) =>
+          p.warnings.map((reason) => ({ code: 'source_note' as const, row: null, reason })),
+        ),
+      ],
     };
     await appendAudit(tx, {
       runId,
@@ -570,6 +613,8 @@ export class IngestService {
         entities: report.entities,
         provenance: report.provenance,
         mixed: report.mixed,
+        partial: report.partial,
+        gaps: report.gaps,
         errorCount,
         errors: allErrors.slice(0, MAX_AUDITED_ERRORS),
         warnings: report.warnings.length,

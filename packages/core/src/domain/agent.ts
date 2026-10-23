@@ -157,6 +157,24 @@ export const agentProposalSchema = withProposalRules(
 );
 export type AgentProposal = z.output<typeof agentProposalSchema>;
 
+/**
+ * When the agent could not reach a conclusion and handed an exception to a person (a NEEDS_HUMAN the harness
+ * wrote, as opposed to a model's own "I cannot tell"), why. The prose is in the proposal; this code is what
+ * is counted and shown.
+ */
+export const DEGRADED_REASONS = [
+  'model_unavailable',
+  'model_rejected',
+  'invalid_reply',
+  'tool_budget',
+  'token_budget',
+  'time_budget',
+  'context',
+  'refused',
+] as const;
+export const degradedReasonSchema = z.enum(DEGRADED_REASONS);
+export type DegradedReason = z.output<typeof degradedReasonSchema>;
+
 export const REVIEW_DECISIONS = ['approved', 'rejected'] as const;
 export const REVIEWER_KINDS = ['human', 'auto_accept'] as const;
 

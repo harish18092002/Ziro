@@ -24,6 +24,8 @@ import type { Executor } from '../db/executor.js';
 import { agentProposals, llmCalls, reconExceptions, reconRuns } from '../db/schema.js';
 import { deterministicUuid } from '../razorpay/identity.js';
 import { PROPOSAL_PIPELINE, type ProposalPipeline } from '../review/pipeline.js';
+import { DEGRADED_LABEL } from './degraded.js';
+import { AgentHealth } from './health.js';
 import { type InvestigationJob } from './jobs.js';
 import { formatMicroUsd, parseMicroUsd } from './pricing.js';
 import { cluster, type Skipped, triage } from './triage.js';
@@ -32,12 +34,28 @@ import {
   AgentHalted,
   type AgentRunner,
   type ExceptionToInvestigate,
+  HALT_MESSAGE,
+  type HaltReason,
   type InvestigationContext,
   type LlmCallRecord,
   type ProposalDraft,
 } from './types.js';
 
 export const AGENT_RUNNER = Symbol('AGENT_RUNNER');
+export const AGENT_HEALTH = Symbol('AGENT_HEALTH');
+
+/** Whether the agent will take work right now, and if not, why. Shown as a banner. */
+export interface AgentStatus {
+  readonly configured: boolean;
+  readonly paused: {
+    readonly reason: HaltReason;
+    readonly message: string;
+    readonly since: string | null;
+    readonly until: string | null;
+  } | null;
+  readonly spentTodayUsd: string;
+  readonly dailyBudgetUsd: string;
+}
 
 export type AgentSettings = Pick<
   Env,
@@ -75,6 +93,10 @@ export class AgentService {
     @Optional()
     @Inject(PROPOSAL_PIPELINE)
     private readonly pipeline: ProposalPipeline | null = null,
+    /** What the system has learned about the model API (a rejected key, a spend limit, an outage). */
+    @Optional()
+    @Inject(AGENT_HEALTH)
+    private readonly health: AgentHealth = new AgentHealth(),
   ) {}
 
   /** The time source for the daily budget; a test replaces it. */
@@ -195,6 +217,32 @@ export class AgentService {
     if (this.settings.AGENT_KILL_SWITCH) throw new AgentHalted('kill_switch');
     const budget = BigInt(Math.round(this.settings.DAILY_LLM_BUDGET_USD * MICRO));
     if ((await this.spentToday()) >= budget) throw new AgentHalted('daily_budget');
+    this.health.assertRunning();
+  }
+
+  /**
+   * Whether the agent will take work, for the banner. The two operator switches come first, then what the
+   * system has learned. Rules never depend on this: they run whether or not the agent is paused.
+   */
+  async status(): Promise<AgentStatus> {
+    const budget = BigInt(Math.round(this.settings.DAILY_LLM_BUDGET_USD * MICRO));
+    const spent = await this.spentToday();
+    const halted = (reason: HaltReason) => ({
+      reason,
+      message: HALT_MESSAGE[reason],
+      since: null,
+      until: null,
+    });
+    return {
+      configured: this.configured,
+      paused: this.settings.AGENT_KILL_SWITCH
+        ? halted('kill_switch')
+        : spent >= budget
+          ? halted('daily_budget')
+          : this.health.state(),
+      spentTodayUsd: formatMicroUsd(spent),
+      dailyBudgetUsd: formatMicroUsd(budget),
+    };
   }
 
   private async recordLlmCall(runId: string, call: LlmCallRecord): Promise<string> {
@@ -339,6 +387,7 @@ export class AgentService {
                 ? null
                 : (JSON.parse(JSON.stringify(c.draftJournalEntry, bigintJsonReplacer)) as never),
             harnessFindings: draft.harnessFindings,
+            degraded: draft.degraded ?? null,
           })
           .onConflictDoNothing({ target: [agentProposals.exceptionId, agentProposals.attempt] })
           .returning({ id: agentProposals.id });
@@ -358,7 +407,10 @@ export class AgentService {
           entity: { type: 'agent_proposal', id: row.id },
           before: { exceptionStatus: 'open' },
           // The reason is written here, not taken from the model: audit text is never model text.
-          reason: `proposed ${c.verdict} (${c.reasonCode}) at ${Math.round(c.confidence * 1000) / 1000} confidence`,
+          reason:
+            draft.degraded == null
+              ? `proposed ${c.verdict} (${c.reasonCode}) at ${Math.round(c.confidence * 1000) / 1000} confidence`
+              : `handed to a person without a conclusion: ${DEGRADED_LABEL[draft.degraded]}`,
           records: [...c.links, ...(subject ? [subject] : [])],
           after: {
             exceptionStatus: 'proposed',
@@ -373,6 +425,7 @@ export class AgentService {
             harness: this.runner?.harness,
             llmCallId: draft.llmCallId,
             harnessFindings: draft.harnessFindings.length,
+            degraded: draft.degraded ?? null,
             links: c.links.length,
           },
         });

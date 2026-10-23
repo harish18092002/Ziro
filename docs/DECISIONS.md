@@ -760,3 +760,68 @@ different models: confounds the two effects.
   accepts the model names, and honours the structured-output schema is what the pilot will show. The SDK is
   pinned exactly (0.3.309) and its version is written into every result file.
 - The injection result rests on how many payloads are _exposed_, which depends on the agent opening the record.
+
+---
+
+## ADR-016: Failures are first-class — retry what is transient, say what was lost, never end the run
+
+**Status:** accepted
+
+**Context.** The agent depends on a model API, the import on Razorpay, the queue on Redis. Each fails in
+different ways, and a demo or an eval that dies on the first 529 proves nothing. What a failure must NOT do:
+end the run, be hidden behind plausible numbers, or turn into a wrong answer. Anthropic documents the
+semantics we rely on: 429 `rate_limit_error` (and a spend-cap 429 has no `retry-after` and keeps failing), 402
+billing, 401/403 authentication and permission, 504 timeout, 529 overloaded, 400 can be an organisation
+spend limit.
+
+**Decision.**
+
+- **Classify, then act.** `classifyLlmFailure` sorts a failure into `transient` (retry), `sustained` (a limit;
+  stop asking), `auth` (our key; stop asking) or `rejected` (this request; do not retry). The classification
+  is a pure function with a table test; the retry is one implementation (`common/retry.ts`) shared by the
+  model API and Razorpay.
+- **One resilience layer for every harness.** `ResilientRunner` wraps any `AgentRunner` (our loop, the Agent
+  SDK, the scripted demo agent), so the behaviour does not depend on which harness is running. The SDK's own
+  two retries per request stay, so the worst case is nine HTTP attempts at the request that keeps failing, within
+  a 90 s deadline. A failure it cannot cure becomes a NEEDS_HUMAN proposal; the run continues.
+- **A structured reason, not a sentence.** `agent_proposals.degraded` (migration 0008, checked against a list)
+  names why the system handed an exception to a person: `model_unavailable`, `model_rejected`, `invalid_reply`,
+  `tool_budget`, `token_budget`, `time_budget`, `context`, `refused`. It is counted, filtered, exported
+  (`agent_stopped_because`) and audited, and the author of such a proposal is `harness`: it is nobody's
+  conclusion. A model that concludes "I cannot tell" is _not_ degraded; it answered.
+- **Pause, do not grind.** A rejected key (401/403) or a limit (402, 429 without `retry-after`) would fail every
+  remaining exception the same way, so it halts the agent instead of degrading each one. So does a circuit
+  breaker: five unavailable investigations in a row. A pause leaves the exceptions open, lasts 15 minutes, then
+  lets one investigation through as a probe. It is per process and in memory (a table or a Redis key for a
+  banner was not worth it).
+- **PARTIAL is a flag, not a status.** A run whose Razorpay import lost something keeps its lifecycle
+  (`created` → … → `complete`) and carries `config.razorpay = { partial, gaps[] }`. What arrived is imported;
+  rows never change, so a later import fills the gap and clears the flag. A list that fails after its first
+  page keeps the pages it has. Recon stops being asked for after three failing days in a row. Only a total
+  outage is a 502.
+- **Failures can be shown.** In `DEMO_MODE`, `POST /demo/runs {"chaos": true}` breaks two investigations of the
+  scripted agent through the real resilience layer and the real parser, so a visitor sees a timeout retried
+  and handed to a person, and a cut-off reply refused. It is never applied to the live agent, whose budget and
+  breaker are shared by every visitor.
+
+**Alternatives.** Retry inside each harness: three copies of the same rules, and the Agent SDK's loop is not
+ours to change. Degrade every exception on a rejected key: fifty identical failures and fifty identical lines in
+the audit trail. Make PARTIAL a run status: it is orthogonal to where the run is in its lifecycle, and a
+status would have to be cleared by hand. Share the pause across instances in Redis: more moving parts for a
+banner; the cost of not sharing is a few failed investigations per instance. Fall back to synthetic data when
+Razorpay fails: exactly the plausible-but-fake number this project exists to avoid.
+
+**Consequences.**
+
+- The rules never depend on the agent's state, so a paused agent costs nothing but the agent's own work.
+- On several instances each learns about an outage on its own, and the banner reflects the instance that
+  answered.
+- An investigation that was degraded is not retried by a redelivered job (the proposal for that attempt is on
+  record); a person asks again, which is attempt two.
+- Two deliveries of the same job at the same instant can both run the investigation; the database keeps one
+  proposal, and at worst one investigation's tokens are wasted.
+- The chaos toggle proves the handling works on a model that is simulated, not that Anthropic's real errors
+  look exactly as simulated; the classification rests on the documented semantics and on tests, not on a live
+  outage.
+- A 400-class Razorpay error on one entity is now a listed gap, not a failed import. It is visible and loud,
+  but the run proceeds.

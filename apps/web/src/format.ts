@@ -1,4 +1,5 @@
 import { formatRupees, paise } from '@ziro/core/money';
+import type { AgentStatus, Overview } from './api';
 
 /** Integer paise (a digit string from the API) as rupees with Indian grouping: "₹1,23,456.50". */
 export function inr(paiseText: string | null | undefined): string {
@@ -34,3 +35,22 @@ export function parseHash(hash: string): Route {
 
 export const linkTo = (runId: string, tab: Tab = 'summary', itemId?: string): string =>
   `#/runs/${runId}/${tab}${itemId ? `/${itemId}` : ''}`;
+
+/**
+ * The banner shown on every page while the agent is paused, or null. The rules keep running and nothing
+ * is lost: the exceptions stay open until the agent can take them.
+ */
+export function agentBanner(status: AgentStatus | null): string | null {
+  if (status === null || status.paused === null) return null;
+  const { message, until } = status.paused;
+  const retry = until === null ? '' : ` It will try again after ${until.slice(11, 16)} UTC.`;
+  return `The agent is paused: ${message}. Matching still runs and every exception stays open; nothing is lost.${retry}`;
+}
+
+/** "2 investigations were handed to a person (1 × the model API did not answer, 1 × ...)", or null for none. */
+export function failureSentence(f: Overview['failures']): string | null {
+  if (f.handedToAPerson === 0) return null;
+  const n = f.handedToAPerson;
+  const parts = f.byReason.map((r) => `${r.count} × ${r.label}`).join(', ');
+  return `${n} investigation${n === 1 ? ' was' : 's were'} handed to a person without a conclusion (${parts}).`;
+}

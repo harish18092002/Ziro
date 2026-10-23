@@ -23,6 +23,11 @@ export class RazorpayApiError extends Error {
     return isRetryableStatus(this.statusCode);
   }
 
+  /** For a person: what Razorpay said and how hard we tried. Carries nothing but the status and code. */
+  get summary(): string {
+    return `${this.message} (after ${this.attempts === 1 ? '1 try' : `${this.attempts} tries`})`;
+  }
+
   withAttempts(attempts: number): RazorpayApiError {
     return new RazorpayApiError(
       this.statusCode,

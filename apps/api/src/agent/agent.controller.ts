@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   Inject,
   Param,
@@ -64,5 +65,19 @@ export class AgentController {
       jobs: plan.jobs.length,
       skipped: { count: plan.skipped.length, examples: plan.skipped.slice(0, SKIPPED_EXAMPLES) },
     };
+  }
+}
+
+/**
+ * Whether the agent will take work, for the banner on every page: paused by the kill switch, a spent
+ * daily budget, a rejected key, a provider limit or the circuit breaker. The rules never depend on it.
+ */
+@Controller('agent')
+export class AgentStatusController {
+  constructor(private readonly agent: AgentService) {}
+
+  @Get('status')
+  status() {
+    return this.agent.status();
   }
 }

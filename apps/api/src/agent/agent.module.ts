@@ -12,11 +12,13 @@ import type { Env } from '../config/env.js';
 import { DbModule } from '../db/db.module.js';
 import { ReviewModule } from '../review/review.module.js';
 import { AnthropicLlmClient } from './anthropic-client.js';
-import { AGENT_RUNNER, AgentService } from './agent.service.js';
-import { AgentController } from './agent.controller.js';
+import { AGENT_HEALTH, AGENT_RUNNER, AgentService } from './agent.service.js';
+import { AgentController, AgentStatusController } from './agent.controller.js';
 import type { LlmClient } from './llm.js';
 import { LoopRunner, type LoopRunnerOptions } from './loop-runner.js';
+import { AgentHealth } from './health.js';
 import { ratesFor } from './pricing.js';
+import { ResilientRunner } from './resilient-runner.js';
 import { SdkRunner } from './sdk-runner.js';
 import {
   BullInvestigationQueue,
@@ -30,8 +32,18 @@ import type { AgentRunner } from './types.js';
  * The harness named by AGENT_HARNESS, or none when there is no API key (the free replay and the rest
  * of the app work without one). A harness that cannot work is a boot failure, not a silent no-op.
  */
-export function createRunner(env: Env): AgentRunner | null {
+export function createRunner(
+  env: Env,
+  health: AgentHealth = new AgentHealth(),
+): AgentRunner | null {
   if (!env.ANTHROPIC_API_KEY) return null;
+  const base = createHarness(env, env.ANTHROPIC_API_KEY);
+  // Whatever the harness, a model API that misbehaves degrades an investigation to a person, or pauses
+  // the agent; it never fails the job or the run (resilient-runner.ts).
+  return new ResilientRunner(base, { health });
+}
+
+function createHarness(env: Env, apiKey: string): AgentRunner {
   // Harness B runs one model and does not escalate; it needs only the small model's price.
   const models =
     env.AGENT_HARNESS === 'agent-sdk'
@@ -48,11 +60,9 @@ export function createRunner(env: Env): AgentRunner | null {
     }
   }
   if (env.AGENT_HARNESS === 'agent-sdk') {
-    return new SdkRunner({ apiKey: env.ANTHROPIC_API_KEY, model: env.AGENT_MODEL_SMALL });
+    return new SdkRunner({ apiKey, model: env.AGENT_MODEL_SMALL });
   }
-  return new LoopRunner(
-    loopRunnerOptions(env, AnthropicLlmClient.fromApiKey(env.ANTHROPIC_API_KEY)),
-  );
+  return new LoopRunner(loopRunnerOptions(env, AnthropicLlmClient.fromApiKey(apiKey)));
 }
 
 /** What the environment decides about the loop harness: its models and whether it may escalate. */
@@ -96,9 +106,14 @@ export class AgentWorkerHost implements OnModuleInit, OnApplicationShutdown {
 
 @Module({
   imports: [DbModule, ReviewModule],
-  controllers: [AgentController],
+  controllers: [AgentController, AgentStatusController],
   providers: [
-    { provide: AGENT_RUNNER, inject: [ENV], useFactory: createRunner },
+    { provide: AGENT_HEALTH, useFactory: (): AgentHealth => new AgentHealth() },
+    {
+      provide: AGENT_RUNNER,
+      inject: [ENV, AGENT_HEALTH],
+      useFactory: (env: Env, health: AgentHealth) => createRunner(env, health),
+    },
     {
       provide: INVESTIGATION_QUEUE,
       inject: [ENV],

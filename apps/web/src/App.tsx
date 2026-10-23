@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { ApiError, type Availability, post } from './api';
-import { linkTo, parseHash } from './format';
+import { useEffect, useState } from 'react';
+import { type AgentStatus, ApiError, type Availability, get, post } from './api';
+import { agentBanner, linkTo, parseHash } from './format';
 import { useHash, useLoad } from './hooks';
 import { RunPage } from './RunPage';
 
@@ -14,14 +14,42 @@ export function App() {
         </a>
         <span className="tag">synthetic data · Razorpay test mode</span>
       </header>
+      <AgentBanner />
       <main>{route.page === 'home' ? <Home /> : <RunPage route={route} />}</main>
     </>
+  );
+}
+
+/** Says so, on every page, while the agent is paused (kill switch, budget, key, provider limit, outage). */
+function AgentBanner() {
+  const [status, setStatus] = useState<AgentStatus | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = () => {
+      get<AgentStatus>('/agent/status').then(
+        (s) => live && setStatus(s),
+        () => undefined,
+      );
+    };
+    load();
+    const timer = setInterval(load, 60_000);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, []);
+  const text = agentBanner(status);
+  return text === null ? null : (
+    <div className="banner warn" role="status">
+      {text}
+    </div>
   );
 }
 
 function Home() {
   const { data: offer } = useLoad<Availability>('/demo');
   const [live, setLive] = useState(false);
+  const [chaos, setChaos] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -32,6 +60,7 @@ function Home() {
     try {
       const { runId } = await post<{ runId: string }>('/demo/runs', {
         agent: live ? 'live' : 'scripted',
+        ...(chaos ? { chaos: true } : {}),
       });
       window.location.hash = linkTo(runId);
     } catch (e) {
@@ -69,8 +98,27 @@ function Home() {
         </div>
         {offer?.live.available ? (
           <label className="check">
-            <input type="checkbox" checked={live} onChange={(e) => setLive(e.target.checked)} /> Use
-            a live language model (costs money; off by default)
+            <input
+              type="checkbox"
+              checked={live}
+              onChange={(e) => {
+                setLive(e.target.checked);
+                if (e.target.checked) setChaos(false);
+              }}
+            />{' '}
+            Use a live language model (costs money; off by default)
+          </label>
+        ) : null}
+        {offer?.chaos.available ? (
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={chaos}
+              disabled={live}
+              onChange={(e) => setChaos(e.target.checked)}
+            />{' '}
+            Break two investigations on purpose (a model timeout and a cut-off reply) and watch them
+            handled. Free; uses the scripted agent.
           </label>
         ) : null}
         {problem ? <p className="bad">{problem}</p> : null}

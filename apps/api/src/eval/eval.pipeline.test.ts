@@ -13,11 +13,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadDomainDataset, matcherConfigFor } from '../matcher-eval/dataset.js';
 import { ScriptedRunner } from '../demo/scripted-runner.js';
 import { makeSyntheticDataset, type TempDataset } from '../razorpay/razorpay.fixtures.js';
-import type {
-  AgentRunner,
-  ExceptionToInvestigate,
-  InvestigationContext,
-  ProposalDraft,
+import { AgentHealth } from '../agent/health.js';
+import { LlmError } from '../agent/llm.js';
+import { ResilientRunner } from '../agent/resilient-runner.js';
+import {
+  AgentHalted,
+  type AgentRunner,
+  type ExceptionToInvestigate,
+  type InvestigationContext,
+  type ProposalDraft,
 } from '../agent/types.js';
 import type { Toolbox } from '../agent/tools/toolbox.js';
 import { CostGuard } from './cost-guard.js';
@@ -428,6 +432,53 @@ describe('runOnce: an agent', () => {
     expect(r.incomplete).toBe(true);
     expect(r.incompleteReason).toMatch(/1 investigation\(s\) failed: API overloaded/);
     expect(r.verifier.proposals).toBe(13);
+  }, 120_000);
+});
+
+describe('runOnce: an agent that stops by itself, or whose model API goes quiet', () => {
+  it('says why when the agent pauses itself, instead of quietly measuring fewer investigations', async () => {
+    let n = 0;
+    const stopped: AgentRunner = {
+      harness: 'loop',
+      investigate: (members, ctx) => {
+        n += 1;
+        if (n === 2) return Promise.reject(new AgentHalted('model_auth'));
+        return new ScriptedRunner().investigate(members, ctx);
+      },
+    };
+    const r = await runOnce(
+      options({ config: 'small', concurrency: 1, makeRunner: () => stopped }),
+    );
+    expect(r.incomplete).toBe(true);
+    expect(r.incompleteReason).toBe(
+      'the agent stopped early: the model provider rejected our API key',
+    );
+    expect(r.verifier.proposals).toBe(1);
+  }, 120_000);
+
+  it('does not count unanswered investigations as the model getting them wrong', async () => {
+    let n = 0;
+    const quiet: AgentRunner = {
+      harness: 'loop',
+      investigate: (members, ctx) => {
+        n += 1;
+        if (n === 3) return Promise.reject(new LlmError('overloaded', true, 529, 'req_x'));
+        return new ScriptedRunner().investigate(members, ctx);
+      },
+    };
+    const wrapped = new ResilientRunner(quiet, {
+      health: new AgentHealth(),
+      policy: { maxAttempts: 1, baseDelayMs: 1, maxDelayMs: 1, deadlineMs: 1_000 },
+    });
+    const r = await runOnce(
+      options({ config: 'small', concurrency: 1, makeRunner: () => wrapped }),
+    );
+    expect(r.incomplete).toBe(true);
+    expect(r.incompleteReason).toBe(
+      '1 investigation(s) got no answer from the model API, even after retries',
+    );
+    // The run still finished: the unanswered one went to a person and the rest were investigated.
+    expect(r.verifier.proposals).toBe(14);
   }, 120_000);
 });
 

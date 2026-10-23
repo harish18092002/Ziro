@@ -2,6 +2,7 @@
 // actually carried out). Harness A, the hand-rolled loop, implements `AgentRunner`; Harness B, the
 // Claude Agent SDK, will implement the same interface in P11 and be swapped in by AGENT_HARNESS.
 import type { AgentProposalContent, ReasonCode } from '@ziro/core/domain';
+import type { DegradedReason } from './degraded.js';
 import type { Usage } from './pricing.js';
 import type { Toolbox } from './tools/toolbox.js';
 
@@ -49,6 +50,12 @@ export interface ProposalDraft {
   readonly harnessFindings: string[];
   /** The request that produced the conclusion. */
   readonly llmCallId: string | null;
+  /**
+   * Set when the harness could not get a conclusion and handed the exception to a person (NEEDS_HUMAN):
+   * the structured reason, so it can be counted and shown. Null or absent for a conclusion, including a
+   * model's own "I cannot tell".
+   */
+  readonly degraded?: DegradedReason | null;
 }
 
 export interface AgentRunner {
@@ -72,11 +79,28 @@ export interface RunnerTelemetry {
   reportedCost(exceptionIds: readonly string[], microUsd: number): void;
 }
 
+/** Why no more model calls will be made for now. The exception stays open for a later run. */
+export type HaltReason =
+  | 'kill_switch'
+  | 'daily_budget'
+  /** The provider says a usage or spend limit is reached (a 429 with no retry-after, or 402). */
+  | 'provider_limit'
+  /** The provider rejected our key (401 or 403): every call will fail alike. */
+  | 'model_auth'
+  /** The circuit breaker: several investigations in a row found the model API unavailable. */
+  | 'model_unavailable';
+
+export const HALT_MESSAGE: Record<HaltReason, string> = {
+  kill_switch: 'the agent kill switch is on',
+  daily_budget: 'the daily LLM budget is spent',
+  provider_limit: 'the model provider says a usage or spend limit has been reached',
+  model_auth: 'the model provider rejected our API key',
+  model_unavailable: 'the model API has not been answering, so the agent is paused',
+};
+
 /** Thrown by `gate` when no more LLM calls may be made. The job stops; the exception stays open. */
 export class AgentHalted extends Error {
-  constructor(readonly reason: 'kill_switch' | 'daily_budget') {
-    super(
-      reason === 'kill_switch' ? 'the agent kill switch is on' : 'the daily LLM budget is spent',
-    );
+  constructor(readonly reason: HaltReason) {
+    super(HALT_MESSAGE[reason]);
   }
 }

@@ -25,6 +25,19 @@ export type Entity = 'payments' | 'refunds' | 'settlements' | 'settlement_recon'
  */
 export type ProvenanceReason = 'ok' | 'test-mode-empty' | 'follows-payments';
 
+/**
+ * A list that stopped part-way: Razorpay failed on a later page after the retries were spent. What was
+ * fetched is real and is kept; the tail is missing, and the run says so.
+ */
+export interface Incomplete {
+  /** What was being listed ("payments", "orders", "settlement recon"). */
+  readonly what: string;
+  /** Records received before it stopped. */
+  readonly fetched: number;
+  /** Why it stopped, in words that carry no credentials (status, code, tries). */
+  readonly reason: string;
+}
+
 export interface Provenance {
   readonly entity: Entity;
   readonly source: SourceLabel;
@@ -33,6 +46,8 @@ export interface Provenance {
   readonly requests: number;
   /** Non-fatal oddities worth showing, e.g. an order that could not be found. */
   readonly warnings: readonly string[];
+  /** Set when a list stopped part-way; absent for a complete answer. */
+  readonly incomplete?: readonly Incomplete[];
 }
 
 export interface FetchResult<T> {

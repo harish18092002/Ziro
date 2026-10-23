@@ -5,6 +5,7 @@
 // Escalation is only for a model that tried and could not decide. A budget that ran out, a refusal or
 // an unusable reply are not reasons to spend more: those go to a person as they are.
 import { type Limits, DEFAULT_LIMITS, type Exhausted } from './budget.js';
+import type { DegradedReason } from './degraded.js';
 import type { Effort, LlmClient } from './llm.js';
 import { runLoop, type LoopOutcome } from './loop.js';
 import {
@@ -62,12 +63,41 @@ function finalizeFor(outcome: LoopOutcome, subject: Subject): Finalized {
         'the reply was not valid even after one repair attempt',
         outcome.calls,
       );
+    case 'unavailable':
+    case 'rejected':
+      return needsHuman(subject, end.reason, outcome.calls);
+  }
+}
+
+const DEGRADED_BY_EXHAUSTION: Record<Exhausted, DegradedReason> = {
+  tool_calls: 'tool_budget',
+  tokens: 'token_budget',
+  time: 'time_budget',
+  context: 'context',
+};
+
+/** Why a person has to look, when the harness did not get a conclusion; null when the model concluded. */
+function degradedFor(outcome: LoopOutcome, exceptionId: string): DegradedReason | null {
+  const end = outcome.end;
+  switch (end.kind) {
+    case 'answered':
+      return end.output.results.some((r) => r.exceptionId === exceptionId) ? null : 'invalid_reply';
+    case 'exhausted':
+      return DEGRADED_BY_EXHAUSTION[end.by];
+    case 'refused':
+      return 'refused';
+    case 'invalid':
+      return 'invalid_reply';
+    case 'unavailable':
+      return 'model_unavailable';
+    case 'rejected':
+      return 'model_rejected';
   }
 }
 
 export function draftsFrom(
   outcome: LoopOutcome,
-  model: string,
+  model: string | null,
   members: readonly ExceptionToInvestigate[],
 ): ProposalDraft[] {
   return members.map((member) => {
@@ -80,6 +110,7 @@ export function draftsFrom(
       model,
       harnessFindings: done.findings,
       llmCallId: outcome.lastLlmCallId,
+      degraded: degradedFor(outcome, member.id),
     };
   });
 }

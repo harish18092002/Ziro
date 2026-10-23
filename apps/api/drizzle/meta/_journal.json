@@ -57,6 +57,13 @@
       "when": 1792688349587,
       "tag": "0007_verifier_review_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792779770796,
+      "tag": "0008_agent_proposals_degraded",
+      "breakpoints": true
     }
   ]
 }

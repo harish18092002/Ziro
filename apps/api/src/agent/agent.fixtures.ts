@@ -363,4 +363,28 @@ export async function setRunConfig(
   await db.update(reconRuns).set({ config }).where(eq(reconRuns.id, runId));
 }
 
+/**
+ * A run of its own with one open exception (a ledger entry whose receipt two payments could claim), so a
+ * test's proposals and audit rows do not disturb the shared world.
+ */
+export async function openExceptionInOwnRun(db: TestDb) {
+  const runId = await seedRun(db);
+  const ledger = await insertLedger(db, runId, { orderRef: 'ORD-F1', amountPaise: 500n });
+  const payment = await insertPayment(db, runId, {
+    rzpId: 'pay_F1',
+    receipt: 'ORD-F1',
+    amountPaise: 500n,
+    feePaise: 0n,
+    taxPaise: 0n,
+  });
+  const exception = await insertException(db, runId, {
+    reasonCode: 'DUPLICATE_PAYMENT',
+    subjectType: 'ledger_entry',
+    subjectId: ledger,
+    candidates: [{ recordType: 'rzp_payment', recordId: payment }],
+    cause: 'receipt_ambiguous',
+  });
+  return { runId, ledger, payment, exception };
+}
+
 export { seedRun };

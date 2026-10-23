@@ -16,6 +16,7 @@ import { ConfigModule } from '../config/config.module.js';
 import { loadEnv } from '../config/env.js';
 import { DB } from '../db/db.module.js';
 import { createMigratedDb, type TestDb } from '../db/migrated-db.fixtures.js';
+import { RazorpayApiError } from '../razorpay/errors.js';
 import {
   auditEvents,
   bankLines,
@@ -34,7 +35,7 @@ import {
 } from '../razorpay/razorpay.fixtures.js';
 import { RazorpaySourceFactory } from '../razorpay/razorpay.module.js';
 import { SyntheticSource } from '../razorpay/synthetic.source.js';
-import { itemOf, settlementOn, stubSource } from './ingest.fixtures.js';
+import { itemOf, settlementOn, stubSource, withFailures } from './ingest.fixtures.js';
 import { IngestModule } from './ingest.module.js';
 import type { DemoResult, RazorpayImportReport } from './ingest.service.js';
 import { ENTITY_KEYS } from './razorpay-records.js';
@@ -758,6 +759,131 @@ describe('limits and configuration', () => {
       expect((run.body as { razorpaySource: string }).razorpaySource).toBe('testmode');
     } finally {
       await testmode.close();
+    }
+  });
+});
+
+describe('when Razorpay fails for part of the window', () => {
+  const window = { from: '2026-09-01', to: '2026-09-10' };
+  const down = () => new RazorpayApiError(503, 'SERVER_ERROR', 'upstream is unavailable', null, 5);
+  const settled = (runId: string) =>
+    stubSource({
+      settlements: [settlementOn('setl_1', '2026-09-02', runId)],
+      items: [itemOf(1, 'setl_1', '2026-09-02', runId)],
+    }).source;
+
+  it('imports what arrived, flags the run PARTIAL, and says what is missing', async () => {
+    const partial = await boot(
+      {},
+      { forRun: (runId) => withFailures(settled(runId), { payments: down() }) },
+    );
+    try {
+      const run = (await partial.api().post('/runs').send(period)).body as { id: string };
+      const res = await partial.api().post(`/runs/${run.id}/import/razorpay`).send(window);
+
+      expect(res.status).toBe(200);
+      const report = res.body as RazorpayImportReport;
+      expect(report.partial).toBe(true);
+      expect(report.status).toBe('partial');
+      expect(report.gaps.map((g) => g.entity)).toEqual(['payments', 'refunds']);
+      expect(report.warnings.map((w) => w.code)).toEqual(['partial_import', 'partial_import']);
+      expect(report.warnings[0]?.reason).toContain('payments were not fetched');
+      expect(report.entities).toMatchObject({
+        settlements: { inserted: 1 },
+        settlementItems: { inserted: 1 },
+      });
+      expect((await partial.db.select().from(rzpSettlements)).map((s) => s.rzpId)).toEqual([
+        'setl_1',
+      ]);
+
+      // The run itself carries the flag, wherever it is read.
+      const view = (await partial.api().get(`/runs/${run.id}`)).body as {
+        run: { partial: boolean; gaps: { entity: string }[] };
+      };
+      expect(view.run.partial).toBe(true);
+      expect(view.run.gaps.map((g) => g.entity)).toEqual(['payments', 'refunds']);
+
+      const [event] = await partial.db
+        .select()
+        .from(auditEvents)
+        .where(and(eq(auditEvents.runId, run.id), eq(auditEvents.action, 'import.razorpay')));
+      expect(event?.detail).toMatchObject({
+        partial: true,
+        gaps: [{ entity: 'payments' }, { entity: 'refunds' }],
+      });
+    } finally {
+      await partial.close();
+    }
+  });
+
+  it('is cleared by a later import that gets everything, and fills only what was absent', async () => {
+    let razorpayIsDown = true;
+    const recovering = await boot(
+      {},
+      {
+        forRun: (runId) =>
+          razorpayIsDown ? withFailures(settled(runId), { payments: down() }) : settled(runId),
+      },
+    );
+    try {
+      const run = (await recovering.api().post('/runs').send(period)).body as { id: string };
+      await recovering.api().post(`/runs/${run.id}/import/razorpay`).send(window);
+      const before = (await recovering.api().get(`/runs/${run.id}`)).body as {
+        run: { partial: boolean };
+      };
+      expect(before.run.partial).toBe(true);
+
+      razorpayIsDown = false;
+      const res = await recovering.api().post(`/runs/${run.id}/import/razorpay`).send(window);
+      const report = res.body as RazorpayImportReport;
+      expect(report.partial).toBe(false);
+      expect(report.gaps).toEqual([]);
+      expect(report.status).toBe('ok');
+      // The settlement was already there: a re-import changes nothing it already holds.
+      expect(report.entities.settlements).toMatchObject({ inserted: 0, unchanged: 1 });
+
+      const after = (await recovering.api().get(`/runs/${run.id}`)).body as {
+        run: { partial: boolean; gaps: unknown[] };
+      };
+      expect(after.run).toMatchObject({ partial: false, gaps: [] });
+    } finally {
+      await recovering.close();
+    }
+  });
+
+  it('is 502, writes nothing, and leaves the run open when Razorpay gave nothing at all', async () => {
+    const outage = await boot(
+      {},
+      {
+        forRun: (runId) => withFailures(settled(runId), { payments: down(), settlements: down() }),
+      },
+    );
+    try {
+      const run = (await outage.api().post('/runs').send(period)).body as { id: string };
+      const res = await outage.api().post(`/runs/${run.id}/import/razorpay`).send(window);
+
+      expect(res.status).toBe(502);
+      expect((res.body as { message: string }).message).toContain('payments were not fetched');
+      expect(await outage.db.select().from(rzpSettlements)).toEqual([]);
+      expect(await actionsOf(run.id, outage.db)).toEqual(['run.create']);
+      const view = (await outage.api().get(`/runs/${run.id}`)).body as {
+        run: { status: string; partial: boolean };
+      };
+      expect(view.run).toMatchObject({ status: 'created', partial: false });
+    } finally {
+      await outage.close();
+    }
+  });
+
+  it('does not call a complete import partial', async () => {
+    const whole = await boot({}, { forRun: (runId) => settled(runId) });
+    try {
+      const run = (await whole.api().post('/runs').send(period)).body as { id: string };
+      const report = (await whole.api().post(`/runs/${run.id}/import/razorpay`).send(window))
+        .body as RazorpayImportReport;
+      expect(report).toMatchObject({ partial: false, gaps: [], status: 'ok' });
+    } finally {
+      await whole.close();
     }
   });
 });

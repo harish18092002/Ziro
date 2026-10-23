@@ -6,6 +6,7 @@
 // The default agent is the scripted baseline (free, instant, labelled as not a language model). A live
 // model is opt-in, only when the server has a key and budget.
 import {
+  BadRequestException,
   Inject,
   Injectable,
   Logger,
@@ -14,8 +15,10 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { and, count, desc, eq, sql } from 'drizzle-orm';
-import { AgentService } from '../agent/agent.service.js';
-import { AgentHalted } from '../agent/types.js';
+import { AgentService, type AgentSettings } from '../agent/agent.service.js';
+import { AgentHealth } from '../agent/health.js';
+import { ResilientRunner } from '../agent/resilient-runner.js';
+import { AgentHalted, type AgentRunner } from '../agent/types.js';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
 import { DB } from '../db/db.module.js';
@@ -24,6 +27,7 @@ import { agentProposals, matchGroups, reconExceptions, reconRuns } from '../db/s
 import { IngestService } from '../ingest/ingest.service.js';
 import { ReconService } from '../recon/recon.service.js';
 import { ReviewService } from '../review/review.service.js';
+import { CHAOS_RESILIENCE, type ChaosPlan, ChaosRunner, planChaos } from './chaos-runner.js';
 import { type DemoPreset, DEMO_SEED, datasetDir } from './dataset.js';
 import { planPlants, ScriptedRunner } from './scripted-runner.js';
 import { windowsFor } from './windows.js';
@@ -38,12 +42,16 @@ export interface StartOptions {
   readonly preset: DemoPreset;
   readonly agent: AgentChoice;
   readonly featured?: boolean;
+  /** Inject two model failures into the scripted agent to show them handled (DEMO_MODE only). */
+  readonly chaos?: boolean;
 }
 
 export interface Availability {
   readonly featured: { readonly demo: string | null; readonly eval: string | null };
   readonly scripted: true;
   readonly live: { readonly available: boolean; readonly reason: string | null };
+  /** The fault-injection toggle: offered only in DEMO_MODE. */
+  readonly chaos: { readonly available: boolean; readonly reason: string | null };
 }
 
 export interface Progress {
@@ -57,6 +65,8 @@ export interface Progress {
   /** Exceptions the agent will look at (triage leaves some for a person). Known once matching is done. */
   readonly expected: number | null;
   readonly note: string | null;
+  /** The exceptions the demo toggle broke on purpose; null for a run that had no chaos. */
+  readonly chaos: ChaosPlan | null;
   readonly counts: {
     readonly groups: number;
     readonly exceptions: number;
@@ -76,9 +86,16 @@ interface Pipeline {
   error?: string;
   expected?: number;
   note?: string;
+  chaos?: ChaosPlan;
 }
 
 const JOBS_AT_ONCE = 4;
+/** What the scripted agent runs under: it never asks a model, so no budget applies. */
+const SCRIPTED_SETTINGS: AgentSettings = {
+  AGENT_KILL_SWITCH: false,
+  DAILY_LLM_BUDGET_USD: 0,
+  CLUSTER_EXCEPTIONS: false,
+};
 
 @Injectable()
 export class DemoService implements OnApplicationBootstrap {
@@ -116,7 +133,18 @@ export class DemoService implements OnApplicationBootstrap {
       this.featured('demo', false),
       this.featured('eval', false),
     ]);
-    return { featured: { demo, eval: evalRun }, scripted: true, live: await this.liveStatus() };
+    return {
+      featured: { demo, eval: evalRun },
+      scripted: true,
+      live: await this.liveStatus(),
+      chaos: this.chaosStatus(),
+    };
+  }
+
+  chaosStatus(): { available: boolean; reason: string | null } {
+    return this.env.DEMO_MODE
+      ? { available: true, reason: null }
+      : { available: false, reason: 'the server is not in DEMO_MODE' };
   }
 
   async liveStatus(): Promise<{ available: boolean; reason: string | null }> {
@@ -158,6 +186,14 @@ export class DemoService implements OnApplicationBootstrap {
    * carry on in the background. `GET /runs/:id/progress` says how far they have got.
    */
   async start(options: StartOptions): Promise<string> {
+    if (options.chaos === true) {
+      // Faults are injected only where it is a demo, and only into the free scripted agent: the live
+      // agent is paid for and its budget and circuit breaker are shared by every visitor.
+      if (!this.env.DEMO_MODE)
+        throw new BadRequestException('chaos is only available in DEMO_MODE');
+      if (options.agent !== 'scripted')
+        throw new BadRequestException('chaos injects failures into the scripted agent only');
+    }
     if (options.agent === 'live') {
       const live = await this.liveStatus();
       if (!live.available)
@@ -176,28 +212,27 @@ export class DemoService implements OnApplicationBootstrap {
         startedAt: new Date().toISOString(),
       } satisfies Pipeline,
     });
-    void this.pipeline(run.id, options.agent).catch((error: unknown) => this.fail(run.id, error));
+    void this.pipeline(run.id, options.agent, options.chaos === true).catch((error: unknown) =>
+      this.fail(run.id, error),
+    );
     return run.id;
   }
 
-  private async pipeline(runId: string, choice: AgentChoice): Promise<void> {
+  private async pipeline(runId: string, choice: AgentChoice, chaos: boolean): Promise<void> {
     await this.recon.match(runId);
     await this.patchPipeline(runId, { stage: 'investigating' });
     await this.db.update(reconRuns).set({ status: 'investigating' }).where(eq(reconRuns.id, runId));
 
     const scripted = choice === 'scripted';
-    const agent = scripted
-      ? new AgentService(
-          this.db,
-          { AGENT_KILL_SWITCH: false, DAILY_LLM_BUDGET_USD: 0, CLUSTER_EXCEPTIONS: false },
-          new ScriptedRunner(await planPlants(this.db, runId)),
-          this.review,
-        )
-      : this.agent;
+    const agent = scripted ? await this.scriptedAgent(runId, chaos) : this.agent;
     const plan = await agent.plan(runId);
     await this.patchPipeline(runId, { expected: plan.exceptions });
 
+    // A model that stops answering must not end the run: the agent pauses or the exception goes to a
+    // person (resilient-runner.ts). What reaches here is a halt, or something unexpected in one job; a job
+    // that fails leaves its exceptions open and the rest carry on.
     const halt: { reason: string | null } = { reason: null };
+    const failed: { count: number; first: string | null } = { count: 0, first: null };
     const queue = [...plan.jobs];
     await Promise.all(
       Array.from(
@@ -209,12 +244,23 @@ export class DemoService implements OnApplicationBootstrap {
               await agent.process(job);
             } catch (error) {
               if (error instanceof AgentHalted) halt.reason = error.message;
-              else throw error;
+              else {
+                failed.count += 1;
+                failed.first ??= error instanceof Error ? error.message : String(error);
+                this.log.error(`investigation job failed in run ${runId}: ${String(error)}`);
+              }
             }
           }
         },
       ),
     );
+
+    const notes = [
+      halt.reason === null ? null : `the agent stopped early: ${halt.reason}`,
+      failed.count === 0
+        ? null
+        : `${failed.count} investigation job${failed.count === 1 ? '' : 's'} failed and left ${failed.count === 1 ? 'its' : 'their'} exceptions open (first error: ${(failed.first ?? '').slice(0, 200)})`,
+    ].filter((n): n is string => n !== null);
 
     await this.db
       .update(reconRuns)
@@ -223,8 +269,25 @@ export class DemoService implements OnApplicationBootstrap {
     await this.patchPipeline(runId, {
       stage: 'ready',
       finishedAt: new Date().toISOString(),
-      ...(halt.reason === null ? {} : { note: `the model stopped early: ${halt.reason}` }),
+      ...(notes.length === 0 ? {} : { note: notes.join('; ') }),
     });
+  }
+
+  /** The free baseline agent; with `chaos`, two of its exceptions are made to fail on purpose. */
+  private async scriptedAgent(runId: string, chaos: boolean): Promise<AgentService> {
+    let runner: AgentRunner = new ScriptedRunner(await planPlants(this.db, runId));
+    if (chaos) {
+      const preview = await new AgentService(this.db, SCRIPTED_SETTINGS, null).plan(runId);
+      const victims = planChaos(preview.jobs.flatMap((j) => j.items.map((i) => i.exceptionId)));
+      await this.patchPipeline(runId, { chaos: victims });
+      // The production wrapper, with a demo-sized wait, and a health of its own so one demo run cannot
+      // pause another.
+      runner = new ResilientRunner(new ChaosRunner(runner, victims), {
+        health: new AgentHealth(),
+        policy: CHAOS_RESILIENCE,
+      });
+    }
+    return new AgentService(this.db, SCRIPTED_SETTINGS, runner, this.review);
   }
 
   private async fail(runId: string, error: unknown): Promise<void> {
@@ -269,6 +332,7 @@ export class DemoService implements OnApplicationBootstrap {
       error: pipeline.error ?? null,
       expected: pipeline.expected ?? null,
       note: pipeline.note ?? null,
+      chaos: pipeline.chaos ?? null,
       counts: {
         groups: groups[0]?.n ?? 0,
         exceptions: exceptions[0]?.n ?? 0,

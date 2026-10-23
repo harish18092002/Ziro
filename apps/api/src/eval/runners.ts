@@ -8,7 +8,9 @@
 // Escalation is off in the eval so that each row measures one model. The product's default (small, then
 // large when unsure) is a fifth configuration that is not run unless asked for.
 import { AnthropicLlmClient } from '../agent/anthropic-client.js';
+import { AgentHealth } from '../agent/health.js';
 import { LoopRunner } from '../agent/loop-runner.js';
+import { ResilientRunner } from '../agent/resilient-runner.js';
 import { SdkRunner } from '../agent/sdk-runner.js';
 import type { AgentRunner, RunnerTelemetry } from '../agent/types.js';
 import type { ConfigName } from '@ziro/evals';
@@ -39,6 +41,14 @@ export interface Built {
   readonly close: () => void;
 }
 
+/**
+ * A measured run meets the same API failures production does, and must handle them the same way: a
+ * timeout or an overload is retried and then handed to a person, a rejected key stops the run. Each
+ * configuration gets a health of its own, so one cannot pause another.
+ */
+const resilient = (inner: AgentRunner): AgentRunner =>
+  new ResilientRunner(inner, { health: new AgentHealth() });
+
 export function buildRunner(
   config: ConfigName,
   m: ModelSettings,
@@ -51,18 +61,20 @@ export function buildRunner(
     case 'large': {
       const model = config === 'small' ? m.small : m.large;
       return {
-        runner: new LoopRunner({
-          client: AnthropicLlmClient.fromApiKey(m.apiKey),
-          smallModel: model,
-          largeModel: model,
-          escalation: false,
-        }),
+        runner: resilient(
+          new LoopRunner({
+            client: AnthropicLlmClient.fromApiKey(m.apiKey),
+            smallModel: model,
+            largeModel: model,
+            escalation: false,
+          }),
+        ),
         close: () => undefined,
       };
     }
     case 'harnessB': {
       const runner = new SdkRunner({ apiKey: m.apiKey, model: m.small, telemetry });
-      return { runner, close: () => runner.close() };
+      return { runner: resilient(runner), close: () => runner.close() };
     }
   }
 }

@@ -24,9 +24,13 @@ import { RateLimiter } from './rate-limit.js';
 
 /** Strangers choose only the agent; the dataset is always the 50-order demo. */
 export const startSchema = z
-  .strictObject({ agent: z.enum(['scripted', 'live']).default('scripted') })
+  .strictObject({
+    agent: z.enum(['scripted', 'live']).default('scripted'),
+    /** Inject two model failures to show them handled; DEMO_MODE only (the service refuses otherwise). */
+    chaos: z.boolean().default(false),
+  })
   .optional()
-  .transform((body) => body ?? { agent: 'scripted' as const });
+  .transform((body) => body ?? { agent: 'scripted' as const, chaos: false });
 
 const MINUTE = 60_000;
 /** Per client: 5 runs in 10 minutes. Everyone together: 60 in an hour. A speed bump, not a wall. */
@@ -47,7 +51,7 @@ export class DemoController {
   @Post('demo/runs')
   @HttpCode(202)
   async start(
-    @Body(new ZodPipe(startSchema)) body: { agent: 'scripted' | 'live' },
+    @Body(new ZodPipe(startSchema)) body: { agent: 'scripted' | 'live'; chaos: boolean },
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -67,7 +71,9 @@ export class DemoController {
         );
       }
     }
-    return { runId: await this.demo.start({ preset: 'demo', agent: body.agent }) };
+    return {
+      runId: await this.demo.start({ preset: 'demo', agent: body.agent, chaos: body.chaos }),
+    };
   }
 
   @Get('runs/:id/progress')

@@ -16,6 +16,7 @@ const FILTERS = [
   ['waiting', 'Waiting for a person'],
   ['refused', 'Refused by the checker'],
   ['unexamined', 'Not yet investigated'],
+  ['degraded', 'Handed to a person by the system'],
   ['resolved', 'Resolved'],
 ] as const;
 type Filter = (typeof FILTERS)[number][0];
@@ -24,6 +25,7 @@ const AUTHOR: Record<string, string> = {
   scripted: 'scripted baseline (not a language model)',
   planted: 'PLANTED by the demo to show the checker (not model output)',
   model: 'language model',
+  harness: 'nobody: the system handed this to a person without a conclusion',
 };
 
 export function ExceptionsTab({ runId, selected }: { runId: string; selected: string | null }) {
@@ -71,7 +73,11 @@ export function ExceptionsTab({ runId, selected }: { runId: string; selected: st
                   <Status e={e} />
                 </td>
                 <td>
-                  {e.proposal ? (
+                  {e.proposal?.degradedLabel ? (
+                    <span className="pill wait" title={e.proposal.degradedLabel}>
+                      agent stopped
+                    </span>
+                  ) : e.proposal ? (
                     <Verdict v={e.proposal.verifier} />
                   ) : (
                     <span className="muted">–</span>
@@ -222,6 +228,12 @@ function ProposalCard(props: {
     <>
       <h3>The agent's proposal</h3>
       <p className="muted">By: {AUTHOR[p.author] ?? p.author}</p>
+      {p.degradedLabel ? (
+        <p className="banner warn">
+          <b>The agent did not reach a conclusion:</b> {p.degradedLabel}. This is the system handing
+          the exception to a person, not a finding about the records.
+        </p>
+      ) : null}
       <p>
         <b>{words(p.verdict)}</b> · {words(p.reasonCode)} · confidence{' '}
         {Math.round(p.confidence * 100)}% · suggested: {words(p.suggestedAction)}

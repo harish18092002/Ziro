@@ -39,7 +39,11 @@ export type LoopEnd =
   | { readonly kind: 'answered'; readonly output: ModelOutput }
   | { readonly kind: 'exhausted'; readonly by: Exhausted }
   | { readonly kind: 'refused' }
-  | { readonly kind: 'invalid'; readonly problems: readonly string[] };
+  | { readonly kind: 'invalid'; readonly problems: readonly string[] }
+  /** The model API did not answer, even after retries. Set by the resilience layer, never by the loop. */
+  | { readonly kind: 'unavailable'; readonly reason: string }
+  /** The model API refused the request itself (a 400-class error). Same origin. */
+  | { readonly kind: 'rejected'; readonly reason: string };
 
 export interface LoopOutcome {
   readonly end: LoopEnd;

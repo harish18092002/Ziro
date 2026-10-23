@@ -6,7 +6,6 @@ import {
   insertException,
   insertLedger,
   insertLlmCall,
-  insertPayment,
   seedRun,
 } from '../db/migrated-db.fixtures.js';
 import {
@@ -16,7 +15,13 @@ import {
   llmCalls,
   reconExceptions,
 } from '../db/schema.js';
-import { buildWorld, createMigratedDb, type TestDb, type World } from './agent.fixtures.js';
+import {
+  buildWorld,
+  createMigratedDb,
+  openExceptionInOwnRun,
+  type TestDb,
+  type World,
+} from './agent.fixtures.js';
 import { AgentService, type AgentSettings } from './agent.service.js';
 import type { InvestigationJob } from './jobs.js';
 import { formatMicroUsd } from './pricing.js';
@@ -106,25 +111,7 @@ const auditOf = (action: string) =>
   db.select().from(auditEvents).where(eq(auditEvents.action, action));
 
 /** A run of its own, so a test's exceptions and proposals do not disturb the shared world. */
-async function freshRun() {
-  const runId = await seedRun(db);
-  const ledger = await insertLedger(db, runId, { orderRef: 'ORD-F1', amountPaise: 500n });
-  const payment = await insertPayment(db, runId, {
-    rzpId: 'pay_F1',
-    receipt: 'ORD-F1',
-    amountPaise: 500n,
-    feePaise: 0n,
-    taxPaise: 0n,
-  });
-  const exception = await insertException(db, runId, {
-    reasonCode: 'DUPLICATE_PAYMENT',
-    subjectType: 'ledger_entry',
-    subjectId: ledger,
-    candidates: [{ recordType: 'rzp_payment', recordId: payment }],
-    cause: 'receipt_ambiguous',
-  });
-  return { runId, ledger, payment, exception };
-}
+const freshRun = () => openExceptionInOwnRun(db);
 
 describe('plan', () => {
   const service = (over: Partial<AgentSettings> = {}) =>

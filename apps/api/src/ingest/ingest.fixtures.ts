@@ -142,3 +142,32 @@ export function itemOf(
     },
   };
 }
+
+/**
+ * The stub source, with some calls replaced. `asked` collects every recon day requested, failed or not
+ * (the stub's own log only sees the days that reached it).
+ */
+export function withFailures(
+  base: RazorpaySource,
+  failures: Partial<{
+    payments: Error;
+    refunds: Error;
+    settlements: Error;
+    recon: (date: string) => Error | undefined;
+  }>,
+  asked: string[] = [],
+): RazorpaySource {
+  return {
+    fetchPayments: (r) =>
+      failures.payments ? Promise.reject(failures.payments) : base.fetchPayments(r),
+    fetchRefunds: (r) =>
+      failures.refunds ? Promise.reject(failures.refunds) : base.fetchRefunds(r),
+    fetchSettlements: (r) =>
+      failures.settlements ? Promise.reject(failures.settlements) : base.fetchSettlements(r),
+    fetchSettlementRecon: (d) => {
+      asked.push(d);
+      const error = failures.recon?.(d);
+      return error ? Promise.reject(error) : base.fetchSettlementRecon(d);
+    },
+  };
+}

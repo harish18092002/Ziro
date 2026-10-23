@@ -25,7 +25,13 @@ export interface RowError {
 }
 
 export type ImportWarningCode =
-  'unknown_column' | 'no_rows' | 'balance_break' | 'balance_order' | 'source_note';
+  | 'unknown_column'
+  | 'no_rows'
+  | 'balance_break'
+  | 'balance_order'
+  | 'source_note'
+  /** Razorpay could not supply part of the window (see Gap). */
+  | 'partial_import';
 
 export interface ImportWarning {
   readonly code: ImportWarningCode;
@@ -33,7 +39,7 @@ export interface ImportWarning {
   readonly reason: string;
 }
 
-/** ok: everything landed. partial: some rows were rejected or conflicted. rejected: nothing was usable. */
+/** ok: everything landed. partial: some rows were rejected or conflicted, or Razorpay could not supply part of the window. rejected: nothing was usable. */
 export type ImportStatus = 'ok' | 'partial' | 'rejected';
 
 export interface RowCounts {

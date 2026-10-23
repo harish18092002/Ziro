@@ -37,6 +37,15 @@ export interface Emulator {
   readonly calls: RecordedCall[];
   /** The next calls whose path starts with `prefix` get these outcomes, in order, before normal service. */
   failNext(prefix: string, ...outcomes: Outcome[]): void;
+  /**
+   * Every call whose path starts with `prefix` and whose query parameters satisfy `when` gets this outcome,
+   * for as long as the emulator lives: "page two of the payments always fails".
+   */
+  failWhen(
+    prefix: string,
+    when: (params: Record<string, unknown>) => boolean,
+    outcome: Outcome,
+  ): void;
 }
 
 type Item = Record<string, unknown>;
@@ -55,6 +64,11 @@ const apiError = (status: number, description: string) => ({
 export function createEmulator(collections: Collections): Emulator {
   const calls: RecordedCall[] = [];
   const queued = new Map<string, Outcome[]>();
+  const rules: {
+    prefix: string;
+    when: (params: Record<string, unknown>) => boolean;
+    outcome: Outcome;
+  }[] = [];
 
   const respond = (
     config: InternalAxiosRequestConfig,
@@ -114,7 +128,8 @@ export function createEmulator(collections: Collections): Emulator {
     });
 
     const queue = [...queued.entries()].find(([prefix]) => path.startsWith(prefix));
-    const next = queue?.[1].shift();
+    const rule = rules.find((r) => path.startsWith(r.prefix) && r.when(params));
+    const next = rule?.outcome ?? queue?.[1].shift();
     const run = (): ReturnType<typeof respond> => {
       if (next) return outcome(config, next);
       if (!config.auth?.username?.startsWith('rzp_test_')) {
@@ -156,6 +171,9 @@ export function createEmulator(collections: Collections): Emulator {
     calls,
     failNext(prefix, ...outcomes) {
       queued.set(prefix, [...(queued.get(prefix) ?? []), ...outcomes]);
+    },
+    failWhen(prefix, when, outcome) {
+      rules.push({ prefix, when, outcome });
     },
   };
 }

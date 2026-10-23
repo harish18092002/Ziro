@@ -115,13 +115,18 @@ function evidenceFromCalls(calls: readonly CallRecord[]): AgentProposalContent['
  * `why` is a short harness-written phrase ("the time budget ran out"); it never quotes the model.
  */
 export function needsHuman(subject: Subject, why: string, calls: readonly CallRecord[]): Finalized {
+  const evidence = evidenceFromCalls(calls);
   const content = agentProposalContentSchema.parse({
     exceptionId: subject.exceptionId,
     verdict: 'NEEDS_HUMAN',
     reasonCode: subject.ruleReasonCode,
     links: [],
-    explanation: `The investigation stopped before reaching a conclusion: ${why}. The evidence gathered so far is attached.`,
-    evidence: evidenceFromCalls(calls),
+    explanation: `The investigation stopped before reaching a conclusion: ${why}. ${
+      evidence.length === 0
+        ? 'No tool had been run yet, so there is no evidence beyond the exception itself.'
+        : 'The evidence gathered so far is attached.'
+    }`,
+    evidence,
     confidence: 0,
     suggestedAction: 'NONE',
     draftJournalEntry: null,

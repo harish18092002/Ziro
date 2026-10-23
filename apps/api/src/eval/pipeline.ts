@@ -21,7 +21,7 @@ import {
   scoreReasonCodes,
   type TruthIndex,
 } from '@ziro/evals';
-import { eq, sql } from 'drizzle-orm';
+import { and, count, eq, sql } from 'drizzle-orm';
 import { systemPrompt } from '../agent/prompt.js';
 import { DEFAULT_LIMITS } from '../agent/budget.js';
 import { AgentService } from '../agent/agent.service.js';
@@ -29,7 +29,7 @@ import { AGENT_TOOLS } from '../agent/tools/definitions.js';
 import { AgentHalted, type AgentRunner } from '../agent/types.js';
 import { type Env, loadEnv } from '../config/env.js';
 import { createMigratedDb } from '../db/migrated-db.fixtures.js';
-import { reconRuns } from '../db/schema.js';
+import { agentProposals, reconRuns } from '../db/schema.js';
 import { windowsFor } from '../demo/windows.js';
 import { IngestService } from '../ingest/ingest.service.js';
 import { RazorpaySourceFactory } from '../razorpay/razorpay.module.js';
@@ -190,6 +190,7 @@ export async function runOnce(o: RunOnceOptions): Promise<RunRecord> {
     if (measuring !== null) {
       let failures = 0;
       let firstFailure = '';
+      const halt: { reason: string | null } = { reason: null };
       const queue = [...plan.jobs];
       await Promise.all(
         Array.from({ length: Math.min(o.concurrency, queue.length) }, async () => {
@@ -198,7 +199,11 @@ export async function runOnce(o: RunOnceOptions): Promise<RunRecord> {
             try {
               await agent.process(job);
             } catch (error) {
-              if (error instanceof AgentHalted) return;
+              if (error instanceof AgentHalted) {
+                // The cost cap, or the agent paused itself (a rejected key, a provider limit, an outage).
+                halt.reason ??= error.message;
+                return;
+              }
               failures += 1;
               firstFailure ||= error instanceof Error ? error.message : String(error);
             }
@@ -206,8 +211,21 @@ export async function runOnce(o: RunOnceOptions): Promise<RunRecord> {
         }),
       );
       if (o.guard.exceeded) incompleteReason = 'the cost cap was reached';
+      else if (halt.reason !== null) incompleteReason = `the agent stopped early: ${halt.reason}`;
       else if (failures > 0)
         incompleteReason = `${failures} investigation(s) failed: ${firstFailure.slice(0, 200)}`;
+      else {
+        // Investigations the model API never answered (after the retries) say nothing about the model's
+        // accuracy: they went to a person unexamined, so the run does not measure what it set out to.
+        const [unanswered] = await db
+          .select({ n: count() })
+          .from(agentProposals)
+          .where(
+            and(eq(agentProposals.runId, run.id), eq(agentProposals.degraded, 'model_unavailable')),
+          );
+        if ((unanswered?.n ?? 0) > 0)
+          incompleteReason = `${unanswered?.n} investigation(s) got no answer from the model API, even after retries`;
+      }
     }
 
     // --- the simulated reviewer: approve what the verifier passed ---------------------------------------

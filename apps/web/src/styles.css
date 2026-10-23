@@ -311,3 +311,22 @@ form input {
 progress {
   width: 100%;
 }
+
+.banner {
+  margin: 0 0 12px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+}
+.banner ul {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+.banner.warn {
+  border-color: var(--wait);
+  color: var(--wait);
+}
+.banner.info {
+  border-color: var(--accent);
+}

@@ -2,33 +2,16 @@
 // Each run uses a queue name of its own and removes it afterwards. Skipped when nothing answers.
 import { randomUUID } from 'node:crypto';
 import { Queue, type Worker } from 'bullmq';
-import { Redis } from 'ioredis';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { InvestigationJob } from './jobs.js';
 import { LlmError } from './llm.js';
 import { PricingError } from './pricing.js';
+import { LOCAL_REDIS_URL, localRedisAnswers, until } from './redis.fixtures.js';
 import { BullInvestigationQueue, redisConnection, startInvestigationWorker } from './queue.js';
 import { AgentHalted } from './types.js';
 
-const URL = 'redis://127.0.0.1:6379';
+const URL = LOCAL_REDIS_URL;
 
-async function localRedisAnswers(): Promise<boolean> {
-  const probe = new Redis(URL, {
-    lazyConnect: true,
-    maxRetriesPerRequest: 0,
-    retryStrategy: () => null,
-    connectTimeout: 500,
-  });
-  probe.on('error', () => undefined);
-  try {
-    await probe.connect();
-    return (await probe.ping()) === 'PONG';
-  } catch {
-    return false;
-  } finally {
-    probe.disconnect();
-  }
-}
 const available = await localRedisAnswers();
 
 const makeJob = (n = 1): InvestigationJob => ({
@@ -36,14 +19,6 @@ const makeJob = (n = 1): InvestigationJob => ({
   clusterId: null,
   items: [{ exceptionId: randomUUID(), attempt: n }],
 });
-
-async function until(condition: () => boolean, ms = 8_000): Promise<void> {
-  const deadline = Date.now() + ms;
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error('timed out waiting');
-    await new Promise((r) => setTimeout(r, 20));
-  }
-}
 
 describe('redisConnection', () => {
   it('reads host, port, credentials, database and TLS from the URL', () => {

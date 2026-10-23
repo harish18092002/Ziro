@@ -9,7 +9,9 @@ import { DownloadService, type DownloadFile } from './downloads.js';
 import { type ExceptionQuery, ReportService } from './report.service.js';
 
 const exceptionsQuery = z.strictObject({
-  filter: z.enum(['all', 'waiting', 'refused', 'unexamined', 'resolved']).default('all'),
+  filter: z
+    .enum(['all', 'waiting', 'refused', 'unexamined', 'resolved', 'degraded'])
+    .default('all'),
   reason: z.enum(REASON_CODES as [string, ...string[]]).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   offset: z.coerce.number().int().min(0).max(100_000).default(0),

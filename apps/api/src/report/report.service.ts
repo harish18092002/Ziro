@@ -4,7 +4,8 @@
 // text it is: the page renders it as text and never as markup.
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { RecordType } from '@ziro/core/domain';
-import { and, asc, count, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNotNull, sql, type SQL } from 'drizzle-orm';
+import { DEGRADED_LABEL, DEGRADED_REASONS, type DegradedReason } from '../agent/degraded.js';
 import { skipReason } from '../agent/triage.js';
 import { DB } from '../db/db.module.js';
 import type { Executor } from '../db/executor.js';
@@ -22,6 +23,7 @@ import {
   settlementItems,
 } from '../db/schema.js';
 import { PLANTED_MODEL, SCRIPTED_MODEL } from '../demo/scripted-runner.js';
+import { gapsOf } from '../ingest/gaps.js';
 import { ReviewService } from '../review/review.service.js';
 import { composeLines, isChargebackLine } from '@ziro/core/matcher';
 import { paise } from '@ziro/core/money';
@@ -43,9 +45,20 @@ import {
   type Voucher,
 } from './tally.js';
 
-export type Author = 'scripted' | 'planted' | 'model';
-export const authorOf = (model: string | null): Author =>
-  model === SCRIPTED_MODEL ? 'scripted' : model === PLANTED_MODEL ? 'planted' : 'model';
+/** `harness` is nobody's conclusion: the system handed the exception to a person (see agent/degraded.ts). */
+export type Author = 'scripted' | 'planted' | 'model' | 'harness';
+export const authorOf = (model: string | null, degraded: string | null = null): Author =>
+  degraded !== null
+    ? 'harness'
+    : model === SCRIPTED_MODEL
+      ? 'scripted'
+      : model === PLANTED_MODEL
+        ? 'planted'
+        : 'model';
+
+/** The words for a stored degraded code; null for none (or a code from a newer version than this one). */
+const degradedLabelOf = (code: string | null): string | null =>
+  code === null ? null : (DEGRADED_LABEL[code as DegradedReason] ?? code);
 
 export interface Described {
   readonly type: RecordType;
@@ -58,7 +71,8 @@ export interface Described {
   readonly detail: string;
 }
 
-export type ExceptionFilter = 'all' | 'waiting' | 'refused' | 'unexamined' | 'resolved';
+export type ExceptionFilter =
+  'all' | 'waiting' | 'refused' | 'unexamined' | 'resolved' | 'degraded';
 export interface ExceptionQuery {
   readonly filter: ExceptionFilter;
   readonly reason?: string | undefined;
@@ -368,6 +382,7 @@ export class ReportService {
     const bookedIds = new Set(books.booked);
     const notBooked = facts.filter((f) => !bookedIds.has(f.rzpId));
     const leakage = await this.leakage(run);
+    const failures = await this.failures(runId, pipeline.pipeline);
 
     return {
       run: {
@@ -381,7 +396,12 @@ export class ReportService {
         preset: (pipeline.demo?.['preset'] as string | undefined) ?? null,
         featured: (run.config as { featured?: string }).featured ?? null,
         stage: (pipeline.pipeline?.['stage'] as string | undefined) ?? null,
+        // True when the last Razorpay import could not get everything: the exceptions that follow from
+        // what is missing (a ledger entry with "no payment") may be artefacts of the gap.
+        partial: gapsOf(run.config).length > 0,
+        gaps: gapsOf(run.config),
       },
+      failures,
       sources: {
         ledger: { records: ledger?.n ?? 0, amountPaise: ledger?.amount ?? '0' },
         payments: {
@@ -466,6 +486,33 @@ export class ReportService {
     };
   }
 
+  /**
+   * What went wrong on the way and was handled: investigations handed to a person without a conclusion
+   * (by reason), why the agent stopped early or a job failed, and whether the demo broke things on
+   * purpose. Counted from the proposals, so it cannot disagree with the exceptions table.
+   */
+  private async failures(runId: string, pipeline: Record<string, unknown> | undefined) {
+    const rows = await this.db
+      .select({ reason: agentProposals.degraded, n: count() })
+      .from(agentProposals)
+      .where(and(eq(agentProposals.runId, runId), isNotNull(agentProposals.degraded)))
+      .groupBy(agentProposals.degraded);
+    const byReason = DEGRADED_REASONS.flatMap((reason) => {
+      const n = rows.find((r) => r.reason === reason)?.n ?? 0;
+      return n === 0 ? [] : [{ reason, label: DEGRADED_LABEL[reason], count: n }];
+    });
+    const chaos = pipeline?.['chaos'] as
+      { timeoutFor: string | null; malformedFor: string | null } | undefined;
+    return {
+      handedToAPerson: byReason.reduce((sum, r) => sum + r.count, 0),
+      byReason,
+      // The demo toggle broke these on purpose (null for an ordinary run).
+      injected: chaos ?? null,
+      // "the agent stopped early: ..." or "1 investigation job failed ...", in the pipeline's own words.
+      note: (pipeline?.['note'] as string | undefined) ?? null,
+    };
+  }
+
   // --- the exceptions table --------------------------------------------------------------------------------------------
 
   private condition(runId: string, q: ExceptionQuery): SQL {
@@ -487,6 +534,11 @@ export class ReportService {
         parts.push(eq(reconExceptions.status, 'open'));
         parts.push(
           sql`not exists (select 1 from agent_proposals p where p.exception_id = ${reconExceptions.id})`,
+        );
+        break;
+      case 'degraded':
+        parts.push(
+          sql`exists (select 1 from agent_proposals p where p.exception_id = ${reconExceptions.id} and p.degraded is not null)`,
         );
         break;
       case 'all':
@@ -569,7 +621,9 @@ export class ReportService {
               confidence: p.confidencePermille / 1000,
               suggestedAction: p.suggestedAction,
               verifier: p.verifierStatus,
-              author: authorOf(p.model),
+              author: authorOf(p.model, p.degraded),
+              degraded: p.degraded,
+              degradedLabel: degradedLabelOf(p.degraded),
             }
           : null,
         review: d ? { decision: d.decision, reviewer: d.reviewer } : null,
@@ -632,8 +686,10 @@ export class ReportService {
         return {
           id: p.id,
           attempt: p.attempt,
-          author: authorOf(p.model),
+          author: authorOf(p.model, p.degraded),
           model: p.model,
+          degraded: p.degraded,
+          degradedLabel: degradedLabelOf(p.degraded),
           verdict: p.verdict,
           reasonCode: p.reasonCode,
           confidence: p.confidencePermille / 1000,
