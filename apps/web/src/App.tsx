@@ -34,8 +34,7 @@ export function App() {
           {home ? (
             <nav className="nav" aria-label="Sections">
               <a href="#how">How it works</a>
-              <a href="#features">Features</a>
-              <a href="#safety">Safety</a>
+              <a href="#trust">Trust</a>
               <a href="#try">Try it</a>
             </nav>
           ) : null}

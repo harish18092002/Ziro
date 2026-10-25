@@ -48,8 +48,8 @@
   --critical: #d03b3b;
   --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
   --mono: ui-monospace, 'Cascadia Mono', 'SF Mono', Menlo, Consolas, monospace;
-  --radius: 14px;
-  --radius-sm: 9px;
+  --radius: 12px;
+  --radius-sm: 8px;
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --dur-1: 160ms;
   --dur-2: 380ms;

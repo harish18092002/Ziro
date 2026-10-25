@@ -54,21 +54,26 @@ export function ExceptionsTab({
 }) {
   const [filter, setFilter] = useState<Filter>('all');
   const list = useLoad<ExceptionList>(`/runs/${runId}/exceptions?filter=${filter}&limit=200`);
+  // With nothing chosen yet, the first exception is shown, so the detail side is never an empty half-page.
+  const shown = selected ?? list.data?.items[0]?.id ?? null;
 
   return (
     <div className="exc-layout">
       <section className="card exc-list">
-        <div className="chips" role="group" aria-label="Filter exceptions">
-          {FILTERS.map(([f, label]) => (
-            <button
-              key={f}
-              className={f === filter ? 'chip on' : 'chip'}
-              aria-pressed={f === filter}
-              onClick={() => setFilter(f)}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="list-head">
+          <label>
+            <span className="sr-only">Show</span>
+            <select value={filter} onChange={(e) => setFilter(e.target.value as Filter)}>
+              {FILTERS.map(([f, label]) => (
+                <option key={f} value={f}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {list.data ? (
+            <span className="muted count-line">{list.data.total} in this view</span>
+          ) : null}
         </div>
         {list.error ? (
           <Banner tone="bad" role="alert">
@@ -88,7 +93,7 @@ export function ExceptionsTab({
             </thead>
             <tbody>
               {(list.data?.items ?? []).map((e) => (
-                <tr key={e.id} className={e.id === selected ? 'sel' : ''}>
+                <tr key={e.id} className={e.id === shown ? 'sel' : ''}>
                   <td>
                     <a href={linkTo(runId, 'exceptions', e.id)}>
                       {e.subject?.key ?? e.id.slice(0, 8)}
@@ -126,24 +131,23 @@ export function ExceptionsTab({
             <Icon name="check" size={18} /> Nothing here.
           </p>
         ) : null}
-        {list.data ? <p className="muted count-line">{list.data.total} in this view</p> : null}
       </section>
       <aside className="exc-detail">
-        {selected ? (
+        {shown ? (
           <Detail
-            key={selected}
+            key={shown}
             runId={runId}
-            id={selected}
+            id={shown}
             readOnly={readOnly}
             onChanged={list.reload}
           />
         ) : (
           <div className="card empty-detail">
             <span className="ico">
-              <Icon name="search" size={22} />
+              <Icon name="search" size={20} />
             </span>
-            <h3>Pick an exception</h3>
-            <p>See the records involved, the agent’s reasoning and the checker’s verdict.</p>
+            <h3>Nothing to show</h3>
+            <p>Pick another view to see exceptions.</p>
           </div>
         )}
       </aside>
@@ -228,7 +232,7 @@ function Detail({
   return (
     <div className="card detail slide-in">
       <header className="detail-head">
-        <span className="kicker">{words(e.reasonCode)}</span>
+        <span className="kicker">{sentence(e.reasonCode)}</span>
         <h2>{subject?.key ?? 'Exception'}</h2>
         <div className="detail-meta">
           <span className="stake">{inr(e.amountAtStakePaise)}</span>
@@ -267,14 +271,13 @@ function Detail({
       ) : (
         <p className="muted block">
           {e.listedForAPerson
-            ? 'The rules left nothing for an agent to look at; this is listed for a person.'
-            : 'The agent has not investigated this one.'}
+            ? 'Nothing for the agent to look at: this one is listed for a person.'
+            : 'The agent has not looked at this one yet.'}
         </p>
       )}
       {readOnly ? (
         <p className="muted block">
-          <Icon name="lock" size={14} /> This run is read-only, so proposals cannot be approved or
-          rejected here. Start your own run to review them.
+          <Icon name="lock" size={14} /> Read-only run. Start your own to approve or reject.
         </p>
       ) : null}
     </div>
@@ -332,7 +335,7 @@ function ProposalCard(props: { p: ProposalDetail; decidable: boolean; onDone: ()
 
   return (
     <>
-      <h3 className="mini-title">The agent’s proposal</h3>
+      <h3 className="mini-title">Proposal</h3>
       <p className="author">
         <Icon name={author.icon} size={16} /> {author.text}
       </p>
@@ -345,7 +348,6 @@ function ProposalCard(props: { p: ProposalDetail; decidable: boolean; onDone: ()
 
       <div className="verdict-row">
         <span className="pill info">{words(p.verdict)}</span>
-        <span className="pill">{words(p.reasonCode)}</span>
         <span className="pill">suggested: {words(p.suggestedAction)}</span>
       </div>
       <div className="confidence">
@@ -355,7 +357,7 @@ function ProposalCard(props: { p: ProposalDetail; decidable: boolean; onDone: ()
       </div>
       <blockquote className="quote free">{p.explanation}</blockquote>
 
-      <h3 className="mini-title">Evidence, step by step</h3>
+      <h3 className="mini-title">Evidence</h3>
       <ol className="evidence">
         {p.evidence.map((ev, i) => (
           <li key={i}>
@@ -378,7 +380,7 @@ function ProposalCard(props: { p: ProposalDetail; decidable: boolean; onDone: ()
         </ul>
       ) : null}
 
-      <h3 className="mini-title">Checker’s verdict</h3>
+      <h3 className="mini-title">Checker</h3>
       <CheckerBlock p={p} />
 
       {p.draftJournalEntry ? (

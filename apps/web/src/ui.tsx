@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { compact, scaleBig, toBig } from './chart-math';
 import { inr } from './format';
 import { useEased, useInView } from './hooks';
-import { Icon, type IconName } from './Icons';
+import { Icon } from './Icons';
 
 /** A style object that carries CSS custom properties (`--i`, `--w`): React sets them through the CSSOM. */
 export const cssVars = (vars: Record<string, string | number>): CSSProperties => vars;
@@ -63,36 +63,6 @@ export function Banner({
     <div className={`banner ${tone}`} role={role}>
       <Icon name={tone === 'info' ? 'info' : 'alert'} size={20} />
       <div className="body">{children}</div>
-    </div>
-  );
-}
-
-/** A labelled number: the figure leads, the label and a hint follow. */
-export function StatTile({
-  label,
-  icon,
-  hint,
-  children,
-  tone = 'brand',
-}: {
-  label: string;
-  icon?: IconName;
-  hint?: ReactNode;
-  children: ReactNode;
-  tone?: 'brand' | 'open' | 'waiting' | 'fee' | 'good' | 'warn';
-}) {
-  return (
-    <div className={`tile tone-${tone}`}>
-      <div className="tile-label">
-        {icon ? (
-          <span className="tile-ico">
-            <Icon name={icon} size={16} />
-          </span>
-        ) : null}
-        {label}
-      </div>
-      <div className="tile-value">{children}</div>
-      {hint ? <div className="tile-hint">{hint}</div> : null}
     </div>
   );
 }

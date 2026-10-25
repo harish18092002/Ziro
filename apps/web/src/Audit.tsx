@@ -36,7 +36,7 @@ export function AuditTab({ runId, selected }: { runId: string; selected: string 
     <div className="exc-layout">
       <section className="card exc-list">
         <h2 className="card-title">Find a record</h2>
-        <p className="card-sub">An order, payment, payout, UTR or statement row.</p>
+        <p className="card-sub">Order, payment, payout, UTR or statement row.</p>
         <form
           className="search"
           onSubmit={(e) => {
@@ -89,7 +89,7 @@ export function AuditTab({ runId, selected }: { runId: string; selected: string 
               <Icon name="list" size={22} />
             </span>
             <h3>Pick a record</h3>
-            <p>Its whole story appears here: imported, matched, proposed, verified, approved.</p>
+            <p>Its story appears here, from import to approval.</p>
           </div>
         ) : null}
         {timeline.error ? (

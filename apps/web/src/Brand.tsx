@@ -51,9 +51,9 @@ export function HeroArt() {
       <circle cx="420" cy="190" r="150" fill="url(#ring-glow)" />
 
       <g className="flows" fill="none" strokeLinecap="round">
-        <path className="flow f1" d="M192 72 C 270 72, 270 190, 336 190" />
-        <path className="flow f2" d="M192 190 L 336 190" />
-        <path className="flow f3" d="M192 308 C 270 308, 270 190, 336 190" />
+        <path className="stream s1" d="M192 72 C 270 72, 270 190, 336 190" />
+        <path className="stream s2" d="M192 190 L 336 190" />
+        <path className="stream s3" d="M192 308 C 270 308, 270 190, 336 190" />
       </g>
 
       <Source y={44} icon="book" title="Order ledger" note="orders and amounts" />

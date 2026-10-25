@@ -120,6 +120,14 @@ const PATHS = {
   ),
   flag: <path d="M6 21V4M6 5h11l-2 4 2 4H6" />,
   home: <path d="M4 11l8-7 8 7M6 10v10h12V10" />,
+  play: <path d="M8 5l11 7-11 7z" />,
+  pause: <path d="M8 5v14M16 5v14" />,
+  db: (
+    <>
+      <ellipse cx="12" cy="6" rx="7" ry="3" />
+      <path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" />
+    </>
+  ),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;

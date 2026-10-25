@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ApiError, get, type Overview, type Progress, post } from './api';
 import { AuditTab } from './Audit';
 import { toBig } from './chart-math';
@@ -27,7 +27,7 @@ import {
 } from './format';
 import { useLoad } from './hooks';
 import { Icon, type IconName } from './Icons';
-import { Banner, Count, CountPaise, Reveal, StatTile } from './ui';
+import { Banner, Count, CountPaise, Reveal } from './ui';
 
 type RunRoute = Extract<Route, { page: 'run' }>;
 
@@ -36,12 +36,6 @@ const TAB_NAMES: Record<Tab, string> = {
   exceptions: 'Exceptions',
   audit: 'Audit',
   downloads: 'Downloads',
-};
-const TAB_ICONS: Record<Tab, IconName> = {
-  summary: 'trend',
-  exceptions: 'search',
-  audit: 'list',
-  downloads: 'download',
 };
 
 export function RunPage({ route }: { route: RunRoute }) {
@@ -73,7 +67,6 @@ export function RunPage({ route }: { route: RunRoute }) {
             className={t === route.tab ? 'on' : ''}
             aria-current={t === route.tab ? 'page' : undefined}
           >
-            <Icon name={TAB_ICONS[t]} size={16} />
             {TAB_NAMES[t]}
           </a>
         ))}
@@ -128,13 +121,9 @@ function useProgress(runId: string): Progress | null {
 function RunSkeleton() {
   return (
     <div className="run">
-      <div className="skel" style={{ height: 44, width: 320, marginBottom: 20 }} />
-      <div className="skel" style={{ height: 150, marginBottom: 20 }} />
-      <div className="tiles">
-        {[0, 1, 2, 3].map((n) => (
-          <div key={n} className="skel tile-skel" />
-        ))}
-      </div>
+      <div className="skel" style={{ height: 36, width: 280, marginBottom: 18 }} />
+      <div className="skel" style={{ height: 140, marginBottom: 16 }} />
+      <div className="skel" style={{ height: 220 }} />
     </div>
   );
 }
@@ -146,20 +135,15 @@ const STAGES = [
     stage: 'matching',
     icon: 'code',
     title: 'Rules match',
-    text: 'What can be proved, to the paise',
+    text: 'What can be proved, to the paisa',
   },
   {
     stage: 'investigating',
     icon: 'bot',
     title: 'Agent investigates',
-    text: 'The leftovers, with the checker re-computing every claim',
+    text: 'The leftovers, each claim re-checked',
   },
-  {
-    stage: 'ready',
-    icon: 'check',
-    title: 'Ready to review',
-    text: 'Exceptions, evidence, audit trail',
-  },
+  { stage: 'ready', icon: 'check', title: 'Ready to review', text: 'Exceptions and audit trail' },
 ] as const satisfies readonly { stage: string; icon: IconName; title: string; text: string }[];
 
 function Working({ p }: { p: Progress }) {
@@ -171,7 +155,7 @@ function Working({ p }: { p: Progress }) {
         <span className="spinner big" />
         <div>
           <h1>Working on your batch</h1>
-          <p className="muted">This usually takes a couple of seconds.</p>
+          <p className="muted">Usually a couple of seconds.</p>
         </div>
       </div>
       <ol className="pipeline">
@@ -181,9 +165,9 @@ function Working({ p }: { p: Progress }) {
             <li key={s.stage} className={state}>
               <span className="node">
                 {state === 'done' ? (
-                  <Icon name="check" size={18} />
+                  <Icon name="check" size={16} />
                 ) : (
-                  <Icon name={s.icon} size={18} />
+                  <Icon name={s.icon} size={16} />
                 )}
               </span>
               <div>
@@ -198,7 +182,7 @@ function Working({ p }: { p: Progress }) {
         <div className="working-meter">
           <div className="working-meter-head">
             <span>
-              {p.counts.proposals} of {p.expected} exceptions investigated
+              {p.counts.proposals} of {p.expected} investigated
             </span>
             <b>{percent(share)}</b>
           </div>
@@ -209,20 +193,10 @@ function Working({ p }: { p: Progress }) {
           <span />
         </div>
       )}
-      <div className="tiles">
-        <StatTile label="Groups proved" icon="check" tone="good">
-          {p.counts.groups}
-        </StatTile>
-        <StatTile label="Exceptions" icon="search" tone="open">
-          {p.counts.exceptions}
-        </StatTile>
-        <StatTile label="Investigated" icon="bot" tone="waiting">
-          {p.counts.proposals}
-        </StatTile>
-        <StatTile label="Refused by the checker" icon="shield" tone="fee">
-          {p.counts.refused}
-        </StatTile>
-      </div>
+      <p className="working-counts">
+        {p.counts.groups} groups proved · {p.counts.exceptions} exceptions · {p.counts.refused}{' '}
+        refused by the checker
+      </p>
     </section>
   );
 }
@@ -247,7 +221,7 @@ function ResetDemo({ runId }: { runId: string }) {
   return (
     <div className="reset">
       <button className="sm" disabled={busy} onClick={() => void reset()}>
-        {busy ? <span className="spinner" /> : <Icon name="refresh" size={15} />}
+        {busy ? <span className="spinner" /> : <Icon name="refresh" size={14} />}
         {busy ? 'Resetting…' : 'Reset demo'}
       </button>
       {problem ? <span className="bad-text"> {problem}</span> : null}
@@ -256,38 +230,23 @@ function ResetDemo({ runId }: { runId: string }) {
 }
 
 function RunHeader({ o, runId }: { o: Overview; runId: string }) {
-  const featured = o.run.featured !== null;
-  const scripted = o.llm.agent === 'scripted';
+  const agent = o.llm.agent === 'scripted' ? 'Scripted agent' : (o.llm.agent ?? 'No agent');
   return (
     <header className="run-head">
       <div>
-        <span className="kicker">
-          {featured ? 'Replay, read-only' : o.run.archived ? 'Archived run' : 'Your run'}
-        </span>
         <h1>{o.run.preset === 'eval' ? '500-order reconciliation' : '50-order reconciliation'}</h1>
-        <div className="chips-row">
-          <span className="pill">
-            <Icon name="clock" size={13} /> as of {o.run.asOf}
-          </span>
-          <span className={`pill ${scripted ? '' : 'info'}`}>
-            <Icon name={scripted ? 'code' : 'bot'} size={13} />
-            {scripted ? 'scripted baseline, not a language model' : (o.llm.agent ?? 'no agent')}
-          </span>
-          {o.time.seconds === null ? null : (
-            <span className="pill">
-              <Icon name="bolt" size={13} /> {o.time.seconds} s wall time
-            </span>
-          )}
+        <p className="meta">
+          As of {o.run.asOf} · {agent}
+          {o.llm.calls > 0 ? ` · ${o.llm.calls} model calls, ${dollars(o.llm.costUsd)}` : ''}
+          {o.time.seconds === null ? '' : ` · ${o.time.seconds} s`} ·{' '}
           {o.reconciles ? (
-            <span className="pill ok">
-              <Icon name="check" size={13} /> totals add up to the paise
+            <span className="ok-text">
+              <Icon name="check" size={13} /> Totals add up
             </span>
           ) : (
-            <span className="pill bad">
-              <Icon name="x" size={13} /> totals do NOT add up
-            </span>
+            <span className="bad-text">Totals do NOT add up</span>
           )}
-        </div>
+        </p>
       </div>
       {o.run.featured === null && !o.run.archived ? <ResetDemo runId={runId} /> : null}
     </header>
@@ -304,27 +263,25 @@ function RunBanners({ o, runId }: { o: Overview; runId: string }) {
     <div className="run-banners">
       {o.run.featured !== null ? (
         <Banner>
-          <b>Replay.</b> This is a precomputed run, shown read-only: it costs nothing and needs no
-          API key. <a href="#/">Start your own run</a> to approve or reject proposals.
+          <b>Replay.</b> A recorded run, read-only. <a href="#/">Start your own</a> to approve or
+          reject.
         </Banner>
       ) : null}
       {o.run.archived ? (
         <Banner tone="warn">
-          <b>Archived.</b> This run was put away by “Reset demo”. You can still read it, but it can
-          no longer be approved or rejected. <a href="#/">Start a new run</a>.
+          <b>Archived.</b> Put away by Reset demo: readable, but no longer reviewable.{' '}
+          <a href="#/">Start a new run</a>.
         </Banner>
       ) : null}
       {o.run.partial ? (
         <Banner tone="warn" role="alert">
-          <b>PARTIAL RUN.</b> Razorpay did not return everything. What arrived was imported; this is
-          missing:
+          <b>Partial run.</b> Razorpay did not return everything:
           <ul>
             {o.run.gaps.map((g, i) => (
               <li key={i}>{g.detail}</li>
             ))}
           </ul>
-          Exceptions such as “ledger without payment” or an unexplained settlement may be caused by
-          the gap, not by a real discrepancy. Import again to fill in what is missing.
+          Some exceptions may come from the gap, not a real difference. Import again to fill it in.
         </Banner>
       ) : null}
       {o.failures.note ? (
@@ -332,11 +289,10 @@ function RunBanners({ o, runId }: { o: Overview; runId: string }) {
       ) : null}
       {o.failures.injected ? (
         <Banner>
-          <b>Chaos is on.</b> The demo broke three investigations on purpose: one where every model
-          timed out, one where every model was out of quota, and one where a reply was cut off
-          mid-JSON. {handled ?? ''} Nothing stopped: the run finished and all three went to a person
-          with the reason. In <a href={linkTo(runId, 'exceptions')}>Exceptions</a>, the filter
-          “Handed to a person by the system” shows them.
+          <b>Chaos is on.</b> Three investigations were broken on purpose: a timeout, no quota left,
+          and a reply cut off mid-JSON. {handled ?? ''} The run still finished, and all three went
+          to a person with the reason (see the filter “Handed to a person by the system” in{' '}
+          <a href={linkTo(runId, 'exceptions')}>Exceptions</a>).
         </Banner>
       ) : handled ? (
         <Banner>{handled}</Banner>
@@ -379,8 +335,6 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
   const { gap, sources: s } = o;
   const ledger = o.coverage.find((c) => c.type === 'ledger_entry');
   const reasons = o.exceptionsByReason;
-  const excOpen = sum(reasons.map((r) => r.open));
-  const excWaiting = sum(reasons.map((r) => r.proposed));
   const excTotal = sum(reasons.map((r) => r.total));
 
   const gapRow: StackRow = {
@@ -389,7 +343,7 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
     segments: [
       {
         key: 'explained',
-        label: 'Explained and approved',
+        label: 'Explained',
         value: toBig(gap.explainedPaise),
         color: 'var(--c-matched)',
         shown: inr(gap.explainedPaise),
@@ -440,15 +394,6 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
     ],
   }));
 
-  const tierItems: BarItem[] = o.matching.byTier.map((t, i) => ({
-    id: t.label,
-    label: t.label,
-    sub: `${t.groups} groups`,
-    value: BigInt(t.records),
-    display: `${t.records} records · ${percent(t.share)}`,
-    color: `var(--ord-${Math.min(i + 1, 4)})`,
-  }));
-
   const reasonRows: StackRow[] = reasons.map((r) => ({
     id: r.reasonCode,
     label: sentence(r.reasonCode),
@@ -471,93 +416,79 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
     id: b.bucket,
     label: b.bucket,
     value: toBig(b.stakePaise),
-    display: `${b.cases} cases · ${inr(b.stakePaise)}`,
+    display: `${b.cases} · ${inr(b.stakePaise)}`,
     color: 'var(--c-open)',
   }));
-
-  const r = o.resolution;
-  const settledItems: BarItem[] = [
-    {
-      id: 'rules',
-      label: 'Rule groups, proved by code',
-      value: BigInt(r.ruleGroups),
-      color: 'var(--c-matched)',
-    },
-    {
-      id: 'agent-match',
-      label: 'Agent match, approved by a person',
-      value: BigInt(r.agentMatchesApprovedByPerson),
-      color: 'var(--c-matched)',
-    },
-    {
-      id: 'agent-explain',
-      label: 'Agent explanation, approved by a person',
-      value: BigInt(r.agentExplanationsApprovedByPerson),
-      color: 'var(--c-matched)',
-    },
-    {
-      id: 'auto',
-      label: 'Agent proposal, auto-accepted',
-      value: BigInt(r.autoAccepted),
-      color: 'var(--c-matched)',
-    },
-    {
-      id: 'rejected',
-      label: 'Proposal rejected by a person',
-      value: BigInt(r.rejectedByPerson),
-      color: 'var(--c-other)',
-    },
-    {
-      id: 'waiting',
-      label: 'Waiting for a person',
-      value: BigInt(r.waiting),
-      color: 'var(--c-waiting)',
-    },
-  ].map((i) => ({ ...i, display: i.value.toString() }));
 
   const methodItems: BarItem[] = o.leakage.byMethod.map((m) => ({
     id: m.method,
     label: methodName(m.method),
-    sub: `${m.overchargedCount} of ${m.assessed} payments overcharged`,
     value: toBig(m.excessPaise),
     display: inr(m.excessPaise),
     color: 'var(--c-fee)',
   }));
 
+  const tierItems: BarItem[] = o.matching.byTier.map((t, i) => ({
+    id: t.label,
+    label: t.label,
+    sub: `${t.groups} groups`,
+    value: BigInt(t.records),
+    display: `${t.records} records · ${percent(t.share)}`,
+    color: `var(--ord-${Math.min(i + 1, 4)})`,
+  }));
+
+  const r = o.resolution;
+  const settledItems: BarItem[] = [
+    ['rules', 'Rule groups, proved by code', r.ruleGroups, 'var(--c-matched)'],
+    [
+      'agent-match',
+      'Agent match, approved by a person',
+      r.agentMatchesApprovedByPerson,
+      'var(--c-matched)',
+    ],
+    [
+      'agent-explain',
+      'Agent explanation, approved by a person',
+      r.agentExplanationsApprovedByPerson,
+      'var(--c-matched)',
+    ],
+    ['auto', 'Agent proposal, auto-accepted', r.autoAccepted, 'var(--c-matched)'],
+    ['rejected', 'Proposal rejected by a person', r.rejectedByPerson, 'var(--c-other)'],
+    ['waiting', 'Waiting for a person', r.waiting, 'var(--c-waiting)'],
+  ].map(([id, label, n, color]) => ({
+    id: String(id),
+    label: String(label),
+    value: BigInt(n as number),
+    display: String(n),
+    color: String(color),
+  }));
+
   return (
     <div className="dash">
-      <Reveal className="span-2">
+      <Reveal>
         <div className="hero-row">
           <section className="card gap-card">
-            <span className="kicker">The Ziro gap: still unreconciled</span>
+            <span className="kicker">Still unreconciled</span>
             <div className="gap-figure">
               <CountPaise paise={gap.gapPaise} />
             </div>
-            <p className="muted">
-              Goal: ₹0.00 unexplained. {inr(gap.openPaise)} is not yet looked at ({gap.cases.open}{' '}
-              cases) and {inr(gap.awaitingPaise)} is waiting for a person ({gap.cases.awaiting}{' '}
-              cases).
-              {gap.cases.explained > 0
-                ? ` ${inr(gap.explainedPaise)} has been explained (${gap.cases.explained} cases).`
-                : ''}
-            </p>
             <StackedBars rows={[gapRow]} tall />
             <Legend
               items={[
                 {
-                  key: 'explained',
+                  key: 'e',
                   label: 'Explained',
                   color: 'var(--c-matched)',
                   value: inr(gap.explainedPaise),
                 },
                 {
-                  key: 'waiting',
+                  key: 'w',
                   label: 'Waiting for a person',
                   color: 'var(--c-waiting)',
                   value: inr(gap.awaitingPaise),
                 },
                 {
-                  key: 'open',
+                  key: 'o',
                   label: 'Not yet looked at',
                   color: 'var(--c-open)',
                   value: inr(gap.openPaise),
@@ -568,62 +499,34 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
           <section className="card ring-card">
             <RingMeter
               value={ledger?.matchRate ?? 0}
-              label="Ledger entries matched"
+              label="Orders matched"
               sub={
-                ledger
-                  ? `${ledger.matched} of ${ledger.matched + ledger.inException} that a rule could judge`
-                  : undefined
+                ledger ? `${ledger.matched} of ${ledger.matched + ledger.inException}` : undefined
               }
             />
+            <div className="ring-facts">
+              <span>
+                <b>
+                  <Count value={o.resolution.ruleGroups} />
+                </b>
+                groups proved
+              </span>
+              <span>
+                <b>
+                  <Count value={excTotal} />
+                </b>
+                exceptions
+              </span>
+            </div>
           </section>
         </div>
       </Reveal>
 
-      <Reveal className="span-2">
-        <div className="tiles">
-          <StatTile
-            label="Groups proved by code"
-            icon="code"
-            hint={`${o.matching.matchedRecords} records matched, each re-checked`}
-          >
-            <Count value={o.resolution.ruleGroups} />
-          </StatTile>
-          <StatTile
-            label="Exceptions"
-            icon="search"
-            tone="open"
-            hint={`${excOpen} open · ${excWaiting} waiting for a person`}
-          >
-            <Count value={excTotal} />
-          </StatTile>
-          <StatTile
-            label="Fee leakage"
-            icon="rupee"
-            tone="fee"
-            hint={`over ${o.leakage.overchargedCount} of ${o.leakage.assessed} payments`}
-          >
-            <CountPaise paise={o.leakage.excessPaise} />
-          </StatTile>
-          <StatTile
-            label="Delayed payouts"
-            icon="clock"
-            tone="warn"
-            hint={
-              o.delays.overdueCount > 0
-                ? `${o.delays.overdueCount} overdue, ${inr(o.delays.overduePaise)}`
-                : 'none overdue'
-            }
-          >
-            <Count value={o.delays.delayedCount} />
-          </StatTile>
-        </div>
-      </Reveal>
-
-      <div className="span-2 masonry">
+      <div className="grid-2">
         <Reveal>
           <ChartCard
             title="Coverage by source"
-            subtitle="Every record is in exactly one place: matched, in an exception, or ignored."
+            subtitle="Where every record ended up."
             legend={
               <Legend
                 items={[
@@ -634,7 +537,7 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
               />
             }
             table={{
-              columns: ['Source', 'Matched', 'In exception', 'Ignored', 'Match rate'],
+              columns: ['Source', 'Matched', 'In exception', 'Ignored', 'Rate'],
               numeric: [1, 2, 3, 4],
               rows: o.coverage.map((c) => [
                 sourceName(c.type),
@@ -644,35 +547,15 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
                 percent(c.matchRate),
               ]),
             }}
-            foot="Match rate = matched ÷ (matched + in an exception). Ignored records are ones no rule should match, such as failed payments and bank debits."
+            foot="Ignored: records no rule should match."
           >
             <StackedBars rows={coverageRows} />
           </ChartCard>
         </Reveal>
-
         <Reveal i={1}>
           <ChartCard
-            title="How records were matched"
-            subtitle="Strictest rule first. Darker means a stricter test."
-            table={{
-              columns: ['How it was matched', 'Groups', 'Records', 'Share'],
-              numeric: [1, 2, 3],
-              rows: o.matching.byTier.map((t) => [
-                t.label,
-                String(t.groups),
-                String(t.records),
-                percent(t.share),
-              ]),
-            }}
-          >
-            <BarList items={tierItems} />
-          </ChartCard>
-        </Reveal>
-
-        <Reveal>
-          <ChartCard
             title="Exceptions by reason"
-            subtitle="Where the rules stopped, and how far each reason has got."
+            subtitle="Where the rules stopped."
             legend={
               <Legend
                 items={[
@@ -693,26 +576,24 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
                 String(x.resolved),
               ]),
             }}
-            foot={
-              <a className="button sm" href={linkTo(runId, 'exceptions')}>
-                Review the exceptions <Icon name="arrow" size={15} />
-              </a>
-            }
+            foot={<a href={linkTo(runId, 'exceptions')}>Review the exceptions →</a>}
           >
             {reasonRows.length > 0 ? (
               <StackedBars rows={reasonRows} />
             ) : (
               <p className="empty">
-                <Icon name="check" size={18} /> No exceptions.
+                <Icon name="check" size={16} /> No exceptions.
               </p>
             )}
           </ChartCard>
         </Reveal>
+      </div>
 
-        <Reveal i={1}>
+      <div className="grid-3">
+        <Reveal>
           <ChartCard
             title="Unsettled by age"
-            subtitle={`As of ${o.openExceptions.asOf}, counted from each record's own date.`}
+            subtitle={`Cases and rupees, as of ${o.openExceptions.asOf}`}
             table={{
               columns: ['Age', 'Cases', 'At stake'],
               numeric: [1, 2],
@@ -727,82 +608,72 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
               <BarList items={ageItems} />
             ) : (
               <p className="empty">
-                <Icon name="check" size={18} /> Nothing unsettled.
+                <Icon name="check" size={16} /> Nothing unsettled.
               </p>
             )}
           </ChartCard>
         </Reveal>
-
-        <Reveal>
-          <ChartCard
-            title="How things were settled"
-            subtitle="Who closed each case: code, the agent with a person, or nobody yet."
-            table={{
-              columns: ['How', 'Count'],
-              numeric: [1],
-              rows: settledItems.map((i) => [i.label, i.display]),
-            }}
-          >
-            <BarList items={settledItems} />
-          </ChartCard>
-        </Reveal>
-
         <Reveal i={1}>
-          <section className="card facts">
-            <h3 className="card-title">Run facts</h3>
-            <dl>
-              <Fact icon="bot" label="Agent">
-                {o.llm.agent === 'scripted'
-                  ? 'Scripted baseline (not a language model)'
-                  : (o.llm.agent ?? 'none')}
-              </Fact>
-              <Fact icon="bolt" label="Model calls">
-                {o.llm.calls}
-              </Fact>
-              <Fact icon="scale" label="Model cost">
-                {dollars(o.llm.costUsd)}
-              </Fact>
-              <Fact icon="flag" label="Handed to a person without a conclusion">
-                {o.failures.handedToAPerson}
-              </Fact>
-              <Fact icon="clock" label="Wall time for the run">
-                {o.time.seconds === null ? '–' : `${o.time.seconds} s`}
-              </Fact>
-              <Fact icon="user" label="Approved by a person">
-                {o.matching.approvedByPerson}
-              </Fact>
-            </dl>
-          </section>
-        </Reveal>
-
-        <Reveal>
-          <section className="card feature-card">
+          <section className="card">
             <div className="card-head">
-              <div>
-                <h3 className="card-title">Fee leakage</h3>
-                <p className="card-sub">Charged above your fee contract.</p>
-              </div>
+              <h3 className="card-title">Fee leakage</h3>
+              <p className="card-sub">Charged above your fee contract</p>
             </div>
-            <div className="big-figure fee">
+            <div className="figure">
               <CountPaise paise={o.leakage.excessPaise} />
             </div>
-            <p className="muted">
-              On {o.leakage.overchargedCount} of {o.leakage.assessed} payments: base fee{' '}
-              {inr(o.leakage.excessBasePaise)} plus GST {inr(o.leakage.excessGstPaise)}.
-              {o.leakage.contract.source === 'default'
-                ? ' The run stored no fee contract, so the default was used.'
-                : ''}
-              {o.leakage.notAssessable > 0
-                ? ` ${o.leakage.notAssessable} payments could not be judged (method or currency not in the contract).`
-                : ''}
-              {o.leakage.undercharged.count > 0
-                ? ` Separately, ${o.leakage.undercharged.count} were charged ${inr(o.leakage.undercharged.shortfallPaise)} below the contract; that is not netted.`
-                : ''}
+            <p className="figure-sub">
+              {o.leakage.overchargedCount} of {o.leakage.assessed} payments overcharged
             </p>
             {methodItems.length > 0 ? <BarList items={methodItems} /> : null}
+          </section>
+        </Reveal>
+        <Reveal i={2}>
+          <section className="card">
+            <div className="card-head">
+              <h3 className="card-title">Delayed payouts</h3>
+              <p className="card-sub">Paid out later than the normal lag</p>
+            </div>
+            <div className="figure">
+              <Count value={o.delays.delayedCount} />
+            </div>
+            <p className="figure-sub">
+              {inr(o.delays.delayedPaise)} paid late
+              {o.delays.overdueCount > 0
+                ? ` · ${o.delays.overdueCount} overdue (${inr(o.delays.overduePaise)})`
+                : ' · none overdue'}
+            </p>
+            {o.delays.delayed.length > 0 ? (
+              <ul className="mini-rows">
+                {o.delays.delayed.slice(0, 3).map((d) => (
+                  <li key={d.rzpId}>
+                    <span>{d.rzpId}</span>
+                    <b>{d.createdLate ? `${d.businessDaysLate} days late` : 'credit late'}</b>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+        </Reveal>
+      </div>
+
+      <Reveal>
+        <details className="card more">
+          <summary>
+            More detail <span>rule tiers, who settled what, tables, totals</span>
+          </summary>
+          <div className="more-body">
+            <div className="more-block">
+              <h4>How the rules matched (strictest first)</h4>
+              <BarList items={tierItems} />
+            </div>
+            <div className="more-block">
+              <h4>How things were settled</h4>
+              <BarList items={settledItems} />
+            </div>
             {o.leakage.worst.length > 0 ? (
-              <>
-                <h4 className="mini-title">Largest overcharges</h4>
+              <div className="more-block">
+                <h4>Largest fee overcharges</h4>
                 <DataTable
                   columns={['Payment', 'Method', 'Expected', 'Charged', 'Excess']}
                   numeric={[2, 3, 4]}
@@ -816,139 +687,102 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
                       inr(w.excessPaise),
                     ])}
                 />
-              </>
-            ) : null}
-          </section>
-        </Reveal>
-
-        <Reveal i={1}>
-          <section className="card feature-card">
-            <div className="card-head">
-              <div>
-                <h3 className="card-title">Delayed settlements</h3>
-                <p className="card-sub">Paid out later than the normal lag.</p>
+                <p className="source-strip">
+                  Base fee {inr(o.leakage.excessBasePaise)} plus GST {inr(o.leakage.excessGstPaise)}
+                  {o.leakage.contract.source === 'default'
+                    ? '. No fee contract was stored, so the default was used.'
+                    : '.'}
+                  {o.leakage.notAssessable > 0
+                    ? ` ${o.leakage.notAssessable} payments could not be judged.`
+                    : ''}
+                  {o.leakage.undercharged.count > 0
+                    ? ` ${o.leakage.undercharged.count} were charged ${inr(o.leakage.undercharged.shortfallPaise)} below the contract (not netted).`
+                    : ''}
+                </p>
               </div>
-            </div>
-            <div className="big-figure">
-              <Count value={o.delays.delayedCount} />
-            </div>
-            <p className="muted">
-              Settlements worth {inr(o.delays.delayedPaise)} arrived late.{' '}
-              {o.delays.overdueCount > 0
-                ? `${o.delays.overdueCount} (${inr(o.delays.overduePaise)}) have no bank credit yet and are overdue.`
-                : 'None is overdue.'}
-            </p>
+            ) : null}
             {o.delays.delayed.length > 0 ? (
+              <div className="more-block">
+                <h4>Delayed settlements</h4>
+                <DataTable
+                  columns={['Settlement', 'Due', 'Created', 'Days late', 'Amount']}
+                  numeric={[3, 4]}
+                  rows={o.delays.delayed.map((d) => [
+                    d.rzpId,
+                    d.dueDate ?? '–',
+                    d.settlementDate,
+                    d.createdLate ? String(d.businessDaysLate) : 'credit late',
+                    inr(d.amountPaise),
+                  ])}
+                />
+              </div>
+            ) : null}
+            <div className="more-block">
+              <h4>
+                Do the totals add up?{' '}
+                {o.reconciles ? (
+                  <span className="pill ok">
+                    <Icon name="check" size={12} /> yes, to the paise
+                  </span>
+                ) : (
+                  <span className="pill bad">
+                    <Icon name="x" size={12} /> NO
+                  </span>
+                )}
+              </h4>
               <DataTable
-                columns={['Settlement', 'Due', 'Created', 'Days late', 'Amount']}
-                numeric={[3, 4]}
-                rows={o.delays.delayed.map((d) => [
-                  d.rzpId,
-                  d.dueDate ?? '–',
-                  d.settlementDate,
-                  d.createdLate ? String(d.businessDaysLate) : 'credit late',
-                  inr(d.amountPaise),
+                columns={['Source', 'Matched', 'In an exception', 'Ignored', 'Total']}
+                numeric={[1, 2, 3, 4]}
+                rows={o.coverage.map((c) => [
+                  sourceName(c.type),
+                  inr(c.amountPaise.matched),
+                  inr(c.amountPaise.inException),
+                  inr(c.amountPaise.ignored),
+                  `${inr(c.amountPaise.total)} ${c.reconciles ? '✓' : '✗'}`,
                 ])}
               />
-            ) : (
-              <p className="empty">
-                <Icon name="check" size={18} /> No delayed settlements.
-              </p>
-            )}
-          </section>
-        </Reveal>
-      </div>
-
-      <Reveal className="span-2">
-        <section className="card">
-          <div className="card-head">
-            <div>
-              <h3 className="card-title">Do the totals add up?</h3>
-              <p className="card-sub">
-                Counted separately for every source, so a row that did not add up would show a
-                cross.
-              </p>
+              <div className="source-strip">
+                <span>
+                  Ledger <b>{inr(s.ledger.amountPaise)}</b>
+                </span>
+                <span>
+                  Payments captured <b>{inr(s.payments.capturedPaise)}</b>
+                </span>
+                <span>
+                  Fees incl. GST <b>{inr(s.payments.feesPaise)}</b>
+                </span>
+                <span>
+                  Refunds <b>{inr(s.refunds.amountPaise)}</b>
+                </span>
+                <span>
+                  Settlements <b>{inr(s.settlements.amountPaise)}</b>
+                </span>
+                <span>
+                  Bank credits <b>{inr(s.bank.credits.amountPaise)}</b>
+                </span>
+                <span>
+                  Bank debits <b>{inr(s.bank.debits.amountPaise)}</b>
+                </span>
+              </div>
             </div>
-            {o.reconciles ? (
-              <span className="pill ok">
-                <Icon name="check" size={13} /> yes, to the paise
-              </span>
-            ) : (
-              <span className="pill bad">
-                <Icon name="x" size={13} /> NO
-              </span>
-            )}
           </div>
-          <DataTable
-            columns={['Source', 'Matched', 'In an exception', 'Ignored', 'Total']}
-            numeric={[1, 2, 3, 4]}
-            rows={o.coverage.map((c) => [
-              sourceName(c.type),
-              inr(c.amountPaise.matched),
-              inr(c.amountPaise.inException),
-              inr(c.amountPaise.ignored),
-              `${inr(c.amountPaise.total)} ${c.reconciles ? '✓' : '✗'}`,
-            ])}
-          />
-          <div className="source-strip">
-            <span>
-              Ledger <b>{inr(s.ledger.amountPaise)}</b> ({s.ledger.records})
-            </span>
-            <span>
-              Payments captured <b>{inr(s.payments.capturedPaise)}</b> ({s.payments.captured} of{' '}
-              {s.payments.records})
-            </span>
-            <span>
-              Fees incl. GST <b>{inr(s.payments.feesPaise)}</b>
-            </span>
-            <span>
-              Refunds <b>{inr(s.refunds.amountPaise)}</b> ({s.refunds.records})
-            </span>
-            <span>
-              Settlements <b>{inr(s.settlements.amountPaise)}</b> ({s.settlements.records})
-            </span>
-            <span>
-              Bank credits <b>{inr(s.bank.credits.amountPaise)}</b> ({s.bank.credits.records})
-            </span>
-            <span>
-              Bank debits <b>{inr(s.bank.debits.amountPaise)}</b> ({s.bank.debits.records})
-            </span>
-          </div>
-        </section>
+        </details>
       </Reveal>
 
-      <Reveal className="span-2">
-        <section className="card books">
-          <span className="ico">
-            <Icon name="book" size={22} />
+      <Reveal>
+        <div className="books-bar">
+          <span>
+            <b>Books:</b> {o.journal.settlementsBooked} settlements booked as {o.journal.vouchers}{' '}
+            vouchers
+            {o.journal.settlementsNotBooked.count > 0
+              ? `; ${o.journal.settlementsNotBooked.count} (${inr(o.journal.settlementsNotBooked.paise)}) not bookable yet, with no bank credit matched.`
+              : '.'}
           </span>
-          <div>
-            <h3 className="card-title">Books</h3>
-            <p className="muted">
-              {o.journal.settlementsBooked} settlements are booked as {o.journal.vouchers} vouchers
-              {o.journal.adjustmentsBooked > 0
-                ? `, including ${o.journal.adjustmentsBooked} adjustments a person approved`
-                : ''}
-              . {o.journal.settlementsNotBooked.count} ({inr(o.journal.settlementsNotBooked.paise)})
-              cannot be booked yet: no bank credit has been matched to them.
-            </p>
-          </div>
-          <a className="button primary" href={linkTo(runId, 'downloads')}>
-            <Icon name="download" size={16} /> Download the vouchers
+          <a className="button sm" href={linkTo(runId, 'downloads')}>
+            <Icon name="download" size={14} /> Vouchers and reports
           </a>
-        </section>
+        </div>
       </Reveal>
-    </div>
-  );
-}
-
-function Fact({ icon, label, children }: { icon: IconName; label: string; children: ReactNode }) {
-  return (
-    <div className="fact">
-      <dt>
-        <Icon name={icon} size={16} /> {label}
-      </dt>
-      <dd>{children}</dd>
     </div>
   );
 }
@@ -960,31 +794,31 @@ const FILES: { name: string; title: string; text: string; kind: string }[] = [
     name: 'report.json',
     title: 'Run report',
     kind: 'JSON',
-    text: 'Everything on the summary, every exception and every voucher, in integer paise.',
+    text: 'Everything on the summary, every exception and voucher, in integer paise.',
   },
   {
     name: 'report.csv',
     title: 'Run report',
     kind: 'CSV',
-    text: 'The summary as rows a spreadsheet can read.',
+    text: 'The summary as spreadsheet rows.',
   },
   {
     name: 'exceptions.csv',
     title: 'Exceptions',
     kind: 'CSV',
-    text: 'One row per exception with its age, the suggested action, the next step, the checker’s verdict and any decision.',
+    text: 'One row per exception: age, next step, checker verdict and any decision.',
   },
   {
     name: 'journal-entries.csv',
     title: 'Journal entries',
     kind: 'CSV',
-    text: 'Vouchers for the books: date, voucher type, debit ledger, credit ledger, amount, narration with record ids. Fees, GST on fees, refunds and chargebacks.',
+    text: 'Vouchers for the books: fees, GST, refunds and chargebacks.',
   },
   {
     name: 'journal-lines.csv',
     title: 'Journal lines for Tally',
     kind: 'CSV',
-    text: 'The same vouchers, one row per ledger line, the layout TallyPrime’s Import Data from Excel maps. Open in Excel and save as .xlsx first.',
+    text: 'The same vouchers, one row per ledger line. Save as .xlsx before TallyPrime’s import.',
   },
 ];
 
@@ -993,27 +827,22 @@ function Downloads({ runId }: { runId: string }) {
     <section>
       <div className="section-head">
         <h2>Downloads</h2>
-        <p className="muted">
-          Every file is generated from this run, so it matches the screen to the paisa.
-        </p>
       </div>
-      <div className="downloads">
-        {FILES.map((f, i) => (
-          <Reveal key={f.name} i={i % 3}>
-            <div className="card download lift">
-              <span className="ico file">
-                <Icon name="file" size={22} />
-                <i>{f.kind}</i>
-              </span>
-              <div className="download-body">
-                <h3>{f.title}</h3>
-                <p>{f.text}</p>
-              </div>
-              <a className="button sm" href={`/runs/${runId}/${f.name}`} download>
-                <Icon name="download" size={15} /> Download
-              </a>
+      <div className="card dl-list">
+        {FILES.map((f) => (
+          <div key={f.name} className="dl-row">
+            <span className="ico dl-ico">
+              <Icon name="file" size={18} />
+              <i>{f.kind}</i>
+            </span>
+            <div>
+              <b>{f.title}</b>
+              <span>{f.text}</span>
             </div>
-          </Reveal>
+            <a className="button sm" href={`/runs/${runId}/${f.name}`} download>
+              <Icon name="download" size={14} /> Download
+            </a>
+          </div>
         ))}
       </div>
     </section>

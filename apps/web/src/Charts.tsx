@@ -96,7 +96,7 @@ export function DataTable({ columns, rows, numeric = [] }: DataTableProps) {
   );
 }
 
-/** A chart with its title and, when it has a table twin, a Chart / Table switch. */
+/** A chart with its title and, when it has a table twin, a quiet "Show as table" link in its footer. */
 export function ChartCard({
   title,
   subtitle,
@@ -122,16 +122,6 @@ export function ChartCard({
           <h3 className="card-title">{title}</h3>
           {subtitle ? <p className="card-sub">{subtitle}</p> : null}
         </div>
-        {table ? (
-          <div className="seg" role="group" aria-label={`${title}: view`}>
-            <button aria-pressed={view === 'chart'} onClick={() => setView('chart')}>
-              Chart
-            </button>
-            <button aria-pressed={view === 'table'} onClick={() => setView('table')}>
-              Table
-            </button>
-          </div>
-        ) : null}
       </figcaption>
       {view === 'chart' ? (
         <>
@@ -141,7 +131,20 @@ export function ChartCard({
       ) : table ? (
         <DataTable {...table} />
       ) : null}
-      {foot ? <div className="card-foot">{foot}</div> : null}
+      {foot || table ? (
+        <div className="card-foot">
+          <span>{foot}</span>
+          {table ? (
+            <button
+              className="linkbtn"
+              aria-pressed={view === 'table'}
+              onClick={() => setView(view === 'table' ? 'chart' : 'table')}
+            >
+              {view === 'table' ? 'Show chart' : 'Show as table'}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </figure>
   );
 }
