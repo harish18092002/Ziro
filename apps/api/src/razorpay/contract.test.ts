@@ -22,7 +22,7 @@ import {
   writeCollections,
 } from './razorpay.fixtures.js';
 import { createSdkClient } from './sdk-client.js';
-import type { DateRange, FetchResult, RazorpaySource } from './source.js';
+import type { DateRange, FetchResult } from './source.js';
 import { SyntheticSource } from './synthetic.source.js';
 import { TestModeSource } from './testmode.source.js';
 
@@ -64,14 +64,6 @@ beforeAll(() => {
 });
 afterAll(() => scenarios.forEach((s) => s.data.cleanup()));
 
-/** A fallback that must never be needed: both adapters are given the full data. */
-const tripwire: RazorpaySource = {
-  fetchPayments: () => Promise.reject(new Error('fallback used for payments')),
-  fetchRefunds: () => Promise.reject(new Error('fallback used for refunds')),
-  fetchSettlements: () => Promise.reject(new Error('fallback used for settlements')),
-  fetchSettlementRecon: () => Promise.reject(new Error('fallback used for recon')),
-};
-
 function adapters(collections: Collections, dir: string) {
   const synthetic = new SyntheticSource({ runId: RUN_ID, dir });
   const client = createSdkClient({
@@ -80,7 +72,7 @@ function adapters(collections: Collections, dir: string) {
     adapter: createEmulator(collections).adapter,
     deps: { sleep: () => Promise.resolve(), random: () => 0 },
   });
-  const testmode = new TestModeSource({ runId: RUN_ID, client, fallback: tripwire });
+  const testmode = new TestModeSource({ runId: RUN_ID, client });
   return { synthetic, testmode };
 }
 
@@ -109,7 +101,7 @@ describe.each([0, 1, 2])('RazorpaySource contract, scenario %i', (index) => {
     expect(t.source).toBe('razorpay_testmode');
     expect(s.items.every((i) => i.record.source === 'synthetic')).toBe(true);
     expect(t.items.every((i) => i.record.source === 'razorpay_testmode')).toBe(true);
-    expect([s.provenance.reason, t.provenance.reason]).toEqual(['ok', 'ok']);
+    expect([s.provenance.source, t.provenance.source]).toEqual(['synthetic', 'razorpay_testmode']);
   });
 
   it('refunds: identical', async () => {

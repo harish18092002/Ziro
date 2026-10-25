@@ -10,12 +10,6 @@ import {
   TEST_KEY_SECRET,
 } from './razorpay.fixtures.js';
 import { createSdkClient, type RazorpayClient } from './sdk-client.js';
-import {
-  type Entity,
-  type FetchResult,
-  type RazorpaySource,
-  summarizeProvenance,
-} from './source.js';
 import { TestModeSource, type TestModeSourceOptions } from './testmode.source.js';
 
 const DAY = { from: '2026-10-08', to: '2026-10-08' };
@@ -39,29 +33,8 @@ const rawPayment = (n: number, over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-/** A fallback that records which of its methods were used and returns a labelled, empty answer. */
-function spyFallback() {
-  const used: string[] = [];
-  const answer = <T>(entity: Entity, method: string): Promise<FetchResult<T>> => {
-    used.push(method);
-    return Promise.resolve({
-      source: 'synthetic',
-      items: [],
-      provenance: { entity, source: 'synthetic', reason: 'ok', requests: 0, warnings: [] },
-    });
-  };
-  const fallback: RazorpaySource = {
-    fetchPayments: () => answer('payments', 'payments'),
-    fetchRefunds: () => answer('refunds', 'refunds'),
-    fetchSettlements: () => answer('settlements', 'settlements'),
-    fetchSettlementRecon: () => answer('settlement_recon', 'recon'),
-  };
-  return { fallback, used };
-}
-
 function setup(collections: Collections, options: Partial<TestModeSourceOptions> = {}) {
   const emulator = createEmulator(collections);
-  const { fallback, used } = spyFallback();
   const client = createSdkClient({
     keyId: TEST_KEY_ID,
     keySecret: TEST_KEY_SECRET,
@@ -69,11 +42,11 @@ function setup(collections: Collections, options: Partial<TestModeSourceOptions>
     retry: { maxAttempts: 2 },
     deps: { sleep: () => Promise.resolve(), random: () => 0 },
   });
-  const source = new TestModeSource({ runId: RUN_ID, client, fallback, ...options });
+  const source = new TestModeSource({ runId: RUN_ID, client, ...options });
   const callsTo = (prefix: string) => emulator.calls.filter((c) => c.path.startsWith(prefix));
   /** Calls to exactly this endpoint, not to the endpoints beneath it. */
   const callsToExactly = (path: string) => emulator.calls.filter((c) => c.path === path);
-  return { emulator, source, used, callsTo, callsToExactly };
+  return { emulator, source, callsTo, callsToExactly };
 }
 
 describe('pagination', () => {
@@ -137,7 +110,7 @@ describe('pagination', () => {
     const page2 = Array.from({ length: 51 }, (_, i) => rawPayment(i + 99)); // 99 and 100... overlap on id 99
     const pages = [page1, page2];
     const client = stubClient({ listPayments: (q) => collection(pages[q.skip / 100] ?? []) });
-    const source = new TestModeSource({ runId: RUN_ID, client, fallback: spyFallback().fallback });
+    const source = new TestModeSource({ runId: RUN_ID, client });
     const result = await source.fetchPayments(DAY);
     expect(result.items).toHaveLength(150);
     expect(new Set(result.items.map((i) => i.record.paymentId)).size).toBe(150);
@@ -146,12 +119,7 @@ describe('pagination', () => {
   it('refuses to page forever when the server ignores skip', async () => {
     const page = Array.from({ length: 100 }, (_, i) => rawPayment(i));
     const client = stubClient({ listPayments: () => collection(page) });
-    const source = new TestModeSource({
-      runId: RUN_ID,
-      client,
-      fallback: spyFallback().fallback,
-      maxPages: 5,
-    });
+    const source = new TestModeSource({ runId: RUN_ID, client, maxPages: 5 });
     await expect(source.fetchPayments(DAY)).rejects.toThrow(/still paging after 5 pages/);
   });
 
@@ -168,52 +136,48 @@ describe('pagination', () => {
   it('keeps only records inside the range even if the server returns others', async () => {
     const outside = rawPayment(2, { created_at: istDayBounds('2026-10-20').fromEpoch });
     const client = stubClient({ listPayments: () => collection([rawPayment(1), outside]) });
-    const source = new TestModeSource({ runId: RUN_ID, client, fallback: spyFallback().fallback });
+    const source = new TestModeSource({ runId: RUN_ID, client });
     expect((await source.fetchPayments(DAY)).items.map((i) => i.record.paymentId)).toEqual([
       `pay_${pad(1)}`,
     ]);
   });
 });
 
-describe('what is real and what falls back', () => {
-  it('uses test-mode payments, labelled razorpay_testmode, when there are some', async () => {
-    const { source, used } = setup(docsDerivedCollections());
+describe('a test account holds what it holds: nothing is borrowed', () => {
+  it('returns real payments, labelled razorpay_testmode', async () => {
+    const { source } = setup(docsDerivedCollections());
     const result = await source.fetchPayments(OCTOBER);
     expect(result.source).toBe('razorpay_testmode');
-    expect(result.provenance.reason).toBe('ok');
     expect(result.items.length).toBe(5);
     expect(result.items.every((i) => i.record.source === 'razorpay_testmode')).toBe(true);
-    expect(used).toEqual([]);
   });
 
-  it('falls back to synthetic payments when test mode has none, and says why', async () => {
-    const { source, used } = setup(EMPTY);
+  it('an empty account is an empty answer, still labelled razorpay_testmode: never synthetic data', async () => {
+    const { source } = setup(EMPTY);
     const result = await source.fetchPayments(OCTOBER);
-    expect(used).toEqual(['payments']);
-    expect(result.source).toBe('synthetic');
+    expect(result.items).toHaveLength(0);
+    expect(result.source).toBe('razorpay_testmode');
     expect(result.provenance).toMatchObject({
       entity: 'payments',
-      source: 'synthetic',
-      reason: 'test-mode-empty',
+      source: 'razorpay_testmode',
       requests: 1,
     });
   });
 
-  it('refunds follow payments: synthetic payments mean synthetic refunds, with no refund call to Razorpay', async () => {
-    const { source, used, callsTo } = setup(EMPTY);
-    const result = await source.fetchRefunds(OCTOBER);
-    expect(result.source).toBe('synthetic');
-    expect(result.provenance.reason).toBe('follows-payments');
-    expect(used).toEqual(['payments', 'refunds']);
-    expect(callsTo('/v1/refunds')).toHaveLength(0);
-  });
-
-  it('real payments with no refunds is a true answer: empty, still real, no fallback', async () => {
-    const { source, used } = setup({ ...docsDerivedCollections(), refunds: [] });
+  it('refunds are listed on their own: an empty account has none, and no payments are needed to ask', async () => {
+    const { source, callsTo } = setup(EMPTY);
     const result = await source.fetchRefunds(OCTOBER);
     expect(result.source).toBe('razorpay_testmode');
     expect(result.items).toHaveLength(0);
-    expect(used).toEqual([]);
+    expect(callsTo('/v1/refunds')).toHaveLength(1);
+    expect(callsTo('/v1/payments')).toHaveLength(0);
+  });
+
+  it('real payments with no refunds is a true answer: empty and real', async () => {
+    const { source } = setup({ ...docsDerivedCollections(), refunds: [] });
+    const result = await source.fetchRefunds(OCTOBER);
+    expect(result.source).toBe('razorpay_testmode');
+    expect(result.items).toHaveLength(0);
   });
 
   it('returns real refunds alongside real payments', async () => {
@@ -223,50 +187,41 @@ describe('what is real and what falls back', () => {
     expect(result.items.map((i) => i.record.refundId)).toEqual(['rfnd_DfjjhJC6eDvUAi']);
   });
 
-  it('falls back for settlements when test mode has none, even though payments are real', async () => {
-    const { source, used } = setup({ ...docsDerivedCollections(), settlements: [], recon: [] });
+  it('test mode with real payments but no settlements gives an empty, honest settlements answer', async () => {
+    const { source } = setup({ ...docsDerivedCollections(), settlements: [], recon: [] });
     const payments = await source.fetchPayments(OCTOBER);
     const settlements = await source.fetchSettlements(OCTOBER);
-    expect(payments.source).toBe('razorpay_testmode');
-    expect(settlements.source).toBe('synthetic');
-    expect(settlements.provenance.reason).toBe('test-mode-empty');
-    expect(used).toEqual(['settlements']);
-
-    const summary = summarizeProvenance([payments.provenance, settlements.provenance]);
-    expect(summary.mixed).toBe(true);
-    expect(summary.bySource).toEqual({
-      razorpay_testmode: ['payments'],
-      synthetic: ['settlements'],
-    });
+    expect(payments.items.length).toBeGreaterThan(0);
+    expect(settlements.items).toHaveLength(0);
+    expect(settlements.source).toBe('razorpay_testmode');
+    expect(settlements.provenance.source).toBe('razorpay_testmode');
   });
 
   it('uses real settlements when test mode does have them', async () => {
-    const { source, used } = setup(docsDerivedCollections());
+    const { source } = setup(docsDerivedCollections());
     const result = await source.fetchSettlements(OCTOBER);
     expect(result.source).toBe('razorpay_testmode');
     expect(result.items.map((i) => i.record.settlementId)).toEqual(['setl_DGlQ1Rj8os78Ec']);
-    expect(used).toEqual([]);
   });
 
-  describe('the recon report follows settlements, month by month', () => {
-    it('is synthetic when test mode has no settlements that month, after exactly one probe', async () => {
-      const { source, used, callsTo, callsToExactly } = setup({
+  describe('the recon report, month by month', () => {
+    it('is empty and cheap when nothing settled that month: one probe, remembered, no recon calls', async () => {
+      const { source, callsTo, callsToExactly } = setup({
         ...docsDerivedCollections(),
         settlements: [],
         recon: [],
       });
       const a = await source.fetchSettlementRecon('2026-10-12');
       const b = await source.fetchSettlementRecon('2026-10-13');
-      expect(a.source).toBe('synthetic');
-      expect(a.provenance.reason).toBe('test-mode-empty');
-      expect(b.source).toBe('synthetic');
-      expect(used).toEqual(['recon', 'recon']);
+      expect(a.items).toHaveLength(0);
+      expect(b.items).toHaveLength(0);
+      expect(a.source).toBe('razorpay_testmode');
       expect(callsToExactly('/v1/settlements')).toHaveLength(1); // the month was probed once and remembered
       expect(callsTo('/v1/settlements/recon')).toHaveLength(0);
     });
 
     it('is real, including real emptiness, when test mode settles that month', async () => {
-      const { source, used } = setup(docsDerivedCollections());
+      const { source } = setup(docsDerivedCollections());
       const busy = await source.fetchSettlementRecon('2026-10-12');
       expect(busy.source).toBe('razorpay_testmode');
       expect(busy.items.map((i) => i.record.itemType).sort()).toEqual([
@@ -279,13 +234,12 @@ describe('what is real and what falls back', () => {
       const quiet = await source.fetchSettlementRecon('2026-10-20');
       expect(quiet.source).toBe('razorpay_testmode'); // nothing settled that day is a true answer, not a gap
       expect(quiet.items).toHaveLength(0);
-      expect(used).toEqual([]);
     });
 
     it('decides per calendar month', async () => {
       const { source, callsToExactly } = setup(docsDerivedCollections());
-      expect((await source.fetchSettlementRecon('2026-10-12')).source).toBe('razorpay_testmode');
-      expect((await source.fetchSettlementRecon('2026-11-03')).source).toBe('synthetic'); // no November settlements
+      expect((await source.fetchSettlementRecon('2026-10-12')).items.length).toBeGreaterThan(0);
+      expect((await source.fetchSettlementRecon('2026-11-03')).items).toHaveLength(0); // no November settlements
       expect(callsToExactly('/v1/settlements')).toHaveLength(2); // one probe per month
       expect(callsToExactly('/v1/settlements/recon/combined')).toHaveLength(1); // October only
     });
@@ -300,7 +254,7 @@ describe('what is real and what falls back', () => {
   });
 });
 
-describe('errors never fall back to synthetic data', () => {
+describe('errors are never hidden behind other data', () => {
   const cases: [string, number, string][] = [
     ['bad credentials on payments', 401, '/v1/payments'],
     ['a forbidden endpoint', 403, '/v1/payments'],
@@ -308,7 +262,7 @@ describe('errors never fall back to synthetic data', () => {
   ];
 
   it.each(cases)('surfaces %s', async (_name, status, path) => {
-    const { emulator, source, used } = setup(docsDerivedCollections());
+    const { emulator, source } = setup(docsDerivedCollections());
     emulator.failNext(
       path,
       ...Array.from({ length: 5 }, () => ({
@@ -317,22 +271,20 @@ describe('errors never fall back to synthetic data', () => {
       })),
     );
     await expect(source.fetchPayments(OCTOBER)).rejects.toMatchObject({ statusCode: status });
-    expect(used).toEqual([]);
   });
 
-  it('surfaces an error on the settlements endpoint instead of hiding it behind synthetic data', async () => {
-    const { emulator, source, used } = setup(docsDerivedCollections());
+  it('surfaces an error on the settlements endpoint instead of answering empty', async () => {
+    const { emulator, source } = setup(docsDerivedCollections());
     emulator.failNext('/v1/settlements', {
       status: 400,
       body: { error: { code: 'BAD_REQUEST_ERROR', description: 'not enabled' } },
     });
     await expect(source.fetchSettlements(OCTOBER)).rejects.toBeInstanceOf(RazorpayApiError);
-    expect(used).toEqual([]);
   });
 
   it('rejects a malformed response rather than guessing', async () => {
     const client = stubClient({ listPayments: () => Promise.resolve({ nope: true }) });
-    const source = new TestModeSource({ runId: RUN_ID, client, fallback: spyFallback().fallback });
+    const source = new TestModeSource({ runId: RUN_ID, client });
     await expect(source.fetchPayments(DAY)).rejects.toBeInstanceOf(RazorpayResponseError);
   });
 });
@@ -346,21 +298,18 @@ describe('a list that fails part-way', () => {
 
   it('keeps the pages it already has and says the list is incomplete', async () => {
     const payments = Array.from({ length: 250 }, (_, i) => rawPayment(i));
-    const { emulator, source, used } = setup({ ...EMPTY, payments });
+    const { emulator, source } = setup({ ...EMPTY, payments });
     emulator.failWhen('/v1/payments', secondPageOnwards, unavailable);
 
     const result = await source.fetchPayments(DAY);
 
     expect(result.items).toHaveLength(100);
     expect(result.source).toBe('razorpay_testmode');
-    expect(result.provenance.reason).toBe('ok');
     expect(result.provenance.incomplete).toHaveLength(1);
     expect(result.provenance.incomplete?.[0]).toMatchObject({ what: 'payments', fetched: 100 });
     expect(result.provenance.incomplete?.[0]?.reason).toMatch(
       /503 SERVER_ERROR.*\(after 2 tries\)/,
     );
-    // It did not quietly swap in synthetic data for the part it could not get.
-    expect(used).toEqual([]);
   });
 
   it('records nothing as incomplete when every page arrives', async () => {
@@ -372,13 +321,12 @@ describe('a list that fails part-way', () => {
   });
 
   it('still fails when the FIRST page fails: there is nothing to keep', async () => {
-    const { emulator, source, used } = setup({
+    const { emulator, source } = setup({
       ...EMPTY,
       payments: Array.from({ length: 250 }, (_, i) => rawPayment(i)),
     });
     emulator.failWhen('/v1/payments', () => true, unavailable);
     await expect(source.fetchPayments(DAY)).rejects.toMatchObject({ statusCode: 503 });
-    expect(used).toEqual([]);
   });
 
   it('still fails when a later page is unreadable: that is not an outage', async () => {
@@ -400,7 +348,7 @@ describe('a list that fails part-way', () => {
           : Promise.reject(new TypeError('x is not a function'));
       },
     });
-    const source = new TestModeSource({ runId: RUN_ID, client, fallback: spyFallback().fallback });
+    const source = new TestModeSource({ runId: RUN_ID, client });
     await expect(source.fetchPayments(DAY)).rejects.toBeInstanceOf(TypeError);
   });
 

@@ -36,8 +36,8 @@ const FILES = {
 } as const;
 
 /**
- * Razorpay data read from files @ziro/datagen wrote. It is the demo and eval world, and the
- * fallback for anything test mode cannot supply. Every record is labelled `synthetic`.
+ * Razorpay data read from files @ziro/datagen wrote. It is the demo and eval world, and what
+ * `RAZORPAY_SOURCE=synthetic` serves. Every record is labelled `synthetic`.
  */
 export class SyntheticSource implements RazorpaySource {
   private readonly files = new Map<string, Promise<unknown[]>>();
@@ -79,7 +79,7 @@ export class SyntheticSource implements RazorpaySource {
     return {
       source: 'synthetic',
       items,
-      provenance: { entity, source: 'synthetic', reason: 'ok', requests: 0, warnings: [] },
+      provenance: { entity, source: 'synthetic', requests: 0, warnings: [] },
     };
   }
 

@@ -4,26 +4,27 @@ Notable decisions, oldest first. Each has a status, the context, what was decide
 rejected, and the consequences, including the ones that hurt. A later ADR can amend an earlier one; the earlier
 one's status says so and names the later one.
 
-| ADR           | Decision                                    | In one line                                                                     | Status            |
-| ------------- | ------------------------------------------- | ------------------------------------------------------------------------------- | ----------------- |
-| [001][adr001] | Monorepo with a framework-free core package | Pure logic cannot import IO, so it stays provable.                              | accepted          |
-| [002][adr002] | ESM and Vitest everywhere                   | Nest 12 is ESM-only; one test runner for every package.                         | accepted          |
-| [003][adr003] | TypeScript pinned to 6.0.x                  | A pinned compiler so typecheck results do not drift.                            | accepted          |
-| [004][adr004] | Razorpay `fee` is GST-inclusive             | Base fee is fee minus tax; the settlement formula matches 49 of 49 settlements. | accepted          |
-| [005][adr005] | Database invariants                         | A record is in at most one accepted group; the audit log is append-only.        | accepted          |
-| [006][adr006] | Database tests on PGlite                    | Real migrations, in-process Postgres, fast tests.                               | accepted          |
-| [007][adr007] | Ground truth for synthetic data             | Every record is labelled, so a match rate can be measured.                      | accepted          |
-| [008][adr008] | Synthetic settlements and bank lines        | Test mode appears to have none; payments are real where available.              | accepted          |
-| [009][adr009] | Ingestion                                   | Strict parsing, immutable rows, one transaction per import.                     | accepted          |
-| [010][adr010] | The rule matcher                            | A waterfall that never guesses; ambiguity is an exception.                      | accepted          |
-| [011][adr011] | The investigation agent                     | A loop we own, read-only tools, every claim checked in code.                    | accepted, amended |
-| [012][adr012] | The verifier and the human gate             | An agent claim is never a match until code and a person agree.                  | accepted, amended |
-| [013][adr013] | The console and the free demo               | One click runs the whole loop; what the gap means.                              | accepted, amended |
-| [014][adr014] | The run report and the books                | Totals that add up, fee leakage, delays, voucher export.                        | accepted          |
-| [015][adr015] | The eval                                    | How the proof is scored against ground truth, and what it cannot show.          | accepted, amended |
-| [016][adr016] | Failures are first-class                    | Retry what is transient, say what was lost, never end the run.                  | accepted          |
-| [017][adr017] | Deployment                                  | One image, a public demo that can do three things, a job that migrates first.   | accepted          |
-| [018][adr018] | The model layer                             | A provider port, Gemini's free tier first, Claude optional; no mixed history.   | accepted          |
+| ADR           | Decision                                    | In one line                                                                             | Status            |
+| ------------- | ------------------------------------------- | --------------------------------------------------------------------------------------- | ----------------- |
+| [001][adr001] | Monorepo with a framework-free core package | Pure logic cannot import IO, so it stays provable.                                      | accepted          |
+| [002][adr002] | ESM and Vitest everywhere                   | Nest 12 is ESM-only; one test runner for every package.                                 | accepted          |
+| [003][adr003] | TypeScript pinned to 6.0.x                  | A pinned compiler so typecheck results do not drift.                                    | accepted          |
+| [004][adr004] | Razorpay `fee` is GST-inclusive             | Base fee is fee minus tax; the settlement formula matches 49 of 49 settlements.         | accepted          |
+| [005][adr005] | Database invariants                         | A record is in at most one accepted group; the audit log is append-only.                | accepted          |
+| [006][adr006] | Database tests on PGlite                    | Real migrations, in-process Postgres, fast tests.                                       | accepted          |
+| [007][adr007] | Ground truth for synthetic data             | Every record is labelled, so a match rate can be measured.                              | accepted          |
+| [008][adr008] | Synthetic settlements and bank lines        | Test mode appears to have none; payments are real where available.                      | accepted, amended |
+| [009][adr009] | Ingestion                                   | Strict parsing, immutable rows, one transaction per import.                             | accepted          |
+| [010][adr010] | The rule matcher                            | A waterfall that never guesses; ambiguity is an exception.                              | accepted          |
+| [011][adr011] | The investigation agent                     | A loop we own, read-only tools, every claim checked in code.                            | accepted, amended |
+| [012][adr012] | The verifier and the human gate             | An agent claim is never a match until code and a person agree.                          | accepted, amended |
+| [013][adr013] | The console and the free demo               | One click runs the whole loop; what the gap means.                                      | accepted, amended |
+| [014][adr014] | The run report and the books                | Totals that add up, fee leakage, delays, voucher export.                                | accepted          |
+| [015][adr015] | The eval                                    | How the proof is scored against ground truth, and what it cannot show.                  | accepted, amended |
+| [016][adr016] | Failures are first-class                    | Retry what is transient, say what was lost, never end the run.                          | accepted          |
+| [017][adr017] | Deployment                                  | One image, a public demo that can do three things, a job that migrates first.           | accepted          |
+| [018][adr018] | The model layer                             | A provider port, Gemini's free tier first, Claude optional; no mixed history.           | accepted          |
+| [019][adr019] | Test mode is real                           | No generated fallback; a starter ledger; test payments from the console; an admin gate. | accepted          |
 
 [adr001]: #adr-001-monorepo-with-a-framework-free-core-package
 [adr002]: #adr-002-esm-everywhere-vitest-everywhere
@@ -43,6 +44,7 @@ one's status says so and names the later one.
 [adr016]: #adr-016-failures-are-first-class--retry-what-is-transient-say-what-was-lost-never-end-the-run
 [adr017]: #adr-017-deployment--one-image-a-public-demo-that-can-only-do-three-things-and-a-job-that-migrates-first
 [adr018]: #adr-018-the-model-layer--a-provider-port-geminis-free-tier-first-claude-optional
+[adr019]: #adr-019-test-mode-is-real--no-generated-fallback-a-starter-ledger-and-an-optional-admin-gate
 
 ---
 
@@ -258,7 +260,7 @@ accuracy" or "false auto-accept rate" is defined by the file, not by interpretat
 
 ## ADR-008: Synthetic settlements + bank statements; test-mode payments where available
 
-**Status:** accepted
+**Status:** accepted, amended by [ADR-019](#adr-019-test-mode-is-real--no-generated-fallback-a-starter-ledger-and-an-optional-admin-gate): the per-entity fallback and the `mixed` label below were removed; test mode now returns only what Razorpay returns.
 
 **Context.** Ziro reconciles ledger ↔ Razorpay ↔ bank. We need a real Razorpay integration to show,
 but must stay on test keys only (CLAUDE.md §4.6). What test mode can supply is not spelled out
@@ -271,7 +273,9 @@ anywhere, so this is what the documentation does and does not say (read 2026-10-
 - _Silent:_ settlements and the recon report. Settlement is described only for live money (T+2, for
   captured payments). Nothing documents a test payment ever being settled, so expect an empty list
   (HTTP 200), not an error. **This is unverified**: `npm run razorpay:probe -w @ziro/api -- --confirm`
-  is the read-only check, and its result should be recorded here.
+  is the read-only check. **Probe result** (run for ADR-019, against the author's test account): all six
+  listings answered HTTP 200 with empty lists, settlements and the recon report included. The account held no
+  payments, so this proves the endpoints exist for test keys, not that a test payment is ever settled.
 - _The SDK_ (`razorpay` 2.9.8) hard-codes its host, has no timeout, and crashes with a `TypeError` on
   any failure that has no HTTP response (its error handler reads `err.response.status`), discarding
   headers such as `Retry-After`. It does not paginate or retry.
@@ -1059,3 +1063,59 @@ request around until some model accepted it.
   limiter's script has not been run against a real Redis in this environment** (its contract test is written
   and skipped without the compose Redis). Anthropic's out-of-credit error is taken from its documentation (a
   402, plus a message pattern on a 400).
+
+## ADR-019: Test mode is real — no generated fallback, a starter ledger, and an optional admin gate
+
+**Status:** accepted. Amends ADR-008 (the fallback and the `mixed` label are gone).
+
+**Context.** ADR-008 let a `RAZORPAY_SOURCE=testmode` run fall back, per entity, to generated settlements when
+test mode had none. The author wants test mode to mean the author's own Razorpay test account and nothing else,
+with the generated data kept for `RAZORPAY_SOURCE=synthetic` and the public demo. Two of the three sources are
+not Razorpay's to give: the ledger is the merchant's own list of orders and the bank statement is the bank's. A
+test account has neither, and (probe, ADR-008) may never have settlements either.
+
+**Decision.**
+
+- **No fallback.** `TestModeSource` returns what Razorpay returns. An empty account is an empty import, labelled
+  `razorpay_testmode`, and the console says so. `SourceLabel` is `synthetic | razorpay_testmode`; provenance
+  keeps entity, source, request count, warnings and an incomplete marker, and nothing about "why it fell back". A failure is
+  still a listed gap (ADR-016), never a quiet substitute.
+- **Recon follows reality.** The settlement-recon report is asked for a month only after one probe shows that
+  month has a settlement; otherwise it is an empty, successful answer.
+- **A starter ledger from Razorpay's own orders.** `buildStarterLedger` writes one row per captured INR order from
+  the payments' receipts (orders that are not captured, have no receipt, are not in INR or repeat an order are
+  counted as skipped, with the reasons). It goes through the
+  ordinary ledger CSV import, so every parsing rule, immutability rule and audit step applies, and the file name
+  (`starter-ledger-from-razorpay.csv`) says where it came from. It matches by construction, which the console
+  says: it proves the wiring, not the matcher's accuracy. The merchant can download it, edit it, or upload their
+  own CSV instead.
+- **A simulated bank, only on request and only from settlements.** One NEFT credit per settlement UTR, named
+  `SIMULATED-bank-from-razorpay-settlements.csv`. The bank statement is optional: orders, payments, refunds, fee
+  leakage and duplicates reconcile without it, and payouts wait.
+- **Making test data from the console.** `/pay.html` opens Razorpay Checkout with test keys;
+  `POST /razorpay/test-orders` and `/test-refunds` go through a `RazorpayWriter` (one attempt, no retries, so a
+  timeout cannot create two orders; `rzp_test_` keys only, refused otherwise). Only that page may load
+  `checkout.razorpay.com`: it has its own, narrow Content-Security-Policy and the console keeps the strict one.
+- **Imports are open only outside the public demo.** `GET /razorpay/status` reports `importsOpen: !DEMO_MODE` and
+  the public key id (never the secret); the console offers "New reconciliation" only when test mode is ready and
+  imports are open.
+- **An optional admin gate.** With `ADMIN_TOKEN` set (16 or more characters), every API call needs it, as an
+  HttpOnly, SameSite=Strict session cookie (HMAC, 8 hours) from `POST /auth/login` or as a bearer header;
+  `/health*` and `/auth*` stay open; login is limited to 10 a minute per IP. Boot refuses `ADMIN_TOKEN` with
+  `DEMO_MODE=true` (a public demo has no login by design). Unset, nothing changes.
+
+**Alternatives.** Keep the fallback and label the run `mixed` (what ADR-008 did; a mixed run cannot reconcile and
+the label is easy to miss); synthesise settlements and a bank statement around the real payments (coherent, a
+separate generator feature, still a possible follow-up); put Razorpay's hosts in the console's policy (widens
+every page for one); OAuth or user accounts (far more than one operator needs).
+
+**Consequences.**
+
+- A test-mode run can reconcile orders against payments and refunds, and report fee leakage, duplicates and
+  refunds. It reconciles payouts only if the account has settlements, which the documentation does not promise.
+- The starter ledger's match rate is not evidence of accuracy. Published numbers still come from `npm run eval`,
+  which is all-synthetic and unchanged.
+- `/pay.html` creates real objects in the author's test account, but only when someone clicks. Its behaviour
+  against live Checkout rests on Razorpay's documentation: no order was created while building it.
+- The admin token is one shared secret. It stops strangers; it does not say who approved something (the reviewer
+  name is still recorded as given).

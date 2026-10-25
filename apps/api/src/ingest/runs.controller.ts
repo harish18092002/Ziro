@@ -7,11 +7,13 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Res,
   UnprocessableEntityException,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { ZodPipe } from '../common/zod.pipe.js';
 import {
   type DemoResult,
@@ -19,6 +21,8 @@ import {
   type RazorpayImportReport,
   type RunSummary,
   type RunView,
+  SIMULATED_BANK_FILE,
+  STARTER_LEDGER_FILE,
 } from './ingest.service.js';
 import type { CsvImportReport } from './report.js';
 import {
@@ -85,6 +89,51 @@ export class RunsController {
   ): Promise<RazorpayImportReport> {
     return this.ingest.importRazorpay(id, body);
   }
+
+  // --- starter files: a ledger and a bank statement a test account implies ----------------------
+
+  /** What could be built from the run's Razorpay data right now. */
+  @Get(':id/starter')
+  starter(@Param('id', ParseUUIDPipe) id: string) {
+    return this.ingest.starterSummary(id);
+  }
+
+  /** The starter ledger as a file, to edit and upload back, or to look at. */
+  @Get(':id/starter-ledger.csv')
+  async starterLedgerCsv(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<string> {
+    return sendCsv(res, STARTER_LEDGER_FILE, (await this.ingest.starterLedger(id)).csv);
+  }
+
+  /** The simulated bank statement as a file. Test mode moves no money: this is built from the settlements. */
+  @Get(':id/simulated-bank.csv')
+  async simulatedBankCsv(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<string> {
+    return sendCsv(res, SIMULATED_BANK_FILE, (await this.ingest.simulatedBank(id)).csv);
+  }
+
+  @Post(':id/import/starter-ledger')
+  @HttpCode(200)
+  async importStarterLedger(@Param('id', ParseUUIDPipe) id: string): Promise<CsvImportReport> {
+    return orRefuse(await this.ingest.importStarterLedger(id));
+  }
+
+  @Post(':id/import/simulated-bank')
+  @HttpCode(200)
+  async importSimulatedBank(@Param('id', ParseUUIDPipe) id: string): Promise<CsvImportReport> {
+    return orRefuse(await this.ingest.importSimulatedBank(id));
+  }
+}
+
+function sendCsv(res: Response, fileName: string, body: string): string {
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  return body;
 }
 
 function upload(file: Express.Multer.File | undefined): { buffer: Buffer; originalName: string } {

@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from 'react';
-import { ApiError, type Availability, type Overview, post } from './api';
+import { ApiError, type Availability, type Overview, post, type RazorpayStatus } from './api';
 import { HeroArt, Logo } from './Brand';
 import { FlowDiagram } from './FlowDiagram';
 import { linkTo, percent } from './format';
@@ -39,7 +39,7 @@ function useRunStarter() {
 }
 type Starter = ReturnType<typeof useRunStarter>;
 
-export function Home() {
+export function Home({ razorpay }: { razorpay: RazorpayStatus | null }) {
   const { data: offer } = useLoad<Availability>('/demo');
   const replay = offer?.featured.eval ?? null;
   const proof = useLoad<Overview>(replay ? `/runs/${replay}/overview` : null);
@@ -52,7 +52,7 @@ export function Home() {
       <WhyHard />
       <HowItWorks proof={proof.data} />
       <Trust />
-      <TryIt starter={starter} offer={offer} />
+      <TryIt starter={starter} offer={offer} razorpay={razorpay} />
       <Footer />
     </div>
   );
@@ -307,7 +307,16 @@ function Trust() {
   );
 }
 
-function TryIt({ starter, offer }: { starter: Starter; offer: Availability | null }) {
+function TryIt({
+  starter,
+  offer,
+  razorpay,
+}: {
+  starter: Starter;
+  offer: Availability | null;
+  razorpay: RazorpayStatus | null;
+}) {
+  const ownAccount = razorpay?.ready === true && razorpay.importsOpen;
   return (
     <section className="section alt" id="try">
       <div className="wrap">
@@ -318,6 +327,11 @@ function TryIt({ starter, offer }: { starter: Starter; offer: Availability | nul
               <p className="try-sub">About two seconds. No sign-up.</p>
               <div className="cta-row">
                 <StartButton starter={starter} />
+                {ownAccount ? (
+                  <a className="button lg" href="#/new">
+                    Use your Razorpay test account
+                  </a>
+                ) : null}
               </div>
               {starter.problem ? (
                 <p className="problem" role="alert">

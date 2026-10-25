@@ -38,7 +38,7 @@ function provenance(
   requests: number,
   warnings: readonly string[] = [],
 ): Provenance {
-  return { entity, source, reason: 'ok', requests, warnings };
+  return { entity, source, requests, warnings };
 }
 
 export function stubSource(config: StubConfig = {}): { source: RazorpaySource; calls: StubCalls } {

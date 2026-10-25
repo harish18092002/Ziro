@@ -32,7 +32,7 @@ import { resolveDataDir } from '../razorpay/data-dir.js';
 import { RazorpayApiError, RazorpayConfigError } from '../razorpay/errors.js';
 import { deterministicUuid } from '../razorpay/identity.js';
 import { RazorpaySourceFactory } from '../razorpay/razorpay.module.js';
-import { type RazorpaySource, summarizeProvenance } from '../razorpay/source.js';
+import type { RazorpaySource } from '../razorpay/source.js';
 import {
   type BankRow,
   type LedgerRow,
@@ -69,7 +69,17 @@ import {
   statusOf,
 } from './report.js';
 import type { CreateRunInput, RazorpayImportInput } from './requests.js';
+import {
+  buildSimulatedBank,
+  buildStarterLedger,
+  type SimulatedBank,
+  type Starter,
+} from './starter.js';
 import { type WriteOutcome, writeSourceRows } from './write.js';
+
+/** The file names the starter files carry into the import report and the audit trail, so they are never mistaken for an upload. */
+export const STARTER_LEDGER_FILE = 'starter-ledger-from-razorpay.csv';
+export const SIMULATED_BANK_FILE = 'SIMULATED-bank-from-razorpay-settlements.csv';
 
 export interface RunView {
   readonly id: string;
@@ -113,11 +123,8 @@ export interface RazorpayImportReport {
   readonly provenance: readonly {
     readonly entity: string;
     readonly source: string;
-    readonly reason: string;
     readonly requests: number;
   }[];
-  /** True when real test-mode and synthetic data are in one run: it will not reconcile (ADR-008). */
-  readonly mixed: boolean;
   /** True when Razorpay failed for part of the window. What arrived was imported; `gaps` is what did not. */
   readonly partial: boolean;
   readonly gaps: readonly Gap[];
@@ -364,6 +371,87 @@ export class IngestService {
     return this.db.transaction((tx) => this.applyCsv(tx, runId, prepared, upload));
   }
 
+  // --- starter files, built from the Razorpay data in a run ------------------------------------
+
+  private async requireRun(runId: string): Promise<void> {
+    const [run] = await this.db
+      .select({ id: reconRuns.id })
+      .from(reconRuns)
+      .where(eq(reconRuns.id, runId));
+    if (!run) throw new NotFoundException(`run ${runId} does not exist`);
+  }
+
+  /** The ledger a Razorpay test account implies: one row per paid order. Needs the Razorpay import first. */
+  async starterLedger(runId: string): Promise<Starter> {
+    await this.requireRun(runId);
+    const rows = await this.db
+      .select({
+        receipt: rzpPayments.receipt,
+        amountPaise: rzpPayments.amountPaise,
+        currency: rzpPayments.currency,
+        captured: rzpPayments.captured,
+        businessDate: rzpPayments.businessDate,
+      })
+      .from(rzpPayments)
+      .where(eq(rzpPayments.runId, runId));
+    return buildStarterLedger(rows);
+  }
+
+  /** The bank credits a Razorpay test account's settlements would produce, if it has any. */
+  async simulatedBank(runId: string): Promise<SimulatedBank> {
+    await this.requireRun(runId);
+    const rows = await this.db
+      .select({
+        rzpId: rzpSettlements.rzpId,
+        utr: rzpSettlements.utr,
+        amountPaise: rzpSettlements.amountPaise,
+        businessDate: rzpSettlements.businessDate,
+      })
+      .from(rzpSettlements)
+      .where(eq(rzpSettlements.runId, runId));
+    return buildSimulatedBank(rows);
+  }
+
+  /** What could be built right now, so the console can say so before anyone presses a button. */
+  async starterSummary(runId: string) {
+    const [ledger, bank] = await Promise.all([
+      this.starterLedger(runId),
+      this.simulatedBank(runId),
+    ]);
+    return {
+      ledger: { rows: ledger.rows, skipped: ledger.skipped },
+      bank: { rows: bank.rows, withoutUtr: bank.withoutUtr },
+    };
+  }
+
+  /** Imports the starter ledger through exactly the path an uploaded file takes. */
+  async importStarterLedger(runId: string): Promise<CsvImportReport> {
+    const starter = await this.starterLedger(runId);
+    if (starter.rows === 0) {
+      throw new UnprocessableEntityException(
+        'there is no paid order to copy into a ledger: import the Razorpay data first, and make sure it holds captured payments with a receipt',
+      );
+    }
+    return this.importCsv(runId, 'ledger', {
+      buffer: Buffer.from(starter.csv, 'utf8'),
+      originalName: STARTER_LEDGER_FILE,
+    });
+  }
+
+  /** Imports the simulated bank statement through exactly the path an uploaded file takes. */
+  async importSimulatedBank(runId: string): Promise<CsvImportReport> {
+    const bank = await this.simulatedBank(runId);
+    if (bank.rows === 0) {
+      throw new UnprocessableEntityException(
+        'there is no settlement with a UTR to simulate a bank credit from: Razorpay test mode does not settle payments. Upload a bank statement instead, or go on without one',
+      );
+    }
+    return this.importCsv(runId, 'bank', {
+      buffer: Buffer.from(bank.csv, 'utf8'),
+      originalName: SIMULATED_BANK_FILE,
+    });
+  }
+
   private async applyCsv(
     tx: Executor,
     runId: string,
@@ -568,7 +656,6 @@ export class IngestService {
 
     const allErrors = [...outcome.errors].sort((a, b) => a.row - b.row);
     const { errors, errorCount } = capErrors(allErrors);
-    const summary = summarizeProvenance(bundle.provenance);
     const report: RazorpayImportReport = {
       runId,
       source: 'razorpay',
@@ -582,10 +669,8 @@ export class IngestService {
       provenance: bundle.provenance.map((p) => ({
         entity: p.entity,
         source: p.source,
-        reason: p.reason,
         requests: p.requests,
       })),
-      mixed: summary.mixed,
       partial: bundle.gaps.length > 0,
       gaps: bundle.gaps,
       errors,
@@ -612,7 +697,6 @@ export class IngestService {
         status: report.status,
         entities: report.entities,
         provenance: report.provenance,
-        mixed: report.mixed,
         partial: report.partial,
         gaps: report.gaps,
         errorCount,

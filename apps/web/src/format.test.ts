@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentStatus, ModelStatus } from './api';
+import type { AgentStatus, ModelStatus, RazorpayStatus } from './api';
 import {
   agentBanner,
+  dataChip,
   failureSentence,
   inr,
   linkTo,
@@ -45,6 +46,13 @@ describe('parseHash', () => {
       expect(parseHash(hash)).toEqual({ page: 'home' });
   });
 
+  it('knows the test-account page, and only exactly that', () => {
+    expect(parseHash('#/new')).toEqual({ page: 'new' });
+    expect(parseHash('#/new/')).toEqual({ page: 'new' });
+    expect(parseHash('#/new/extra')).toEqual({ page: 'home' });
+    expect(parseHash('#/newer')).toEqual({ page: 'home' });
+  });
+
   it('reads a run, its tab and an optional item', () => {
     expect(parseHash(`#/runs/${RUN}`)).toEqual({
       page: 'run',
@@ -76,6 +84,29 @@ describe('parseHash', () => {
       tab: 'audit',
       itemId: ITEM,
     });
+  });
+});
+
+describe('dataChip', () => {
+  const rz = (over: Partial<RazorpayStatus>): RazorpayStatus => ({
+    source: 'testmode',
+    ready: true,
+    keyId: 'rzp_test_abc123',
+    importsOpen: true,
+    ...over,
+  });
+
+  it('names the test account and its public key id once test mode is ready', () => {
+    expect(dataChip(rz({}))).toBe('Razorpay test account · rzp_test_abc123');
+    expect(dataChip(rz({ keyId: null }))).toBe('Razorpay test account');
+  });
+
+  it('says synthetic whenever the data is generated, or the status is unknown', () => {
+    expect(dataChip(null)).toBe('synthetic data · Razorpay test mode');
+    expect(dataChip(rz({ source: 'synthetic', keyId: null }))).toBe(
+      'synthetic data · Razorpay test mode',
+    );
+    expect(dataChip(rz({ ready: false }))).toBe('synthetic data · Razorpay test mode');
   });
 });
 

@@ -37,6 +37,23 @@ export interface RazorpayClient {
   settlementRecon(query: ReconQuery): Promise<unknown>;
 }
 
+/**
+ * What the "test payments" helper writes to YOUR Razorpay TEST account: an order to pay, and a refund of
+ * a payment you made. Test keys only (the same check as the reads), and never retried: a repeated POST
+ * could make a second order. It never touches anything the reads rely on.
+ */
+export interface RazorpayWriter {
+  createOrder(input: {
+    readonly amountPaise: number;
+    readonly receipt: string;
+    readonly notes?: Record<string, string>;
+  }): Promise<unknown>;
+  refundPayment(
+    paymentId: string,
+    input: { readonly amountPaise?: number; readonly notes?: Record<string, string> },
+  ): Promise<unknown>;
+}
+
 export interface SdkClientOptions {
   readonly keyId: string;
   readonly keySecret: string;
@@ -134,8 +151,8 @@ function toApiError(thrown: unknown): unknown {
   );
 }
 
-/** Wraps the official SDK with a timeout, sane network-error handling, and retries with backoff. */
-export function createSdkClient(options: SdkClientOptions): RazorpayClient {
+/** The shared set-up: the test-key check, the SDK with a timeout and failure handling, and the retry wrapper. */
+function prepare(options: SdkClientOptions, fixed: Partial<RetryPolicy> = {}) {
   assertTestKey(options.keyId, options.keySecret);
 
   const razorpay = new Razorpay({ key_id: options.keyId, key_secret: options.keySecret });
@@ -151,7 +168,7 @@ export function createSdkClient(options: SdkClientOptions): RazorpayClient {
   if (options.adapter !== undefined) http.defaults.adapter = options.adapter;
   http.interceptors.response.use(undefined, normalizeFailure);
 
-  const policy: RetryPolicy = { ...DEFAULT_RETRY, ...options.retry };
+  const policy: RetryPolicy = { ...DEFAULT_RETRY, ...options.retry, ...fixed };
   const deps: RetryDeps = { ...REAL_DEPS, ...options.deps };
   const call = <T>(fn: () => Promise<T>): Promise<T> =>
     withRetry(
@@ -165,7 +182,12 @@ export function createSdkClient(options: SdkClientOptions): RazorpayClient {
       policy,
       deps,
     );
+  return { razorpay, call };
+}
 
+/** Wraps the official SDK with a timeout, sane network-error handling, and retries with backoff. */
+export function createSdkClient(options: SdkClientOptions): RazorpayClient {
+  const { razorpay, call } = prepare(options);
   return {
     listPayments: (q) => call(() => razorpay.payments.all({ ...q })),
     listOrders: (q) => call(() => razorpay.orders.all({ ...q })),
@@ -173,5 +195,28 @@ export function createSdkClient(options: SdkClientOptions): RazorpayClient {
     listRefunds: (q) => call(() => razorpay.refunds.all({ ...q })),
     listSettlements: (q) => call(() => razorpay.settlements.all({ ...q })),
     settlementRecon: (q) => call(() => razorpay.settlements.reports({ ...q })),
+  };
+}
+
+/** The same wrapper for the two writes the test-payments helper needs. One attempt each, never retried. */
+export function createSdkWriter(options: SdkClientOptions): RazorpayWriter {
+  const { razorpay, call } = prepare(options, { maxAttempts: 1 });
+  return {
+    createOrder: (input) =>
+      call(() =>
+        razorpay.orders.create({
+          amount: input.amountPaise,
+          currency: 'INR',
+          receipt: input.receipt,
+          ...(input.notes === undefined ? {} : { notes: input.notes }),
+        }),
+      ),
+    refundPayment: (paymentId, input) =>
+      call(() =>
+        razorpay.payments.refund(paymentId, {
+          ...(input.amountPaise === undefined ? {} : { amount: input.amountPaise }),
+          ...(input.notes === undefined ? {} : { notes: input.notes }),
+        }),
+      ),
   };
 }

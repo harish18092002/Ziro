@@ -6,6 +6,7 @@ import './theme.css';
 import './base.css';
 import './home.css';
 import './dash.css';
+import './wizard.css';
 
 // The theme is set before the first render so the page does not flash the wrong colours.
 initTheme();

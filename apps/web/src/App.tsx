@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import type { AgentStatus } from './api';
+import type { AgentStatus, RazorpayStatus } from './api';
 import { get } from './api';
 import { Logo } from './Brand';
-import { agentBanner, parseHash, replayNote } from './format';
+import { agentBanner, dataChip, parseHash, replayNote } from './format';
 import { Home } from './Home';
-import { type ThemeMode, useHash, useTheme } from './hooks';
+import { type ThemeMode, useHash, useLoad, useTheme } from './hooks';
 import { Icon, type IconName } from './Icons';
+import { LoginGate } from './Login';
+import { NewRun } from './NewRun';
 import { RunPage } from './RunPage';
 import { Banner } from './ui';
 
@@ -17,9 +19,19 @@ const THEME_WORDS: Record<ThemeMode, string> = {
 };
 
 export function App() {
+  return (
+    <LoginGate>
+      <Shell />
+    </LoginGate>
+  );
+}
+
+function Shell() {
   const route = parseHash(useHash());
   const [theme, stepTheme] = useTheme();
+  const razorpay = useLoad<RazorpayStatus>('/razorpay/status').data;
   const home = route.page === 'home';
+  const canImport = razorpay?.ready === true && razorpay.importsOpen;
   return (
     <>
       <header className="shell-top">
@@ -40,7 +52,7 @@ export function App() {
           ) : null}
           <div className="shell-right">
             <span className="env-chip">
-              <span className="live-dot" /> synthetic data · Razorpay test mode
+              <span className="live-dot" /> {dataChip(razorpay)}
             </span>
             <button
               className="icon-btn"
@@ -52,7 +64,11 @@ export function App() {
                 <Icon name={THEME_ICON[theme]} size={18} />
               </span>
             </button>
-            {home ? (
+            {canImport && route.page !== 'new' ? (
+              <a className="button primary sm" href="#/new">
+                New reconciliation
+              </a>
+            ) : home ? (
               <a className="button primary sm" href="#try">
                 Try it
               </a>
@@ -65,7 +81,15 @@ export function App() {
         </div>
       </header>
       <AgentBanner />
-      <main className={home ? 'bleed' : ''}>{home ? <Home /> : <RunPage route={route} />}</main>
+      <main className={home ? 'bleed' : ''}>
+        {route.page === 'home' ? (
+          <Home razorpay={razorpay} />
+        ) : route.page === 'new' ? (
+          <NewRun />
+        ) : (
+          <RunPage route={route} />
+        )}
+      </main>
     </>
   );
 }

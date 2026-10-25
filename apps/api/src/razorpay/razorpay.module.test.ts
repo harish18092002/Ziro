@@ -53,7 +53,7 @@ describe('RazorpaySourceFactory (through Nest DI)', () => {
     expect(items).toHaveLength(data.collections.payments.length);
   });
 
-  it('builds a TestModeSource with the synthetic dataset as its fallback when RAZORPAY_SOURCE=testmode', async () => {
+  it('builds a TestModeSource when RAZORPAY_SOURCE=testmode, with nothing in it that can reach the generated data', async () => {
     const env = loadEnv({
       ...baseEnv(),
       RAZORPAY_SOURCE: 'testmode',
@@ -62,6 +62,55 @@ describe('RazorpaySourceFactory (through Nest DI)', () => {
     });
     const source = (await factoryFor(env)).forRun(RUN_ID);
     expect(source).toBeInstanceOf(TestModeSource);
+    const held = (source as unknown as { options: Record<string, unknown> }).options;
+    expect(Object.keys(held).sort()).toEqual(['client', 'runId']);
+  });
+
+  it('still serves the generated demo dataset to the demo whatever RAZORPAY_SOURCE says', async () => {
+    const env = loadEnv({
+      ...baseEnv(),
+      RAZORPAY_SOURCE: 'testmode',
+      RAZORPAY_KEY_ID: TEST_KEY_ID,
+      RAZORPAY_KEY_SECRET: TEST_KEY_SECRET,
+    });
+    const factory = await factoryFor(env);
+    expect(factory.synthetic(RUN_ID, data.dir)).toBeInstanceOf(SyntheticSource);
+  });
+
+  describe('status', () => {
+    it('is off and key-free when the source is synthetic', async () => {
+      const factory = await factoryFor(loadEnv(baseEnv()));
+      expect(factory.status()).toEqual({ source: 'synthetic', ready: false, keyId: null });
+    });
+
+    it('reports the public key id in test mode, and never the secret', async () => {
+      const env = loadEnv({
+        ...baseEnv(),
+        RAZORPAY_SOURCE: 'testmode',
+        RAZORPAY_KEY_ID: TEST_KEY_ID,
+        RAZORPAY_KEY_SECRET: TEST_KEY_SECRET,
+      });
+      const status = (await factoryFor(env)).status();
+      expect(status).toEqual({ source: 'testmode', ready: true, keyId: TEST_KEY_ID });
+      expect(JSON.stringify(status)).not.toContain(TEST_KEY_SECRET);
+    });
+  });
+
+  describe('writer (test orders and refunds)', () => {
+    it('does not exist unless test mode is on', async () => {
+      const factory = await factoryFor(loadEnv(baseEnv()));
+      expect(() => factory.writer()).toThrow(/RAZORPAY_SOURCE=testmode/);
+    });
+
+    it('refuses a live key, like every other way in', () => {
+      const env = {
+        ...loadEnv(baseEnv()),
+        RAZORPAY_SOURCE: 'testmode' as const,
+        RAZORPAY_KEY_ID: 'rzp_live_abc123',
+        RAZORPAY_KEY_SECRET: 's',
+      };
+      expect(() => new RazorpaySourceFactory(env).writer()).toThrow(/forbidden/);
+    });
   });
 
   it('refuses testmode without keys even if the env check were bypassed', () => {

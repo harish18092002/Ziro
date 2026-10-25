@@ -1,6 +1,10 @@
 import type { RzpPayment, RzpRefund, RzpSettlement, SettlementItem } from '@ziro/core/domain';
 
-/** Where an entity's data actually came from. This is what the UI shows, so it must be honest. */
+/**
+ * Where an entity's data actually came from. This is what the UI shows, so it must be honest. A run draws
+ * on exactly one: the generated dataset (`synthetic`) or Razorpay's test-mode API (`razorpay_testmode`).
+ * Test mode never borrows from the generated data: an empty answer is an empty answer (ADR-019).
+ */
 export type SourceLabel = 'synthetic' | 'razorpay_testmode';
 
 /** An inclusive range of IST business dates, `YYYY-MM-DD`. */
@@ -18,14 +22,6 @@ export interface Sourced<T> {
 export type Entity = 'payments' | 'refunds' | 'settlements' | 'settlement_recon';
 
 /**
- * Why an entity has the source it has:
- *  - `ok`: asked the primary source and used its answer (even if the answer is "nothing").
- *  - `test-mode-empty`: test mode answered with no data, so this entity is synthetic.
- *  - `follows-payments`: refunds belong to payments; the payments were synthetic, so these are too.
- */
-export type ProvenanceReason = 'ok' | 'test-mode-empty' | 'follows-payments';
-
-/**
  * A list that stopped part-way: Razorpay failed on a later page after the retries were spent. What was
  * fetched is real and is kept; the tail is missing, and the run says so.
  */
@@ -41,7 +37,6 @@ export interface Incomplete {
 export interface Provenance {
   readonly entity: Entity;
   readonly source: SourceLabel;
-  readonly reason: ProvenanceReason;
   /** HTTP calls made to Razorpay for this entity (0 for synthetic data). */
   readonly requests: number;
   /** Non-fatal oddities worth showing, e.g. an order that could not be found. */
@@ -67,20 +62,4 @@ export interface RazorpaySource {
   fetchSettlements(range: DateRange): Promise<FetchResult<RzpSettlement>>;
   /** Everything Razorpay says it settled on one IST day. */
   fetchSettlementRecon(date: string): Promise<FetchResult<SettlementItem>>;
-}
-
-export interface ProvenanceSummary {
-  readonly bySource: Readonly<Record<SourceLabel, readonly Entity[]>>;
-  /** True when a run draws on both. Its records will not reconcile with each other (ADR-008). */
-  readonly mixed: boolean;
-}
-
-/** For the UI: which entities are real test-mode data and which are synthetic. */
-export function summarizeProvenance(provenance: readonly Provenance[]): ProvenanceSummary {
-  const bySource: Record<SourceLabel, Entity[]> = { synthetic: [], razorpay_testmode: [] };
-  for (const p of provenance) bySource[p.source].push(p.entity);
-  return {
-    bySource,
-    mixed: bySource.synthetic.length > 0 && bySource.razorpay_testmode.length > 0,
-  };
 }

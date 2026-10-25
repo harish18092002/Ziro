@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MIN_TOKEN_LENGTH } from '../auth/session.js';
 import { type Parsed, parseChain, parseLimits, parsePrices } from '../llm/config.js';
 
 /** Thrown at boot when the environment is unusable. Messages never contain variable values. */
@@ -127,8 +128,8 @@ export const envSchema = z
       .string({ error: requiredError('must be a redis:// or rediss:// URL') })
       .trim()
       .regex(/^rediss?:\/\/\S+$/, 'must be a redis:// or rediss:// URL'),
-    // A directory written by `npm run datagen`. Needed in testmode too: it answers for whatever
-    // test mode has no data for (settlements, the recon report).
+    // A directory written by `npm run datagen`: what RAZORPAY_SOURCE=synthetic reads. Test mode never
+    // reads it (ADR-019: it does not top itself up with generated data).
     SYNTHETIC_DATA_DIR: text,
     RAZORPAY_SOURCE: z.enum(['synthetic', 'testmode'], {
       error: requiredError('must be "synthetic" or "testmode"'),
@@ -204,8 +205,28 @@ export const envSchema = z
     ),
     // Used only to build the trace field of a gcp log line.
     GCP_PROJECT_ID: optionalSecret,
+    // Optional. When set (and this is not the public demo), every API call needs it: a private deployment's
+    // single shared password. Unset, a laptop stays open. See auth/admin.guard.ts.
+    ADMIN_TOKEN: optionalSecret,
   })
   .superRefine((env, ctx) => {
+    if (env.ADMIN_TOKEN !== undefined) {
+      if (env.ADMIN_TOKEN.length < MIN_TOKEN_LENGTH) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['ADMIN_TOKEN'],
+          message: `must be at least ${MIN_TOKEN_LENGTH} characters, or left empty`,
+        });
+      }
+      if (env.DEMO_MODE) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['ADMIN_TOKEN'],
+          message:
+            'has no effect while DEMO_MODE=true (the public demo is open by design): unset one of them',
+        });
+      }
+    }
     if (env.RAZORPAY_SOURCE !== 'testmode') return;
     if (!env.RAZORPAY_KEY_ID) {
       ctx.addIssue({

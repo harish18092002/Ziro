@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Make Razorpay test payments · Ziro</title>
+    <meta name="robots" content="noindex" />
+    <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body>
+    <header class="shell-top">
+      <div class="shell-in">
+        <a href="/" class="brand" aria-label="Ziro, home">
+          <img src="/favicon.svg" alt="" width="28" height="28" />
+          <span>Ziro</span>
+        </a>
+        <div class="shell-right">
+          <a class="button sm" href="/#/new">Back to reconciliation</a>
+        </div>
+      </div>
+    </header>
+    <main class="pay">
+      <h1>Make Razorpay test payments</h1>
+      <p class="lead">
+        Each payment made here is a real payment in your Razorpay <b>test</b> account: it appears in
+        your test dashboard and can be imported into a reconciliation. No real money moves.
+      </p>
+
+      <p id="state" class="state" role="status">Checking…</p>
+
+      <form id="form" class="card pay-form" hidden>
+        <label>
+          <span>Amount, in rupees</span>
+          <input id="amount" inputmode="decimal" value="500" autocomplete="off" />
+        </label>
+        <label>
+          <span>Order number <em>(optional, becomes the ledger's order_ref)</em></span>
+          <input
+            id="receipt"
+            placeholder="made up for you, like ORD-261026-9F3A"
+            autocomplete="off"
+          />
+        </label>
+        <button id="pay" class="primary lg" type="submit">Create the order and pay</button>
+        <p id="problem" class="problem" role="alert" hidden></p>
+      </form>
+
+      <section id="made" class="card" hidden>
+        <h2>Made in this visit</h2>
+        <ul id="list" class="made-list"></ul>
+      </section>
+
+      <details class="card how">
+        <summary>What to enter in the test payment window</summary>
+        <ul>
+          <li>
+            <b>UPI:</b> enter <code>success@razorpay</code> to succeed or
+            <code>failure@razorpay</code> to fail.
+          </li>
+          <li>
+            <b>Card:</b> use a test card from
+            <a
+              href="https://razorpay.com/docs/payments/payments/test-card-details/"
+              target="_blank"
+              rel="noreferrer noopener"
+              >Razorpay's list</a
+            >, any future expiry and any CVV, then press Success on the bank page.
+          </li>
+          <li>
+            Payments should be captured automatically (Razorpay's default). If one stays
+            <em>authorized</em>, turn on auto-capture in your test dashboard under Settings, Payment
+            Capture, or it will not count as a sale.
+          </li>
+        </ul>
+      </details>
+    </main>
+    <script type="module" src="/src/pay.ts"></script>
+  </body>
+</html>

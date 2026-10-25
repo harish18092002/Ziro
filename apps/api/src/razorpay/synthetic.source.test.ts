@@ -37,7 +37,6 @@ describe('SyntheticSource', () => {
     expect(result.provenance).toEqual({
       entity: 'payments',
       source: 'synthetic',
-      reason: 'ok',
       requests: 0,
       warnings: [],
     });

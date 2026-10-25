@@ -30,7 +30,6 @@ import type {
   Entity,
   FetchResult,
   Incomplete,
-  ProvenanceReason,
   RazorpaySource,
   SourceLabel,
 } from './source.js';
@@ -38,8 +37,6 @@ import type {
 export interface TestModeSourceOptions {
   readonly runId: string;
   readonly client: RazorpayClient;
-  /** Answers for entities test mode has no data for. Always labelled `synthetic`. */
-  readonly fallback: RazorpaySource;
   /** Documented maximum for list calls is 100. */
   readonly pageSize?: number;
   /** Documented maximum for the recon report is 1000. */
@@ -64,13 +61,11 @@ const newTally = (requests = 0): Tally => ({ requests, warnings: [], incomplete:
 const SOURCE: SourceLabel = 'razorpay_testmode';
 
 /**
- * Razorpay data from the real API with TEST keys. Payments and refunds are real test-mode records
- * (only those you created with the test keys). Test mode appears to have no settlements, so those,
- * and the recon report, fall back to synthetic data: per entity, and labelled.
- *
- * Fallback happens only when test mode answers with NO DATA. An error never falls back: bad
- * credentials, a rate limit that outlasts the retries, or a bug of ours must surface, not hide
- * behind plausible synthetic numbers.
+ * Razorpay data from the real API with TEST keys: the payments, refunds and (if test mode has any)
+ * settlements that exist in your test account, and nothing else. A fresh account answers with empty lists,
+ * and that is what the run gets: an empty answer is a true answer, never topped up with generated data
+ * (ADR-019). Errors surface too: bad credentials, a rate limit that outlasts the retries or a bug of ours
+ * must not hide behind plausible numbers.
  */
 export class TestModeSource implements RazorpaySource {
   private readonly pageSize: number;
@@ -134,25 +129,6 @@ export class TestModeSource implements RazorpaySource {
       provenance: {
         entity,
         source: SOURCE,
-        reason: 'ok',
-        requests: tally.requests,
-        warnings: tally.warnings,
-        ...(tally.incomplete.length === 0 ? {} : { incomplete: tally.incomplete }),
-      },
-    };
-  }
-
-  /** The fallback's answer, with the reason it was needed and the requests wasted finding out. */
-  private fellBack<T>(
-    result: FetchResult<T>,
-    reason: ProvenanceReason,
-    tally: Tally,
-  ): FetchResult<T> {
-    return {
-      ...result,
-      provenance: {
-        ...result.provenance,
-        reason,
         requests: tally.requests,
         warnings: tally.warnings,
         ...(tally.incomplete.length === 0 ? {} : { incomplete: tally.incomplete }),
@@ -184,14 +160,6 @@ export class TestModeSource implements RazorpaySource {
     const payments = dedupeById(parseEntries(raws, paymentIngestSchema, 'payments')).filter(
       ({ parsed }) => inRange(parsed.created_at, bounds),
     );
-    if (payments.length === 0) {
-      return this.fellBack(
-        await this.options.fallback.fetchPayments(range),
-        'test-mode-empty',
-        tally,
-      );
-    }
-
     const receipts = await this.receiptsFor(
       tally,
       range,
@@ -259,17 +227,6 @@ export class TestModeSource implements RazorpaySource {
   }
 
   async fetchRefunds(range: DateRange): Promise<FetchResult<RzpRefund>> {
-    // Refunds belong to payments. If the payments are synthetic, real refunds would point at
-    // payments that are not in the run, and synthetic ones are the only coherent answer.
-    const payments = await this.fetchPayments(range);
-    if (payments.source === 'synthetic') {
-      return this.fellBack(await this.options.fallback.fetchRefunds(range), 'follows-payments', {
-        requests: 0,
-        warnings: [],
-        incomplete: [],
-      });
-    }
-
     const bounds = epochRange(range);
     const tally = newTally();
     const raws = await this.listAll(tally, 'refunds', this.pageSize, (skip) =>
@@ -284,7 +241,6 @@ export class TestModeSource implements RazorpaySource {
       ({ parsed }) => inRange(parsed.created_at, bounds),
     );
     const mapped = refunds.map((entry) => mapRefund(entry, this.ctx));
-    // Real payments with no refunds is a true answer, not missing data: no fallback here.
     return this.result(
       'refunds',
       sortChronologically(mapped, (r) => r.createdAt),
@@ -306,13 +262,6 @@ export class TestModeSource implements RazorpaySource {
     const settlements = dedupeById(
       parseEntries(raws, settlementIngestSchema, 'settlements'),
     ).filter(({ parsed }) => inRange(parsed.created_at, bounds));
-    if (settlements.length === 0) {
-      return this.fellBack(
-        await this.options.fallback.fetchSettlements(range),
-        'test-mode-empty',
-        tally,
-      );
-    }
     const mapped = settlements.map((entry) => mapSettlement(entry, this.ctx));
     return this.result(
       'settlements',
@@ -321,7 +270,7 @@ export class TestModeSource implements RazorpaySource {
     );
   }
 
-  /** Does test mode have any settlement at all in this date's calendar month? One call, remembered. */
+  /** Does the account have any settlement at all in this date's calendar month? One call, remembered. */
   private monthHasSettlements(date: string): Promise<{ has: boolean; requests: number }> {
     const month = date.slice(0, 7);
     let pending = this.months.get(month);
@@ -344,17 +293,11 @@ export class TestModeSource implements RazorpaySource {
   }
 
   async fetchSettlementRecon(date: string): Promise<FetchResult<SettlementItem>> {
-    // A day with nothing settled is a true empty answer ONLY if test mode settles at all. So recon
-    // follows settlements: if test mode has none this month, the synthetic report is the coherent one.
+    // One call per month tells whether anything settled at all, so a month with no settlement does not
+    // cost a recon request for every day of it. Nothing settled is a true, empty answer.
     const probe = await this.monthHasSettlements(date);
     const tally = newTally(probe.requests);
-    if (!probe.has) {
-      return this.fellBack(
-        await this.options.fallback.fetchSettlementRecon(date),
-        'test-mode-empty',
-        tally,
-      );
-    }
+    if (!probe.has) return this.result('settlement_recon', [], tally);
 
     const [year, month, day] = date.split('-').map(Number) as [number, number, number];
     const raws = await this.listAll(tally, 'settlement recon', this.reconPageSize, (skip) =>

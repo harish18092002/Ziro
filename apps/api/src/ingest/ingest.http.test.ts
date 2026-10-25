@@ -225,7 +225,6 @@ describe('POST /runs/demo: the demo preset end to end', () => {
     const c = data.collections;
     expect(demo.reports.razorpay).toMatchObject({
       status: 'ok',
-      mixed: false,
       entities: {
         payments: { fetched: c.payments.length, inserted: c.payments.length, rejected: 0 },
         refunds: { fetched: c.refunds.length, inserted: c.refunds.length },
@@ -547,7 +546,6 @@ describe('POST /runs/:id/import/razorpay', () => {
     expect(res.body).toMatchObject({
       status: 'ok',
       source: 'razorpay',
-      mixed: false,
       entities: {
         payments: { inserted: c.payments.length },
         refunds: { inserted: c.refunds.length },
@@ -605,40 +603,44 @@ describe('POST /runs/:id/import/razorpay', () => {
 describe('what a source says about itself', () => {
   const window = { from: '2026-09-01', to: '2026-09-10' };
 
-  it('flags a run that mixes real and synthetic data, and passes the source`s notes on', async () => {
-    const mixed = await boot(
+  it('says where each entity came from, passes the source`s notes on, and audits the import', async () => {
+    const run1 = await boot(
       {},
       {
         forRun: (runId) =>
           stubSource({
             settlements: [settlementOn('setl_1', '2026-09-02', runId)],
-            labels: { payments: 'razorpay_testmode' },
+            labels: {
+              payments: 'razorpay_testmode',
+              refunds: 'razorpay_testmode',
+              settlements: 'razorpay_testmode',
+            },
             warnings: { payments: ['order order_123 could not be found'] },
           }).source,
       },
     );
     try {
-      const run = (await mixed.api().post('/runs').send(period)).body as { id: string };
-      const res = await mixed.api().post(`/runs/${run.id}/import/razorpay`).send(window);
+      const run = (await run1.api().post('/runs').send(period)).body as { id: string };
+      const res = await run1.api().post(`/runs/${run.id}/import/razorpay`).send(window);
       expect(res.status).toBe(200);
       const report = res.body as RazorpayImportReport;
-      expect(report.mixed).toBe(true);
       expect(report.provenance.map((p) => [p.entity, p.source])).toEqual([
         ['payments', 'razorpay_testmode'],
-        ['refunds', 'synthetic'],
-        ['settlements', 'synthetic'],
-        ['settlement_recon', 'synthetic'],
+        ['refunds', 'razorpay_testmode'],
+        ['settlements', 'razorpay_testmode'],
+        ['settlement_recon', 'razorpay_testmode'],
       ]);
+      expect(report).not.toHaveProperty('mixed');
       expect(report.warnings).toEqual([
         { code: 'source_note', row: null, reason: 'order order_123 could not be found' },
       ]);
-      const [event] = await mixed.db
+      const [event] = await run1.db
         .select()
         .from(auditEvents)
         .where(and(eq(auditEvents.runId, run.id), eq(auditEvents.action, 'import.razorpay')));
-      expect(event?.detail).toMatchObject({ mixed: true, window: { from: window.from } });
+      expect(event?.detail).toMatchObject({ window: { from: window.from } });
     } finally {
-      await mixed.close();
+      await run1.close();
     }
   });
 

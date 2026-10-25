@@ -4,19 +4,24 @@ export class ApiError extends Error {
     readonly status: number,
     message: string,
     readonly retryAfter: number | null,
+    /** The whole answer, for the few errors that carry more than a message (a rejected CSV's report). */
+    readonly body: unknown = null,
   ) {
     super(message);
   }
 }
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method,
-    headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
-    body: body === undefined ? null : JSON.stringify(body),
-  });
+async function send<T>(method: string, path: string, init: RequestInit): Promise<T> {
+  const res = await fetch(path, { method, ...init });
   const text = await res.text();
-  const data: unknown = text === '' ? null : JSON.parse(text);
+  let data: unknown = null;
+  if (text !== '') {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text; // not JSON (a proxy's error page, say): keep it as text rather than crash
+    }
+  }
   if (!res.ok) {
     const message =
       (data as { message?: string | string[] } | null)?.message ??
@@ -26,13 +31,85 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
       res.status,
       Array.isArray(message) ? message.join('; ') : message,
       Number.isFinite(retry) && retry > 0 ? retry : null,
+      data,
     );
   }
   return data as T;
 }
+
+const call = <T>(method: string, path: string, body?: unknown): Promise<T> =>
+  send<T>(
+    method,
+    path,
+    body === undefined
+      ? {}
+      : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+  );
+
 export const get = <T>(path: string): Promise<T> => call<T>('GET', path);
 export const post = <T>(path: string, body: unknown = {}): Promise<T> =>
   call<T>('POST', path, body);
+/** A CSV as multipart/form-data in the field the server reads, `file`. */
+export const upload = <T>(path: string, file: File): Promise<T> => {
+  const form = new FormData();
+  form.append('file', file);
+  return send<T>('POST', path, { body: form });
+};
+
+// --- the test-mode workflow ----------------------------------------------------------------------
+
+/** Which Razorpay source the server uses, and whether test mode and manual imports are switched on. */
+export interface RazorpayStatus {
+  source: 'synthetic' | 'testmode';
+  ready: boolean;
+  keyId: string | null;
+  importsOpen: boolean;
+}
+export interface AuthStatus {
+  required: boolean;
+  authenticated: boolean;
+}
+export interface CsvReport {
+  status: 'ok' | 'partial' | 'rejected';
+  fileName: string | null;
+  rows: {
+    total: number;
+    valid: number;
+    inserted: number;
+    unchanged: number;
+    conflicts: number;
+    rejected: number;
+  };
+  errorCount: number;
+  errors: { row: number; field: string | null; reason: string }[];
+  warnings: { reason: string }[];
+  fatal: string[];
+}
+export interface RazorpayReport {
+  status: 'ok' | 'partial' | 'rejected';
+  entities: Record<string, { fetched: number; inserted: number; unchanged: number }>;
+  provenance: { entity: string; source: string; requests: number }[];
+  partial: boolean;
+  gaps: { detail: string }[];
+  warnings: { reason: string }[];
+}
+export interface StarterSummary {
+  ledger: {
+    rows: number;
+    skipped: {
+      notCaptured: number;
+      noReceipt: number;
+      otherCurrency: number;
+      repeatOfAnOrder: number;
+    };
+  };
+  bank: { rows: number; withoutUtr: number };
+}
+export interface MatchResult {
+  groups: number;
+  exceptions: number;
+  ignored: number;
+}
 
 export interface Availability {
   featured: { demo: string | null; eval: string | null };

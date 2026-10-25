@@ -201,6 +201,13 @@ they are missing and never guesses them). If you also deploy Claude, set a **spe
 for its key (in the Console's limits settings): it is the backstop if everything above failed. Use keys made for
 this demo and nothing else.
 
+**A private deployment is not what these scripts build.** Reconciling your own Razorpay test account (ADR-019)
+needs `DEMO_MODE=false`, `RAZORPAY_SOURCE=testmode`, your `rzp_test_` keys and an `ADMIN_TOKEN` of 16 or more
+characters, all as secrets. `deploy.sh` deploys the public demo (`DEMO_MODE=true`, no Razorpay keys) and the app
+refuses to boot with `ADMIN_TOKEN` and `DEMO_MODE=true` together, because a public demo has no login. Without
+`ADMIN_TOKEN`, anyone who can reach a `DEMO_MODE=false` server can import, match and approve. Until the script
+learns this mode, run it on your own machine.
+
 ## 9. Operating it
 
 ```bash

@@ -123,8 +123,7 @@ const ENTITY_WORDS: Record<Entity, string> = {
 /**
  * Everything the source holds for the window. Network happens here, never inside a database
  * transaction. Recon items are fetched for each day from the first to the last settlement, because
- * Razorpay's recon report is per day. The recon provenance is one entry: if its days came from
- * different places it is labelled synthetic (the less real label) with a warning.
+ * Razorpay's recon report is per day. The recon provenance is one entry, labelled like the settlements.
  *
  * Each entity is fetched on its own. When Razorpay keeps failing for one of them, the others still
  * come back, and the bundle lists what is missing instead of failing whole.
@@ -222,17 +221,12 @@ export async function fetchBundle(
       });
     }
 
-    const sources = new Set(reconProvenance.map((p) => p.source));
+    // The recon report is as real as the settlements it explains: the same source answered both.
     const warnings = reconProvenance.flatMap((p) => p.warnings);
-    if (sources.size > 1) {
-      warnings.push('settlement recon came partly from test mode and partly from synthetic data');
-    }
     const incomplete = reconProvenance.flatMap((p) => p.incomplete ?? []);
     keep({
       entity: 'settlement_recon',
-      source:
-        sources.size === 1 && sources.has('razorpay_testmode') ? 'razorpay_testmode' : 'synthetic',
-      reason: reconProvenance.find((p) => p.reason !== 'ok')?.reason ?? 'ok',
+      source: settlements.result.source,
       requests: reconProvenance.reduce((total, p) => total + p.requests, 0),
       warnings: [...new Set(warnings)],
       ...(incomplete.length === 0 ? {} : { incomplete }),

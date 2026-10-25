@@ -364,11 +364,14 @@ RazorpaySource ── SyntheticSource ── reads a datagen directory ───
                                                                   mappers.ts ──▶ @ziro/core domain records
 ```
 
-Every record and result carries `source: synthetic | razorpay_testmode`. Test mode supplies payments,
-orders and refunds you created with the test keys; it appears to have no settlements, so those and the
-recon report fall back to synthetic, per entity and only on an _empty_ answer (never on an error). A
-run that draws on both is `mixed`: honest, but its records will not reconcile with each other, so it
-is never used for a published number. Time conversion (Unix seconds → IST business date) is
+Every record and result carries `source: synthetic | razorpay_testmode`. Test mode supplies what your
+test account holds (payments, orders and refunds you created with the test keys, and settlements and the
+recon report if the account has any) and nothing else: an empty account is an empty import, never filled
+with generated data (ADR-019, which removed ADR-008's fallback). The ledger and bank statement are not
+Razorpay's: a **starter ledger** is built from the captured orders and goes through the normal CSV import
+(`ingest/starter.ts`), a bank statement is uploaded or, if settlements exist, simulated from them and
+labelled as such. `/pay.html` and `POST /razorpay/test-orders|test-refunds` create test payments and
+refunds through a one-attempt `RazorpayWriter`. Time conversion (Unix seconds → IST business date) is
 `@ziro/core/time`.
 
 ## Ingestion

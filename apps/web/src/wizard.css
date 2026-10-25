@@ -1,0 +1,232 @@
+/* ---------- sign-in ---------- */
+.login-wait {
+  min-height: 60vh;
+}
+.login {
+  display: grid;
+  place-items: center;
+  min-height: 80vh;
+  padding: 24px 16px;
+}
+.login-card {
+  display: grid;
+  gap: 14px;
+  width: min(100%, 380px);
+  padding: 28px 26px;
+  justify-items: start;
+}
+.login-card h1 {
+  font-size: 1.35rem;
+}
+.login-card label,
+.login-card input {
+  width: 100%;
+}
+.login-card .button,
+.login-card button {
+  justify-self: stretch;
+}
+
+/* ---------- date and password inputs follow the text inputs ---------- */
+input[type='date'],
+input[type='password'] {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  transition:
+    border-color var(--dur-1),
+    box-shadow var(--dur-1);
+}
+input[type='date']:focus,
+input[type='password']:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+input[type='date']:disabled {
+  opacity: 0.6;
+}
+input[type='file'] {
+  max-width: 100%;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 0.88rem;
+}
+input[type='file']::file-selector-button {
+  margin-right: 10px;
+  padding: 6px 12px;
+  border: 1px solid var(--hair);
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ---------- the new-reconciliation page ---------- */
+.wizard {
+  display: grid;
+  gap: 4px;
+  max-width: 780px;
+  margin: 0 auto;
+}
+.wizard-head {
+  display: grid;
+  gap: 6px;
+  padding-bottom: 14px;
+}
+.wizard-head h1 {
+  font-size: 1.5rem;
+}
+.wstep {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 14px;
+  padding-bottom: 22px;
+}
+.wstep::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 32px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--hair);
+}
+.wstep:last-child::before {
+  display: none;
+}
+.wnum {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 2px solid var(--line);
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--ink-3);
+  font-size: 0.85rem;
+  font-weight: 700;
+  transition:
+    background var(--dur-2) var(--ease),
+    border-color var(--dur-2) var(--ease),
+    color var(--dur-2) var(--ease);
+}
+.wstep.now .wnum {
+  border-color: var(--brand);
+  color: var(--ink);
+  box-shadow: 0 0 0 4px var(--brand-soft);
+}
+.wstep.done .wnum {
+  border-color: var(--c-matched);
+  background: var(--c-matched);
+  color: var(--on-brand);
+}
+.wstep.done::before {
+  background: var(--c-matched);
+}
+.wbody {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-width: 0;
+}
+.wbody h2 {
+  font-size: 1.05rem;
+}
+.wstep.wait h2 {
+  color: var(--ink-3);
+}
+.wsum {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.wizard .field-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+.wizard .field-row label {
+  display: grid;
+  gap: 4px;
+  min-width: 150px;
+}
+.wizard .field-row label span {
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.wizard .actions,
+.card .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.choices {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+.choice {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  padding: 14px 16px;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+.choice h3 {
+  font-size: 0.95rem;
+}
+.result-note {
+  display: grid;
+  gap: 4px;
+  font-size: 0.9rem;
+}
+.result-note p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.result-note svg {
+  color: var(--c-matched);
+  flex: none;
+}
+.bad-text {
+  color: var(--critical);
+}
+.how-to {
+  display: grid;
+  gap: 8px;
+  margin: 6px 0 12px;
+  padding-left: 20px;
+}
+
+@media (max-width: 560px) {
+  .wstep {
+    grid-template-columns: 26px minmax(0, 1fr);
+    gap: 10px;
+  }
+  .wnum {
+    width: 26px;
+    height: 26px;
+  }
+  .wstep::before {
+    left: 12px;
+    top: 28px;
+  }
+  .wizard .field-row label {
+    flex: 1 1 100%;
+  }
+}

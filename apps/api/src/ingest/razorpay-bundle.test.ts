@@ -80,29 +80,37 @@ describe('fetchBundle', () => {
     ]);
   });
 
-  it('labels recon test-mode only when every day came from test mode', async () => {
+  it('labels recon like its settlements: the same source answered both', async () => {
     const settlements = [
       settlementOn('setl_1', '2026-09-02'),
       settlementOn('setl_2', '2026-09-03'),
     ];
-    const allReal = stubSource({ settlements, reconLabelFor: () => 'razorpay_testmode' });
-    const real = await fetchBundle(allReal.source, window);
+    const real = await fetchBundle(
+      stubSource({
+        settlements,
+        labels: { settlements: 'razorpay_testmode' },
+        reconLabelFor: () => 'razorpay_testmode',
+      }).source,
+      window,
+    );
     expect(real.provenance[3]).toMatchObject({
       source: 'razorpay_testmode',
       requests: 6,
       warnings: [],
     });
 
-    const split = stubSource({
-      settlements,
-      reconLabelFor: (date) => (date === '2026-09-02' ? 'razorpay_testmode' : 'synthetic'),
+    const generated = await fetchBundle(stubSource({ settlements }).source, window);
+    expect(generated.provenance[3]).toMatchObject({ source: 'synthetic', requests: 0 });
+  });
+
+  it('still labels recon test-mode when there were no settlements and so no recon day to ask for', async () => {
+    const { source, calls } = stubSource({ labels: { settlements: 'razorpay_testmode' } });
+    const bundle = await fetchBundle(source, window);
+    expect(calls.recon).toHaveLength(0);
+    expect(bundle.provenance[3]).toMatchObject({
+      entity: 'settlement_recon',
+      source: 'razorpay_testmode',
     });
-    const mixed = await fetchBundle(split.source, window);
-    // Days from two places: the less real label wins, and the response says why.
-    expect(mixed.provenance[3]).toMatchObject({ source: 'synthetic', requests: 3 });
-    expect(mixed.provenance[3]?.warnings).toEqual([
-      'settlement recon came partly from test mode and partly from synthetic data',
-    ]);
   });
 
   it('carries each entity`s own warnings through, once', async () => {

@@ -165,12 +165,16 @@ describe('with the toggle on', () => {
       .select()
       .from(reconExceptions)
       .where(and(eq(reconExceptions.runId, chaosRun), eq(reconExceptions.status, 'open')));
-    // Triage leaves the same unexplained credits for a person in both runs; nothing extra stays open.
+    // Triage leaves the same unexplained credits for a person in both runs; nothing extra stays open. Only the
+    // three victims are treated differently, and which exceptions they are depends on the random exception ids
+    // (the three lowest): a victim that the plain run planted a wrong proposal on is handed to a person instead
+    // of being refused, so the chaos run may have fewer open, never more, and never by more than three.
     const openPlain = await site.db
       .select()
       .from(reconExceptions)
       .where(and(eq(reconExceptions.runId, plainRun), eq(reconExceptions.status, 'open')));
-    expect(open).toHaveLength(openPlain.length);
+    expect(open.length).toBeLessThanOrEqual(openPlain.length);
+    expect(open.length).toBeGreaterThanOrEqual(openPlain.length - 3);
   });
 
   it('audits all three as handed to a person, with the reason in words', async () => {

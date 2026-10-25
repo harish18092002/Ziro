@@ -6,7 +6,7 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { mountWeb, SECURITY_HEADERS } from './mount-web.js';
+import { mountWeb, PAY_PAGE_CSP, PAY_PAGE_PATH, SECURITY_HEADERS } from './mount-web.js';
 
 @Controller()
 class Ping {
@@ -60,6 +60,31 @@ describe('mountWeb', () => {
     }
     expect(SECURITY_HEADERS['Content-Security-Policy']).not.toContain('unsafe-inline');
     expect(SECURITY_HEADERS['Content-Security-Policy']).toContain("frame-ancestors 'none'");
+  });
+
+  it('gives only the test-payments page the Razorpay hosts, and keeps the console and the API strict', async () => {
+    writeFileSync(join(dir, 'pay.html'), '<!doctype html><title>Pay</title>');
+    const { app } = await boot(dir);
+    const server = app.getHttpServer() as Parameters<typeof request>[0];
+
+    const pay = await request(server).get(PAY_PAGE_PATH);
+    expect(pay.status).toBe(200);
+    const csp = String(pay.headers['content-security-policy']);
+    expect(csp).toBe(PAY_PAGE_CSP);
+    expect(csp).toContain('https://checkout.razorpay.com');
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).not.toContain('unsafe-eval');
+    expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/); // scripts stay strict; only styles may be inline
+    expect(pay.headers['x-frame-options']).toBe('DENY');
+    expect(pay.headers['x-content-type-options']).toBe('nosniff');
+
+    for (const path of ['/', '/ping', '/app.js', '/missing', '/pay.html.bak']) {
+      const res = await request(server).get(path);
+      expect(res.headers['content-security-policy'], path).toBe(
+        SECURITY_HEADERS['Content-Security-Policy'],
+      );
+    }
+    expect(SECURITY_HEADERS['Content-Security-Policy']).not.toContain('razorpay');
   });
 
   it('serves no files, but still the API, when the console has not been built', async () => {

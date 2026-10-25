@@ -3,6 +3,8 @@ import { APP_GUARD } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { AgentModule } from './agent/agent.module.js';
 import { loggerParams } from './common/logging.js';
+import { AdminGuard } from './auth/admin.guard.js';
+import { AuthModule } from './auth/auth.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { ConfigModule } from './config/config.module.js';
 import type { Env } from './config/env.js';
@@ -28,6 +30,7 @@ export class AppModule {
         DbModule,
         RedisModule,
         HealthModule,
+        AuthModule,
         RazorpayModule,
         IngestModule,
         AgentModule,
@@ -37,8 +40,12 @@ export class AppModule {
         DemoModule,
         AuditModule,
       ],
-      // Default-deny on the public demo: see demo/demo-mode.guard.ts.
-      providers: [{ provide: APP_GUARD, useClass: DemoModeGuard }],
+      providers: [
+        // The admin token, when one is set (auth/admin.guard.ts), then default-deny on the public demo
+        // (demo/demo-mode.guard.ts). They never both apply: a token and DEMO_MODE together refuse to boot.
+        { provide: APP_GUARD, useClass: AdminGuard },
+        { provide: APP_GUARD, useClass: DemoModeGuard },
+      ],
     };
   }
 }
