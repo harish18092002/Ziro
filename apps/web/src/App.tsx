@@ -1,21 +1,72 @@
 import { useEffect, useState } from 'react';
-import { type AgentStatus, ApiError, type Availability, get, post } from './api';
-import { agentBanner, linkTo, parseHash, replayNote } from './format';
-import { useHash, useLoad } from './hooks';
+import type { AgentStatus } from './api';
+import { get } from './api';
+import { Logo } from './Brand';
+import { agentBanner, parseHash, replayNote } from './format';
+import { Home } from './Home';
+import { type ThemeMode, useHash, useTheme } from './hooks';
+import { Icon, type IconName } from './Icons';
 import { RunPage } from './RunPage';
+import { Banner } from './ui';
+
+const THEME_ICON: Record<ThemeMode, IconName> = { system: 'monitor', light: 'sun', dark: 'moon' };
+const THEME_WORDS: Record<ThemeMode, string> = {
+  system: 'following your system',
+  light: 'light',
+  dark: 'dark',
+};
 
 export function App() {
   const route = parseHash(useHash());
+  const [theme, stepTheme] = useTheme();
+  const home = route.page === 'home';
   return (
     <>
-      <header className="top">
-        <a href="#/" className="brand">
-          Ziro — every paisa, accounted for
-        </a>
-        <span className="tag">synthetic data · Razorpay test mode</span>
+      <header className="shell-top">
+        <div className="shell-in">
+          <a href="#/" className="brand" aria-label="Ziro, home">
+            <Logo />
+            <span>
+              Ziro
+              <small>every paisa, accounted for</small>
+            </span>
+          </a>
+          {home ? (
+            <nav className="nav" aria-label="Sections">
+              <a href="#how">How it works</a>
+              <a href="#features">Features</a>
+              <a href="#safety">Safety</a>
+              <a href="#try">Try it</a>
+            </nav>
+          ) : null}
+          <div className="shell-right">
+            <span className="env-chip">
+              <span className="live-dot" /> synthetic data · Razorpay test mode
+            </span>
+            <button
+              className="icon-btn"
+              onClick={stepTheme}
+              aria-label={`Theme: ${THEME_WORDS[theme]}. Switch theme.`}
+              title={`Theme: ${THEME_WORDS[theme]}`}
+            >
+              <span key={theme} className="theme-icon">
+                <Icon name={THEME_ICON[theme]} size={18} />
+              </span>
+            </button>
+            {home ? (
+              <a className="button primary sm" href="#try">
+                Try it
+              </a>
+            ) : (
+              <a className="button sm" href="#/">
+                <Icon name="home" size={15} /> Home
+              </a>
+            )}
+          </div>
+        </div>
       </header>
       <AgentBanner />
-      <main>{route.page === 'home' ? <Home /> : <RunPage route={route} />}</main>
+      <main className={home ? 'bleed' : ''}>{home ? <Home /> : <RunPage route={route} />}</main>
     </>
   );
 }
@@ -40,124 +91,11 @@ function AgentBanner() {
   }, []);
   const text = agentBanner(status);
   const replay = replayNote(status);
+  if (text === null && replay === null) return null;
   return (
-    <>
-      {text === null ? null : (
-        <div className="banner warn" role="status">
-          {text}
-        </div>
-      )}
-      {replay === null ? null : (
-        <div className="banner info" role="status">
-          {replay}
-        </div>
-      )}
-    </>
-  );
-}
-
-function Home() {
-  const { data: offer } = useLoad<Availability>('/demo');
-  const [live, setLive] = useState(false);
-  const [chaos, setChaos] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-
-  // A run being started shows its progress on its own page; this only starts one.
-  const start = async () => {
-    setBusy(true);
-    setProblem(null);
-    try {
-      const { runId } = await post<{ runId: string }>('/demo/runs', {
-        agent: live ? 'live' : 'scripted',
-        ...(chaos ? { chaos: true } : {}),
-      });
-      window.location.hash = linkTo(runId);
-    } catch (e) {
-      setBusy(false);
-      setProblem(
-        e instanceof ApiError && e.status === 429
-          ? `Too many runs just now. ${e.message}.`
-          : e instanceof Error
-            ? e.message
-            : String(e),
-      );
-    }
-  };
-
-  return (
-    <>
-      <section className="lead">
-        <h1>Reconcile a batch and watch every difference get explained</h1>
-        <p>
-          Ziro matches a merchant's ledger, Razorpay and the bank statement. Rules settle what they
-          can prove, to the paise. An agent investigates the rest, a separate checker re-computes
-          every claim, and a person approves. Click once to run it on 50 synthetic orders.
-        </p>
-        <div className="actions">
-          <button className="primary" onClick={() => void start()} disabled={busy}>
-            {busy ? 'Starting…' : 'Run demo batch (50 orders)'}
-          </button>
-          {offer?.featured.eval ? (
-            <a className="button" href={linkTo(offer.featured.eval)}>
-              Replay eval run (500 orders, free, no key needed)
-            </a>
-          ) : (
-            <span className="button disabled">Eval run (500 orders) is still being prepared</span>
-          )}
-        </div>
-        {offer?.live.available ? (
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={live}
-              onChange={(e) => {
-                setLive(e.target.checked);
-                if (e.target.checked) setChaos(false);
-              }}
-            />{' '}
-            Use a live language model (costs money; off by default)
-          </label>
-        ) : null}
-        {offer?.chaos.available ? (
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={chaos}
-              disabled={live}
-              onChange={(e) => setChaos(e.target.checked)}
-            />{' '}
-            Break two investigations on purpose (a model timeout and a cut-off reply) and watch them
-            handled. Free; uses the scripted agent.
-          </label>
-        ) : null}
-        {problem ? <p className="bad">{problem}</p> : null}
-      </section>
-
-      <section className="note">
-        <h2>What you are looking at, honestly</h2>
-        <ul>
-          <li>
-            All data is <b>synthetic</b>, made by a seeded generator, shaped like Razorpay's
-            documented records. Nothing here is a real customer or a real bank. Razorpay is used in{' '}
-            <b>test mode</b> only.
-          </li>
-          <li>
-            The free demo's agent is a <b>scripted baseline, not a language model</b>. It reads
-            records through the same read-only tools a model would, and everything after it (the
-            checker, the review queue, the audit trail) is the real code.
-          </li>
-          <li>
-            The replay is a <b>precomputed, read-only</b> run of 500 synthetic orders. Opening it
-            costs nothing and works with no API key. “Reset demo” (inside a run) puts your run away
-            and starts a fresh one.
-          </li>
-          <li>
-            Two proposals in each demo run are <b>planted on purpose</b>, confident and wrong, so
-            you can see the checker refuse them. They are labelled wherever they appear.
-          </li>
-        </ul>
-      </section>
-    </>
+    <div className="banners">
+      {text === null ? null : <Banner tone="warn">{text}</Banner>}
+      {replay === null ? null : <Banner tone="info">{replay}</Banner>}
+    </div>
   );
 }

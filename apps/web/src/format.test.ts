@@ -8,6 +8,7 @@ import {
   parseHash,
   percent,
   replayNote,
+  sentence,
   words,
 } from './format';
 
@@ -26,6 +27,15 @@ describe('inr', () => {
 
   it('shows a dash for anything that is not integer paise, never a guess', () => {
     for (const bad of [null, undefined, '', '12.5', 'abc', '1e3']) expect(inr(bad)).toBe('–');
+  });
+});
+
+describe('sentence', () => {
+  it('turns a reason code into a label in sentence case', () => {
+    expect(sentence('LEDGER_WITHOUT_PAYMENT')).toBe('Ledger without payment');
+    expect(sentence('UTR_MISSING_OR_GARBLED')).toBe('Utr missing or garbled');
+    expect(sentence('UNKNOWN')).toBe('Unknown');
+    expect(sentence('')).toBe('');
   });
 });
 

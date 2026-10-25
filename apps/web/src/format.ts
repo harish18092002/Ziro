@@ -14,6 +14,12 @@ export const dollars = (usd: string): string => `$${Number(usd).toFixed(4)}`;
 
 export const words = (code: string): string => code.toLowerCase().replaceAll('_', ' ');
 
+/** `LEDGER_WITHOUT_PAYMENT` as "Ledger without payment": a label, in sentence case. */
+export const sentence = (code: string): string => {
+  const w = words(code);
+  return w.charAt(0).toUpperCase() + w.slice(1);
+};
+
 export type Route =
   { page: 'home' } | { page: 'run'; runId: string; tab: Tab; itemId: string | null };
 export type Tab = 'summary' | 'exceptions' | 'audit' | 'downloads';

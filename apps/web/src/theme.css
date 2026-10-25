@@ -1,0 +1,133 @@
+/*
+ * Theme tokens: ONE source (the generator's token map), written twice below: once for the OS dark setting and
+ * once for the viewer's toggle (data-theme), exactly as the charting method prescribes. Chart colours are the
+ * validated reference palette: slots 1 to 3 (blue, orange, aqua) pass every check all-pairs in both modes, the
+ * violet is slot 7, the --ord-* ramps are the blue ordinal steps. Status colours are fixed and never themed.
+ * If you edit a value, edit it in both blocks.
+ */
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --card: #fcfcfb;
+  --card-2: #f3f3f0;
+  --card-3: #ecebe6;
+  --hair: #e1e0d9;
+  --line: #c3c2b7;
+  --ring: rgba(11, 11, 11, 0.1);
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --ink-3: #66655f;
+  --axis: #898781;
+  --brand: #256abf;
+  --brand-hover: #1c5cab;
+  --on-brand: #ffffff;
+  --link: #256abf;
+  --brand-soft: rgba(42, 120, 214, 0.1);
+  --violet: #6250d6;
+  --c-matched: #2a78d6;
+  --c-open: #eb6834;
+  --c-waiting: #1baf7a;
+  --c-fee: #6250d6;
+  --c-other: #b9b8ae;
+  --ord-1: #1c5cab;
+  --ord-2: #2a78d6;
+  --ord-3: #5598e7;
+  --ord-4: #86b6ef;
+  --good-text: #006300;
+  --shadow-sm: 0 1px 2px rgba(11, 11, 11, 0.06), 0 1px 1px rgba(11, 11, 11, 0.04);
+  --shadow-md: 0 14px 32px -14px rgba(11, 11, 11, 0.22), 0 2px 6px rgba(11, 11, 11, 0.06);
+  --blob-a: rgba(42, 120, 214, 0.22);
+  --blob-b: rgba(98, 80, 214, 0.18);
+  --blob-c: rgba(27, 175, 122, 0.16);
+  --hero-ink: #0b0b0b;
+
+  /* fixed in both modes */
+  --good: #0ca30c;
+  --warn: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: ui-monospace, 'Cascadia Mono', 'SF Mono', Menlo, Consolas, monospace;
+  --radius: 14px;
+  --radius-sm: 9px;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-1: 160ms;
+  --dur-2: 380ms;
+  --dur-3: 900ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme='light'])) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --card: #1a1a19;
+    --card-2: #222220;
+    --card-3: #2a2a28;
+    --hair: #2c2c2a;
+    --line: #383835;
+    --ring: rgba(255, 255, 255, 0.1);
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --ink-3: #a3a299;
+    --axis: #898781;
+    --brand: #3987e5;
+    --brand-hover: #6da7ec;
+    --on-brand: #0b0b0b;
+    --link: #6da7ec;
+    --brand-soft: rgba(57, 135, 229, 0.16);
+    --violet: #9085e9;
+    --c-matched: #3987e5;
+    --c-open: #d95926;
+    --c-waiting: #199e70;
+    --c-fee: #9085e9;
+    --c-other: #55544f;
+    --ord-1: #9ec5f4;
+    --ord-2: #6da7ec;
+    --ord-3: #3987e5;
+    --ord-4: #256abf;
+    --good-text: #0ca30c;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 18px 36px -14px rgba(0, 0, 0, 0.7), 0 2px 6px rgba(0, 0, 0, 0.4);
+    --blob-a: rgba(57, 135, 229, 0.26);
+    --blob-b: rgba(144, 133, 233, 0.22);
+    --blob-c: rgba(25, 158, 112, 0.2);
+    --hero-ink: #f0efec;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --card: #1a1a19;
+  --card-2: #222220;
+  --card-3: #2a2a28;
+  --hair: #2c2c2a;
+  --line: #383835;
+  --ring: rgba(255, 255, 255, 0.1);
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --ink-3: #a3a299;
+  --axis: #898781;
+  --brand: #3987e5;
+  --brand-hover: #6da7ec;
+  --on-brand: #0b0b0b;
+  --link: #6da7ec;
+  --brand-soft: rgba(57, 135, 229, 0.16);
+  --violet: #9085e9;
+  --c-matched: #3987e5;
+  --c-open: #d95926;
+  --c-waiting: #199e70;
+  --c-fee: #9085e9;
+  --c-other: #55544f;
+  --ord-1: #9ec5f4;
+  --ord-2: #6da7ec;
+  --ord-3: #3987e5;
+  --ord-4: #256abf;
+  --good-text: #0ca30c;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 18px 36px -14px rgba(0, 0, 0, 0.7), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --blob-a: rgba(57, 135, 229, 0.26);
+  --blob-b: rgba(144, 133, 233, 0.22);
+  --blob-c: rgba(25, 158, 112, 0.2);
+  --hero-ink: #f0efec;
+}
