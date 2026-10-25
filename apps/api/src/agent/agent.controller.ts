@@ -54,7 +54,7 @@ export class AgentController {
   ): Promise<InvestigateResponse> {
     if (!this.agent.configured) {
       throw new ServiceUnavailableException(
-        'the investigation agent needs ANTHROPIC_API_KEY to be set',
+        'the investigation agent needs a usable model: set GEMINI_API_KEY (or ANTHROPIC_API_KEY) and LLM_CHAIN',
       );
     }
     const plan = await this.agent.plan(runId, body.exceptionId);
@@ -69,8 +69,8 @@ export class AgentController {
 }
 
 /**
- * Whether the agent will take work, for the banner on every page: paused by the kill switch, a spent
- * daily budget, a rejected key, a provider limit or the circuit breaker. The rules never depend on it.
+ * Whether the agent will take work, for the banner on every page: paused by the kill switch or a spent
+ * daily budget, or no model in the chain able to answer (quota, billing, a rejected key, an outage). The rules never depend on it.
  */
 @Controller('agent')
 export class AgentStatusController {

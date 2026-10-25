@@ -6,6 +6,7 @@
 import { sql } from 'drizzle-orm';
 import { feeContractOf } from '../../common/fee-contract.js';
 import type { Executor } from '../../db/executor.js';
+import type { LlmToolDef } from '@ziro/core/llm';
 import { type JsonSchema, toAnthropicJsonSchema } from '../../llm/json-schema.js';
 import { AGENT_TOOLS } from './definitions.js';
 import { runConfigOf } from './repository.js';
@@ -19,6 +20,7 @@ export const MAX_RESULT_CHARS = 12_000;
 export const STATEMENT_TIMEOUT_MS = 5_000;
 const MAX_ERROR_CHARS = 400;
 
+/** A tool as plain JSON, for fingerprinting a prompt and for tests. What providers receive is `llmTools`. */
 export interface ToolDefinition {
   readonly name: string;
   readonly description: string;
@@ -48,6 +50,8 @@ function describeIssues(error: {
 
 export class Toolbox {
   readonly definitions: readonly ToolDefinition[];
+  /** The same tools in the provider-neutral form; each adapter converts the zod schema it needs. */
+  readonly llmTools: readonly LlmToolDef[];
   private readonly byName: ReadonlyMap<string, AgentTool>;
 
   private constructor(
@@ -57,6 +61,7 @@ export class Toolbox {
     tools: readonly AgentTool[],
   ) {
     this.byName = new Map(tools.map((t) => [t.name, t]));
+    this.llmTools = tools.map((t) => ({ name: t.name, description: t.description, input: t.args }));
     this.definitions = tools.map((t) => ({
       name: t.name,
       description: t.description,

@@ -64,6 +64,13 @@
       "when": 1792779770796,
       "tag": "0008_agent_proposals_degraded",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792919813661,
+      "tag": "0009_llm_layer",
+      "breakpoints": true
     }
   ]
 }

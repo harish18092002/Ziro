@@ -57,13 +57,15 @@ show how it knows, is worth nothing; a plain interface is not.
 
 **Could have: useful, built small or not proven.**
 
-| Item                                              | Status              | Why                                                                                                    |
-| ------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------ |
-| Tally voucher export (CSV)                        | built, not verified | Accountants need entries; the format follows Tally's documentation but has never been imported.        |
-| Second agent harness (Claude Agent SDK)           | built, never run    | Lets the eval compare harnesses on the same model; needs the real SDK process to confirm it works.     |
-| Large-model second look, clustering of exceptions | built, not measured | May cut cost or raise accuracy; no model has been run, so no claim is made.                            |
-| Prompt-injection test overlay in the eval         | built, heuristic    | Measures whether planted instructions move the agent; the verdict is a heuristic and cases are listed. |
-| Chaos switch in the demo                          | built               | Lets a visitor watch a model timeout and a bad reply being handled.                                    |
+| Item                                                    | Status              | Why                                                                                                        |
+| ------------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Tally voucher export (CSV)                              | built, not verified | Accountants need entries; the format follows Tally's documentation but has never been imported.            |
+| Single-shot harness and the tool loop                   | built, never run    | Two ways to spend a free-tier request budget; the eval compares them on the same model, once a key exists. |
+| Model chain: Gemini free tier, Claude optional          | built, never called | A spent daily quota falls back to the next model instead of ending the demo; no live call has been made.   |
+| Record/replay of model answers                          | built, tested       | An eval or a demo can be re-run for free from recorded answers, and says that it was.                      |
+| Second look by the next model, clustering of exceptions | built, not measured | May cut cost or raise accuracy; no model has been run, so no claim is made.                                |
+| Prompt-injection test overlay in the eval               | built, heuristic    | Measures whether planted instructions move the agent; the verdict is a heuristic and cases are listed.     |
+| Chaos switch in the demo                                | built               | Lets a visitor watch a model timeout and a bad reply being handled.                                        |
 
 **Won't have: cut on purpose.**
 

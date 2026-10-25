@@ -41,8 +41,6 @@ const env = () =>
     REDIS_URL: 'redis://localhost:6379',
     RAZORPAY_SOURCE: 'synthetic',
     SYNTHETIC_DATA_DIR: 'data/eval',
-    AGENT_MODEL_SMALL: 'claude-haiku-5-5',
-    AGENT_MODEL_LARGE: 'claude-sonnet-5-5',
     AGENT_HARNESS: 'loop',
     AUTO_ACCEPT_ENABLED: 'false',
     AUTO_ACCEPT_MAX_PAISE: '0',

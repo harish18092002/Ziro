@@ -33,6 +33,7 @@ import {
   SUGGESTED_ACTIONS,
   VERIFIER_STATUSES,
 } from '@ziro/core/domain';
+import { LLM_ERROR_KINDS } from '@ziro/core/llm';
 import { UTR_QUALITIES } from '@ziro/core/normalize';
 import { sql } from 'drizzle-orm';
 import {
@@ -76,7 +77,9 @@ const RUN_STATUSES = [
   'failed',
 ] as const;
 const RAZORPAY_SOURCES = ['synthetic', 'testmode'] as const;
-const HARNESSES = ['loop', 'agent-sdk'] as const;
+// 'agent-sdk' is the retired Claude Agent SDK harness. Postgres cannot drop an enum value, and rows written
+// while it existed still carry it, so it stays; nothing writes it any more (ADR-018).
+const HARNESSES = ['loop', 'agent-sdk', 'single-shot'] as const;
 
 export const recordSource = pgEnum('record_source', SOURCES);
 export const reasonCode = pgEnum('reason_code', values(REASON_CODES));
@@ -472,12 +475,36 @@ export const llmCalls = pgTable(
     cacheWriteTokens: integer('cache_write_tokens').notNull().default(0),
     /** Why the model stopped: end_turn, tool_use, max_tokens, refusal... */
     stopReason: text('stop_reason'),
-    /** Anthropic's request id, for support and for tracing one call end to end. */
+    /** The provider's request id, for support and for tracing one call end to end. */
     requestId: text('request_id'),
+    /**
+     * Who answered: gemini or anthropic. Rows from before the provider layer were all Anthropic, hence the
+     * default. `model` alone would not say, and two providers can share a model name.
+     */
+    provider: text('provider').notNull().default('anthropic'),
+    /** ok, fell_back (this attempt failed and the router moved on), or the error kind of a failure that ended it. */
+    outcome: text('outcome').notNull().default('ok'),
+    /** The LlmError kind when the attempt failed, also when the outcome says fell_back. */
+    errorKind: text('error_kind'),
+    /** Served from the record/replay cache: no request was made and no quota was used. */
+    cached: boolean('cached').notNull().default(false),
+    /**
+     * What the call would cost at the paid list price (LLM_PRICES), null when no price was given.
+     * `cost_usd` is what it cost for real: zero on the Gemini free tier.
+     */
+    estCostUsd: numeric('est_cost_usd', { precision: 12, scale: 6 }),
     createdAt: createdAt(),
   },
   (t) => [
     check('llm_calls_cache_nonneg', sql`${t.cacheReadTokens} >= 0 and ${t.cacheWriteTokens} >= 0`),
+    check(
+      'llm_calls_outcome_known',
+      sql`${t.outcome} in ('ok', 'fell_back', ${sql.raw(LLM_ERROR_KINDS.map((k) => `'${k}'`).join(', '))})`,
+    ),
+    check(
+      'llm_calls_error_kind_known',
+      sql`${t.errorKind} is null or ${t.errorKind} in (${sql.raw(LLM_ERROR_KINDS.map((k) => `'${k}'`).join(', '))})`,
+    ),
     index('llm_calls_run_idx').on(t.runId),
     index('llm_calls_created_idx').on(t.createdAt),
     sha256Check('llm_calls', t.promptHash),
@@ -487,6 +514,21 @@ export const llmCalls = pgTable(
     ),
   ],
 );
+
+/**
+ * Recorded model answers for LLM_CACHE=record|replay (llm/cache.ts). Keyed by a hash of provider, model,
+ * harness and the request with its random ids canonicalised, so a second run in a fresh database finds the
+ * first run's answers. Holds prompts' answers only, never the prompts: the request is not stored.
+ */
+export const llmCache = pgTable('llm_cache', {
+  key: char('key', { length: 64 }).primaryKey(),
+  provider: text('provider').notNull(),
+  model: text('model').notNull(),
+  harness: text('harness').notNull(),
+  /** The canonical LlmResult as JSON. */
+  response: jsonb('response').$type<Json>().notNull(),
+  createdAt: createdAt(),
+});
 
 export const agentProposals = pgTable(
   'agent_proposals',
@@ -505,6 +547,8 @@ export const agentProposals = pgTable(
     /** Shared by the proposals that came out of one clustered investigation. */
     clusterId: uuid('cluster_id'),
     model: text('model'),
+    /** Which provider the model belongs to (gemini, anthropic); null when no model concluded. */
+    provider: text('provider'),
     verdict: agentVerdict('verdict').notNull(),
     reasonCode: reasonCode('reason_code').notNull(),
     /** RecordRef[] the agent proposes to link. A claim, not a match. */

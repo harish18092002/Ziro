@@ -187,11 +187,11 @@ function RunBanners({ o, runId }: { o: Overview; runId: string }) {
       ) : null}
       {o.failures.injected ? (
         <div className="banner info" role="status">
-          <b>Chaos is on.</b> The demo broke two investigations on purpose: one model request timed
-          out on every try, and one reply was cut off mid-JSON. {handled ?? ''} Nothing stopped: the
-          run finished and both went to a person with the reason. In{' '}
-          <a href={linkTo(runId, 'exceptions')}>Exceptions</a>, the filter “Handed to a person by
-          the system” shows them.
+          <b>Chaos is on.</b> The demo broke three investigations on purpose: one where every model
+          timed out, one where every model was out of quota, and one where a reply was cut off
+          mid-JSON. {handled ?? ''} Nothing stopped: the run finished and all three went to a person
+          with the reason. In <a href={linkTo(runId, 'exceptions')}>Exceptions</a>, the filter
+          “Handed to a person by the system” shows them.
         </div>
       ) : handled ? (
         <div className="banner info" role="status">

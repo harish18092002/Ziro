@@ -17,8 +17,6 @@ import {
 } from '@nestjs/common';
 import { and, count, desc, eq, sql } from 'drizzle-orm';
 import { AgentService, type AgentSettings } from '../agent/agent.service.js';
-import { AgentHealth } from '../agent/health.js';
-import { ResilientRunner } from '../agent/resilient-runner.js';
 import { AgentHalted, type AgentRunner } from '../agent/types.js';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
@@ -28,7 +26,7 @@ import { agentProposals, matchGroups, reconExceptions, reconRuns } from '../db/s
 import { IngestService } from '../ingest/ingest.service.js';
 import { ReconService } from '../recon/recon.service.js';
 import { ReviewService } from '../review/review.service.js';
-import { CHAOS_RESILIENCE, type ChaosPlan, ChaosRunner, planChaos } from './chaos-runner.js';
+import { type ChaosPlan, ChaosRunner, planChaos } from './chaos-runner.js';
 import { type DemoPreset, DEMO_SEED, datasetDir } from './dataset.js';
 import { planPlants, ScriptedRunner } from './scripted-runner.js';
 import { windowsFor } from './windows.js';
@@ -97,6 +95,13 @@ const SCRIPTED_SETTINGS: AgentSettings = {
   DAILY_LLM_BUDGET_USD: 0,
   CLUSTER_EXCEPTIONS: false,
 };
+
+/**
+ * Requests a live demo run is expected to need: a 50-order run leaves about 14 exceptions for the agent and
+ * the single-shot harness makes one request for each, plus a repair or two. A live run is offered only when
+ * the day's remaining free-tier requests cover it, so a visitor is not handed a run that stops half way.
+ */
+const LIVE_RUN_REQUESTS = 20;
 
 @Injectable()
 export class DemoService implements OnApplicationBootstrap {
@@ -197,12 +202,35 @@ export class DemoService implements OnApplicationBootstrap {
   }
 
   async liveStatus(): Promise<{ available: boolean; reason: string | null }> {
-    if (!this.agent.configured)
-      return { available: false, reason: 'the server has no ANTHROPIC_API_KEY' };
+    if (!this.agent.configured) {
+      return {
+        available: false,
+        reason:
+          'the server has no usable model (GEMINI_API_KEY or ANTHROPIC_API_KEY, and LLM_CHAIN)',
+      };
+    }
     if (this.env.AGENT_KILL_SWITCH) return { available: false, reason: 'the kill switch is on' };
     const spent = await this.agent.spentToday();
     if (spent >= BigInt(Math.round(this.env.DAILY_LLM_BUDGET_USD * 1_000_000))) {
       return { available: false, reason: 'the daily model budget is spent' };
+    }
+    // Gated by what the free tier has left today, not only by money: it costs nothing and still runs out.
+    const status = await this.agent.status();
+    const usable = status.models.filter((m) => m.state === 'ok');
+    if (usable.length === 0) {
+      return {
+        available: false,
+        reason: 'AI quota exhausted: no model can answer until it resets',
+      };
+    }
+    const remaining = usable.map((m) =>
+      m.limitPerDay === null ? Number.POSITIVE_INFINITY : m.limitPerDay - m.usedToday,
+    );
+    if (Math.max(...remaining) < LIVE_RUN_REQUESTS) {
+      return {
+        available: false,
+        reason: `only ${Math.max(0, Math.max(...remaining))} free-tier requests are left today; a live run needs about ${LIVE_RUN_REQUESTS}`,
+      };
     }
     return { available: true, reason: null };
   }
@@ -322,19 +350,14 @@ export class DemoService implements OnApplicationBootstrap {
     });
   }
 
-  /** The free baseline agent; with `chaos`, two of its exceptions are made to fail on purpose. */
+  /** The free baseline agent; with `chaos`, three of its exceptions are made to fail on purpose. */
   private async scriptedAgent(runId: string, chaos: boolean): Promise<AgentService> {
     let runner: AgentRunner = new ScriptedRunner(await planPlants(this.db, runId));
     if (chaos) {
       const preview = await new AgentService(this.db, SCRIPTED_SETTINGS, null).plan(runId);
       const victims = planChaos(preview.jobs.flatMap((j) => j.items.map((i) => i.exceptionId)));
       await this.patchPipeline(runId, { chaos: victims });
-      // The production wrapper, with a demo-sized wait, and a health of its own so one demo run cannot
-      // pause another.
-      runner = new ResilientRunner(new ChaosRunner(runner, victims), {
-        health: new AgentHealth(),
-        policy: CHAOS_RESILIENCE,
-      });
+      runner = new ChaosRunner(runner, victims);
     }
     return new AgentService(this.db, SCRIPTED_SETTINGS, runner, this.review);
   }

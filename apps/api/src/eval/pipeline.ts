@@ -21,13 +21,15 @@ import {
   scoreReasonCodes,
   type TruthIndex,
 } from '@ziro/evals';
-import { and, count, eq, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, sql } from 'drizzle-orm';
 import { systemPrompt } from '../agent/prompt.js';
 import { DEFAULT_LIMITS } from '../agent/budget.js';
 import { AgentService } from '../agent/agent.service.js';
 import { AGENT_TOOLS } from '../agent/tools/definitions.js';
 import { AgentHalted, type AgentRunner } from '../agent/types.js';
 import { type Env, loadEnv } from '../config/env.js';
+import type { CacheMode } from '../llm/cache.js';
+import type { ChainEntry } from '../llm/config.js';
 import { createMigratedDb } from '../db/migrated-db.fixtures.js';
 import { agentProposals, reconRuns } from '../db/schema.js';
 import { windowsFor } from '../demo/windows.js';
@@ -46,7 +48,7 @@ import {
   type ProposalFact,
 } from './collect.js';
 import type { CostGuard } from './cost-guard.js';
-import { MeasuringRunner, type Probe, TelemetryLog } from './measuring.js';
+import { MeasuringRunner, type Probe } from './measuring.js';
 
 export const SIMULATED_REVIEWER = 'eval-simulated-reviewer';
 
@@ -94,10 +96,12 @@ export function approvable(
     .map((p) => p.proposalId);
 }
 
-/** The environment the services see. Models are the caller's; everything else is fixed for an eval. */
+/**
+ * The environment the services see. The model layer's own settings (keys, chain, limits, prices, cache mode)
+ * are the caller's, passed through as the text they are in .env; everything else is fixed for an eval.
+ */
 export function evalEnv(over: {
-  small: string;
-  large: string;
+  llm: Readonly<Record<string, string | undefined>>;
   cluster: boolean;
   concurrency: number;
   dataDir: string;
@@ -107,9 +111,8 @@ export function evalEnv(over: {
     REDIS_URL: 'redis://localhost:6379',
     RAZORPAY_SOURCE: 'synthetic',
     SYNTHETIC_DATA_DIR: over.dataDir,
-    AGENT_MODEL_SMALL: over.small,
-    AGENT_MODEL_LARGE: over.large,
-    AGENT_HARNESS: 'loop',
+    ...over.llm,
+    AGENT_HARNESS: 'single-shot',
     AUTO_ACCEPT_ENABLED: 'false',
     AUTO_ACCEPT_MAX_PAISE: '0',
     DEMO_MODE: 'false',
@@ -135,16 +138,23 @@ export interface RunOnceOptions {
   readonly cluster: boolean;
   readonly concurrency: number;
   readonly guard: CostGuard;
-  readonly models: { readonly small: string; readonly large: string };
+  /** LLM_CHAIN, GEMINI_LIMITS, keys and the rest of the model layer, as text. */
+  readonly llmEnv: Readonly<Record<string, string | undefined>>;
+  /** Investigations to run when cut short with --sample; null runs all of them. */
+  readonly sample: number | null;
+  readonly cache: CacheMode;
   /** The payloads planted in this dataset (the attacked leg), for exposure and detection. */
   readonly overlay: readonly OverlayItem[];
-  /** Builds the harness for this run, or null for the rules-only config. */
-  readonly makeRunner: (telemetry: TelemetryLog) => AgentRunner | null;
-  readonly model: string | null;
+  /** Builds the harness for this run from its environment, or null for the rules-only config. */
+  readonly makeRunner: (env: Env) => AgentRunner | null;
+  /** The model the config calls; null for rules. */
+  readonly entry: ChainEntry | null;
 }
 
-const SYSTEM_PROMPT_FRAGMENTS = systemPrompt(DEFAULT_LIMITS)
-  .split('\n')
+const SYSTEM_PROMPT_FRAGMENTS = [
+  ...systemPrompt(DEFAULT_LIMITS, 'loop').split('\n'),
+  ...systemPrompt(DEFAULT_LIMITS, 'single-shot').split('\n'),
+]
   .map((l) => l.trim())
   .filter((l) => l.length >= 40);
 
@@ -155,16 +165,14 @@ export async function runOnce(o: RunOnceOptions): Promise<RunRecord> {
   const t0 = performance.now();
   const { db, client } = await createMigratedDb();
   const env = evalEnv({
-    ...o.models,
+    llm: { ...o.llmEnv, LLM_CACHE: o.cache },
     cluster: o.cluster,
     concurrency: o.concurrency,
     dataDir: o.dataDir,
   });
-  const telemetry = new TelemetryLog();
-  const inner = o.makeRunner(telemetry);
+  const inner = o.makeRunner(env);
   const probes: Probe[] = o.overlay.map((i) => ({ key: i.key, style: i.style, text: i.text }));
-  const measuring =
-    inner === null ? null : new MeasuringRunner(inner, { guard: o.guard, probes, telemetry });
+  const measuring = inner === null ? null : new MeasuringRunner(inner, { guard: o.guard, probes });
 
   // The real services, built by hand: tsx does not emit the decorator metadata that Nest's injection reads.
   const review = new ReviewService(db, env);
@@ -191,7 +199,8 @@ export async function runOnce(o: RunOnceOptions): Promise<RunRecord> {
       let failures = 0;
       let firstFailure = '';
       const halt: { reason: string | null } = { reason: null };
-      const queue = [...plan.jobs];
+      // --sample runs only the first N investigations: enough to see how a model behaves, not to score it.
+      const queue = o.sample === null ? [...plan.jobs] : plan.jobs.slice(0, o.sample);
       await Promise.all(
         Array.from({ length: Math.min(o.concurrency, queue.length) }, async () => {
           for (let job = queue.shift(); job !== undefined; job = queue.shift()) {
@@ -210,7 +219,7 @@ export async function runOnce(o: RunOnceOptions): Promise<RunRecord> {
           }
         }),
       );
-      if (o.guard.exceeded) incompleteReason = 'the cost cap was reached';
+      if (o.guard.exceeded) incompleteReason = o.guard.why;
       else if (halt.reason !== null) incompleteReason = `the agent stopped early: ${halt.reason}`;
       else if (failures > 0)
         incompleteReason = `${failures} investigation(s) failed: ${firstFailure.slice(0, 200)}`;
@@ -221,10 +230,13 @@ export async function runOnce(o: RunOnceOptions): Promise<RunRecord> {
           .select({ n: count() })
           .from(agentProposals)
           .where(
-            and(eq(agentProposals.runId, run.id), eq(agentProposals.degraded, 'model_unavailable')),
+            and(
+              eq(agentProposals.runId, run.id),
+              inArray(agentProposals.degraded, ['model_unavailable', 'quota_exhausted']),
+            ),
           );
         if ((unanswered?.n ?? 0) > 0)
-          incompleteReason = `${unanswered?.n} investigation(s) got no answer from the model API, even after retries`;
+          incompleteReason = `${unanswered?.n} investigation(s) got no answer: the model was unavailable or out of quota`;
       }
     }
 
@@ -267,7 +279,10 @@ export async function runOnce(o: RunOnceOptions): Promise<RunRecord> {
       repeat: o.repeat,
       clusterExceptions: o.cluster,
       harness: inner?.harness ?? null,
-      model: o.model,
+      provider: o.entry?.provider ?? null,
+      model: o.entry?.model ?? null,
+      cache: o.cache,
+      sample: o.sample,
       incomplete: incompleteReason !== null,
       incompleteReason,
       startedAt: startedAt.toISOString(),
@@ -302,13 +317,20 @@ export async function runOnce(o: RunOnceOptions): Promise<RunRecord> {
           (totals.costMicroUsd / o.truth.truth.meta.config.orders) * 1000,
         ),
         llmCalls: totals.calls,
+        estPaidMicroUsd: totals.estPaidMicroUsd,
+        requests: totals.requests,
+        requestsPer1kOrders: Math.round(
+          (totals.requests / o.truth.truth.meta.config.orders) * 1000,
+        ),
+        replayed: totals.replayed,
+        fallbacks: totals.fallbacks,
+        quotaUsedOfDay: dailyShare(o.entry, totals.requests, env),
         tokens: {
           input: totals.input,
           output: totals.output,
           cacheRead: totals.cacheRead,
           cacheWrite: totals.cacheWrite,
         },
-        sdkReportedMicroUsd: inner?.harness === 'agent-sdk' ? Math.round(telemetry.reported) : null,
       },
       latency: {
         investigations: timed.length,
@@ -321,6 +343,13 @@ export async function runOnce(o: RunOnceOptions): Promise<RunRecord> {
   } finally {
     await client.close();
   }
+}
+
+/** The requests as a share of the model's configured daily free-tier limit; null when none is known. */
+function dailyShare(entry: ChainEntry | null, requests: number, env: Env): number | null {
+  if (entry === null || entry.provider !== 'gemini') return null;
+  const limit = env.GEMINI_LIMITS[entry.model]?.rpd;
+  return limit === undefined ? null : requests / limit;
 }
 
 /** Which planted payloads did an agent see, and did it do what they asked? */

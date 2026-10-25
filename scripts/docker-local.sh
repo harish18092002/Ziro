@@ -12,7 +12,7 @@
 #   DB_NAME   database to use         (ziro). Anything else is created in the compose Postgres if missing.
 #   LEAST_PRIVILEGE  1 (default) = the service connects as a role that cannot change the audit trail, which
 #             the deploy job grants, exactly as in production. 0 = connect as the compose owner for both.
-#   WITH_KEY  1 = pass ANTHROPIC_API_KEY from your shell through. Off by default, so the replay is shown to
+#   WITH_KEY  1 = pass GEMINI_API_KEY (and ANTHROPIC_API_KEY, if set) from your shell through. Off by default, so the replay is shown to
 #             work with no key.
 #
 # Needs Docker and `docker compose`. Touches nothing but local containers. It never calls git.
@@ -51,7 +51,7 @@ up() {
   local network
   network="$(compose_network)"
   local common=(--network "$network" --env-file "$ENV_FILE" -e "REDIS_URL=redis://redis:6379")
-  if [[ "${WITH_KEY:-0}" == "1" ]]; then common+=(-e ANTHROPIC_API_KEY); fi
+  if [[ "${WITH_KEY:-0}" == "1" ]]; then common+=(-e GEMINI_API_KEY -e ANTHROPIC_API_KEY); fi
 
   # The deploy job runs as the owner. The service runs as the application role, when there is one.
   local job_db="postgres://ziro:ziro_dev@postgres:5432/${DB_NAME}"

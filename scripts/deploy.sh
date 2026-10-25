@@ -17,8 +17,10 @@
 #   --app-role NAME     the database role the SERVICE connects as; the job (the owner) grants it exactly what
 #                       it needs on every deploy. Default ziro_app. Create it in Neon first (docs/DEPLOY.md).
 #   --no-app-role       skip that: the service then connects as whatever role its URL names
-#   --with-key          give the service the Anthropic key (secret ziro-anthropic-api-key), which switches
+#   --with-key          give the service the Gemini key (secret ziro-gemini-api-key), which switches
 #                       on the live model option. Without it the demo, the replay and Reset all still work.
+#   --with-claude       also give it the Anthropic key (secret ziro-anthropic-api-key) as a fallback model.
+#                       Needs an account with credit AND a price in LLM_PRICES, or Claude is left out.
 #   --skip-build        deploy an image already pushed under --version
 #   --skip-prepare      do not run the migration job (only if you are sure nothing changed in the database)
 #   --no-smoke          do not run scripts/smoke.mjs against the new revision
@@ -37,6 +39,7 @@ SERVICE="ziro"
 VERSION=""
 MIN_INSTANCES=0
 WITH_KEY=0
+WITH_CLAUDE=0
 APP_ROLE="ziro_app"
 SKIP_BUILD=0
 SKIP_PREPARE=0
@@ -52,6 +55,7 @@ while [[ $# -gt 0 ]]; do
     --app-role) APP_ROLE="${2:?--app-role needs a value}"; shift 2 ;;
     --no-app-role) APP_ROLE=""; shift ;;
     --with-key) WITH_KEY=1; shift ;;
+    --with-claude) WITH_CLAUDE=1; shift ;;
     --skip-build) SKIP_BUILD=1; shift ;;
     --skip-prepare) SKIP_PREPARE=1; shift ;;
     --no-smoke) SMOKE=0; shift ;;
@@ -145,6 +149,9 @@ fi
 say "3. Deploy the service"
 secrets="DATABASE_URL=${DB_POOLED},REDIS_URL=${REDIS}"
 if [[ "$WITH_KEY" == "1" ]]; then
+  secrets="${secrets},GEMINI_API_KEY=ziro-gemini-api-key:$(secret_version ziro-gemini-api-key)"
+fi
+if [[ "$WITH_CLAUDE" == "1" ]]; then
   secrets="${secrets},ANTHROPIC_API_KEY=ziro-anthropic-api-key:$(secret_version ziro-anthropic-api-key)"
 fi
 # --no-cpu-throttling: the demo's pipeline runs in the background after the request that started it returns,

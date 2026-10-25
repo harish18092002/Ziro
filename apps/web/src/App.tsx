@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { type AgentStatus, ApiError, type Availability, get, post } from './api';
-import { agentBanner, linkTo, parseHash } from './format';
+import { agentBanner, linkTo, parseHash, replayNote } from './format';
 import { useHash, useLoad } from './hooks';
 import { RunPage } from './RunPage';
 
@@ -20,7 +20,7 @@ export function App() {
   );
 }
 
-/** Says so, on every page, while the agent is paused (kill switch, budget, key, provider limit, outage). */
+/** Says so, on every page, while the agent cannot work as configured, or is replaying a record. */
 function AgentBanner() {
   const [status, setStatus] = useState<AgentStatus | null>(null);
   useEffect(() => {
@@ -39,10 +39,20 @@ function AgentBanner() {
     };
   }, []);
   const text = agentBanner(status);
-  return text === null ? null : (
-    <div className="banner warn" role="status">
-      {text}
-    </div>
+  const replay = replayNote(status);
+  return (
+    <>
+      {text === null ? null : (
+        <div className="banner warn" role="status">
+          {text}
+        </div>
+      )}
+      {replay === null ? null : (
+        <div className="banner info" role="status">
+          {replay}
+        </div>
+      )}
+    </>
   );
 }
 

@@ -3,7 +3,7 @@
 import type { RecordRef } from '@ziro/core/domain';
 import type { AcceptedGroup } from '@ziro/evals';
 import { and, asc, count, eq, sql } from 'drizzle-orm';
-import { parseMicroUsd } from '../agent/pricing.js';
+import { parseMicroUsd } from '../llm/pricing.js';
 import type { Executor } from '../db/executor.js';
 import {
   agentProposals,
@@ -174,8 +174,17 @@ export async function latestProposals(
 }
 
 export interface LlmTotals {
+  /** Every attempt on record, cached ones and failed ones included. */
   readonly calls: number;
+  /** Attempts that reached a provider (the free tier's scarce resource). */
+  readonly requests: number;
+  /** Answers served from the record instead of a request. */
+  readonly replayed: number;
+  /** Attempts that failed and sent the investigation to the next model. */
+  readonly fallbacks: number;
   readonly costMicroUsd: number;
+  /** At the paid list price; null when no attempt had a price. */
+  readonly estPaidMicroUsd: number | null;
   readonly input: number;
   readonly output: number;
   readonly cacheRead: number;
@@ -186,7 +195,11 @@ export async function llmTotals(db: Executor, runId: string): Promise<LlmTotals>
   const [row] = await db
     .select({
       calls: count(),
+      requests: sql<number>`count(*) filter (where not ${llmCalls.cached})::int`,
+      replayed: sql<number>`count(*) filter (where ${llmCalls.cached})::int`,
+      fallbacks: sql<number>`count(*) filter (where ${llmCalls.outcome} = 'fell_back')::int`,
       cost: sql<string>`coalesce(sum(${llmCalls.costUsd}), 0)::text`,
+      est: sql<string | null>`sum(${llmCalls.estCostUsd})::text`,
       input: sql<number>`coalesce(sum(${llmCalls.tokensIn}), 0)::int`,
       output: sql<number>`coalesce(sum(${llmCalls.tokensOut}), 0)::int`,
       cacheRead: sql<number>`coalesce(sum(${llmCalls.cacheReadTokens}), 0)::int`,
@@ -196,7 +209,11 @@ export async function llmTotals(db: Executor, runId: string): Promise<LlmTotals>
     .where(eq(llmCalls.runId, runId));
   return {
     calls: row?.calls ?? 0,
+    requests: row?.requests ?? 0,
+    replayed: row?.replayed ?? 0,
+    fallbacks: row?.fallbacks ?? 0,
     costMicroUsd: Number(parseMicroUsd(row?.cost ?? '0')),
+    estPaidMicroUsd: row?.est == null ? null : Number(parseMicroUsd(row.est)),
     input: row?.input ?? 0,
     output: row?.output ?? 0,
     cacheRead: row?.cacheRead ?? 0,

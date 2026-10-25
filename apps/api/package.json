@@ -19,7 +19,6 @@
     "eval:smoke": "tsx src/eval/cli.ts smoke"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.309",
     "@anthropic-ai/sdk": "^1.1.0",
     "@google/genai": "^2.31.0",
     "@nestjs/common": "^12.2.0",

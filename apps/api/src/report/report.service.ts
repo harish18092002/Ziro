@@ -504,7 +504,8 @@ export class ReportService {
       return n === 0 ? [] : [{ reason, label: DEGRADED_LABEL[reason], count: n }];
     });
     const chaos = pipeline?.['chaos'] as
-      { timeoutFor: string | null; malformedFor: string | null } | undefined;
+      | { timeoutFor: string | null; malformedFor: string | null; quotaFor: string | null }
+      | undefined;
     return {
       handedToAPerson: byReason.reduce((sum, r) => sum + r.count, 0),
       byReason,

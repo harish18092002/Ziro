@@ -16,4 +16,5 @@ export const DEGRADED_LABEL: Record<DegradedReason, string> = {
   time_budget: 'ran out of time',
   context: 'the conversation grew too long',
   refused: 'the model declined to answer',
+  quota_exhausted: 'AI quota exhausted',
 };

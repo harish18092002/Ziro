@@ -16,23 +16,24 @@ Measured on synthetic orders whose right answers are known, so a match is either
 
 <!-- RESULTS:START -->
 
-|                                      | Rules only                             | Rules + small model | Rules + large model |
-| ------------------------------------ | -------------------------------------- | ------------------- | ------------------- |
-| Match rate (groups found exactly)    | 97.4%                                  | not run yet         | not run yet         |
-| False matches (wrong links accepted) | 0                                      | not run yet         | not run yet         |
-| Proposals the verifier refused       | no agent                               | not run yet         | not run yet         |
-| Ziro gap (₹ still unexplained)       | ₹2,04,190.89                           | not run yet         | not run yet         |
-| Cost per 1,000 orders                | $0                                     | not run yet         | not run yet         |
-| Time                                 | 2.0 s (1.7 s–2.3 s) for all 500 orders | not run yet         | not run yet         |
+|                                                        | Rules only                             | Rules + lite model, one call | Rules + lite model, tool loop | Rules + flash model, one call |
+| ------------------------------------------------------ | -------------------------------------- | ---------------------------- | ----------------------------- | ----------------------------- |
+| Match rate (groups found exactly)                      | 97.4%                                  | not run yet                  | not run yet                   | not run yet                   |
+| False matches (wrong links accepted)                   | 0                                      | not run yet                  | not run yet                   | not run yet                   |
+| Proposals the verifier refused                         | no agent                               | not run yet                  | not run yet                   | not run yet                   |
+| Ziro gap (₹ still unexplained)                         | ₹2,04,190.89                           | not run yet                  | not run yet                   | not run yet                   |
+| Model requests per 1,000 orders                        | 0                                      | not run yet                  | not run yet                   | not run yet                   |
+| Cost per 1,000 orders (free tier: $0; at paid prices:) | $0                                     | not run yet                  | not run yet                   | not run yet                   |
+| Time                                                   | 3.8 s (3.4 s–4.4 s) for all 500 orders | not run yet                  | not run yet                   | not run yet                   |
 
-_500 synthetic orders (eval dataset, seed 42), 534 true groups. Configured models: small claude-haiku-5-5, large claude-sonnet-5-5. Model columns show the mean (min–max) over the repeats. Rebuilt from `packages/evals/results/` by `npm run eval:report`; the full tables are in [EVALS.md](EVALS.md)._
+_500 synthetic orders (eval dataset, seed 42), 534 true groups. Models: lite gemini-3.5-flash-lite, flash gemini-3.8-flash. Model columns show the mean (min–max) over the repeats. Rebuilt from `packages/evals/results/` by `npm run eval:report`; the full tables are in [EVALS.md](EVALS.md)._
 <!-- RESULTS:END -->
 
 How to read it:
 
 - **False matches** is the row to read first. A wrong match books money against the wrong thing, which is worse than a match that was missed.
 - **Ziro gap** is the money still tied up in open exceptions: what nobody has yet explained. Only the rules, plus agent matches a person approved, can shrink it.
-- **"Not run yet"** means exactly that. No language model has been run against this set, so nothing in the model columns is an estimate. They fill in when `npm run eval` is run with a model configuration, which needs `--confirm` and a spending cap.
+- **"Not run yet"** means exactly that. No language model has been run against this set, so nothing in the model columns is an estimate. They fill in when `npm run eval` is run with a model configuration, which needs `--confirm` and a ceiling (`--max-requests` on Gemini's free tier). A column marked REPLAYED in [EVALS.md](EVALS.md) was served from recorded answers: its accuracy is real, its cost and speed are not a measurement.
 - The data is synthetic. See [Limitations](#limitations).
 
 ## How it works
@@ -51,7 +52,7 @@ flowchart LR
 ```
 
 - **Rules** match a ledger entry to a payment on receipt and amount, a settlement to its payments less fees, GST and refunds, and a settlement to a bank line by UTR and amount. A fourth rule matches on amount alone, within a date window, when exactly one candidate fits. Amounts must agree exactly; only dates have a tolerance. If two candidates fit, the record becomes an exception.
-- **The agent** gets one exception at a time and nine read-only tools. It must cite which tool call supports each claim.
+- **The agent** gets one exception at a time. By default the harness gathers the evidence with the same nine read-only tools and asks the model once; the alternative is a short tool loop. It must cite which tool call supports each claim. The model is a chain: Gemini's free tier first, Claude as an optional fallback, so a spent daily quota moves on to the next model, and when every model is spent the exception goes to a person as "AI quota exhausted" while the rules keep running.
 - **The verifier** recomputes the paise, the record ids and the date windows from the database. It can refuse the agent, and does.
 - **The report** shows the unexplained amount, fee leakage against the fee contract, delayed settlements, and journal entries as CSV for Tally.
 
@@ -80,6 +81,7 @@ The rule used: build first whatever makes a number more correct or a claim more 
 - Other currencies and the CGST/SGST/IGST split: the inputs do not carry what they need.
 - Auto-accepting agent matches in the public demo: a demo should show a person deciding.
 - Posting into Tally or a bank: export only.
+- The Claude Agent SDK as a second harness: it needs a funded Anthropic key and a heavy binary. It was built, then removed when the free Gemini path replaced it; it stays an idea for later.
 - Fine-tuning, embeddings, scheduling, interface polish.
 
 The full MoSCoW table, with a line of reasoning for each row, is in [PRIORITIES.md](docs/PRIORITIES.md). The reasons behind each design choice are in [DECISIONS.md](docs/DECISIONS.md).
@@ -96,6 +98,8 @@ scripts/docker-local.sh up
 
 The first run builds the image, migrates the database, builds the 500-order replay and starts the service. No API key is passed in, and the replay and the 50-order run both work without one.
 
+**To use a real model** (optional), copy `.env.example` to `.env` and fill in four things: `GEMINI_API_KEY` (a free key from Google AI Studio), `LLM_CHAIN` (the models, in the order to try them), `GEMINI_LIMITS` (the request limits shown at aistudio.google.com/rate-limit, copied by you: the code never guesses them) and, only for Claude, `ANTHROPIC_API_KEY` plus a price in `LLM_PRICES`. With none of it set the agent is simply off. **A free-tier key sends its prompts to Google, which may use them: keep it to synthetic data.**
+
 **For development** (Node 24):
 
 ```bash
@@ -110,14 +114,16 @@ npm run db:migrate && npm run dev     # console at http://localhost:5173
 npm run eval -- --configs rules
 ```
 
-It scores the rules against the answer key three times, checks they give identical results, and writes the files under `packages/evals/results/`. The first run also times the rules on a 100,000-row set, which it generates (about 15 seconds, git-ignored); add `--stress false` to skip that. `npm run eval:report` then rebuilds [EVALS.md](EVALS.md) and the table above from those files, also free. Anything that calls a model does nothing until you pass `--confirm` and `--max-cost-usd`.
+It scores the rules against the answer key three times, checks they give identical results, and writes the files under `packages/evals/results/`. The first run also times the rules on a 100,000-row set, which it generates (about 15 seconds, git-ignored); add `--stress false` to skip that. `npm run eval:report` then rebuilds [EVALS.md](EVALS.md) and the table above from those files, also free. Anything that calls a model does nothing until you pass `--confirm` and a ceiling: `--max-requests` for Gemini's free tier, `--max-cost-usd` for Claude.
 
 To put it on Google Cloud, Neon and Upstash: [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Limitations
 
 - **The data is synthetic.** Payments can come from Razorpay test mode (that code is tested against the documented response shapes, not recorded from a live account), but test mode appears to have no settlements, so settlements, the recon report and bank lines are generated. How well this does on a real merchant's files is not known.
-- **No language model has been measured.** The agent, its checks and its failure handling are built and tested, but the model columns are empty until a paid run is approved. Costs and accuracy are not claimed.
+- **No language model has been measured, and none has been called.** The agent, the provider layer, its checks and its failure handling are built and tested, against scripted models and against the real Gemini and Anthropic client libraries talking to a local stand-in server. No request has reached Google or Anthropic, so the model columns are empty and nothing about accuracy, cost or the exact shape of Gemini's usage figures is claimed.
+- **Free-tier calls are not private.** Google may use what a free-tier key sends to improve its products, and people may read it. Ziro sends only synthetic or test-mode data through one. A real merchant's records need a paid key or the Claude fallback. Nothing in the code can tell a real record from a synthetic one, so keeping real data away from a free-tier key is on you.
+- **The free tier is small and its limits are yours to supply.** The request limits come from `GEMINI_LIMITS`, copied from your Google AI Studio page; without them the app relies on Google's own refusals. The evals count the day's requests in one process only, so `--max-requests` is the guard, not a record of the day.
 - **The Tally export has never been imported into Tally.** The format follows Tally's documentation. There is one GST ledger, with no CGST/SGST/IGST split.
 - **INR only.** The verifier refuses any other currency.
 - **UTR formats** were checked against the generator and one real bank statement. Other banks' narrations may hide references the extractor does not recognise.
@@ -125,7 +131,7 @@ To put it on Google Cloud, Neon and Upstash: [docs/DEPLOY.md](docs/DEPLOY.md).
 - **No accounts.** The reviewer's name is typed text. On the public demo, visitors can only start a run, review in their own run, and reset it.
 - **Limits are held in one process,** so the deployment runs a single instance. Runs are archived, never deleted, so storage grows.
 - **The deployment has been rehearsed locally,** against the same database and Redis, as the same container. It has not been run on real Google Cloud, Neon or Upstash accounts.
-- **Some parts have not been run for real:** the second harness (the Claude Agent SDK) and the console in a browser by a person.
+- **Some parts have not been run for real:** the Redis request limiter against a real Redis (its test is written and needs the compose Redis), and the console in a browser by a person.
 
 ## Prior art
 

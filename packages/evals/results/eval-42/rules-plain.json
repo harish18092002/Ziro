@@ -1,17 +1,17 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "preset": "eval",
   "seed": 42,
   "config": "rules",
   "leg": "plain",
   "clusterExceptions": false,
-  "generatedAt": "2026-10-23T12:17:41.372Z",
+  "generatedAt": "2026-10-25T09:51:20.277Z",
   "versions": {
     "node": "v24.21.0",
-    "agentSdk": null,
     "models": {
-      "small": "claude-haiku-5-5",
-      "large": "claude-sonnet-5-5"
+      "lite": "gemini-3.5-flash-lite",
+      "flash": "gemini-3.8-flash",
+      "claude": "claude-haiku-5-5"
     }
   },
   "runs": [
@@ -21,11 +21,14 @@
       "repeat": 1,
       "clusterExceptions": false,
       "harness": null,
+      "provider": null,
       "model": null,
+      "cache": "off",
+      "sample": null,
       "incomplete": false,
       "incompleteReason": null,
-      "startedAt": "2026-10-23T12:17:35.454Z",
-      "durationMs": 2309,
+      "startedAt": "2026-10-25T09:51:08.973Z",
+      "durationMs": 4409,
       "orders": 500,
       "exceptions": {
         "total": 104,
@@ -90,7 +93,12 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "sdkReportedMicroUsd": null
+        "estPaidMicroUsd": null,
+        "requests": 0,
+        "requestsPer1kOrders": 0,
+        "replayed": 0,
+        "fallbacks": 0,
+        "quotaUsedOfDay": null
       },
       "latency": {
         "investigations": 0,
@@ -105,11 +113,14 @@
       "repeat": 2,
       "clusterExceptions": false,
       "harness": null,
+      "provider": null,
       "model": null,
+      "cache": "off",
+      "sample": null,
       "incomplete": false,
       "incompleteReason": null,
-      "startedAt": "2026-10-23T12:17:37.768Z",
-      "durationMs": 1743,
+      "startedAt": "2026-10-25T09:51:13.389Z",
+      "durationMs": 3435,
       "orders": 500,
       "exceptions": {
         "total": 104,
@@ -174,7 +185,12 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "sdkReportedMicroUsd": null
+        "estPaidMicroUsd": null,
+        "requests": 0,
+        "requestsPer1kOrders": 0,
+        "replayed": 0,
+        "fallbacks": 0,
+        "quotaUsedOfDay": null
       },
       "latency": {
         "investigations": 0,
@@ -189,11 +205,14 @@
       "repeat": 3,
       "clusterExceptions": false,
       "harness": null,
+      "provider": null,
       "model": null,
+      "cache": "off",
+      "sample": null,
       "incomplete": false,
       "incompleteReason": null,
-      "startedAt": "2026-10-23T12:17:39.515Z",
-      "durationMs": 1853,
+      "startedAt": "2026-10-25T09:51:16.830Z",
+      "durationMs": 3430,
       "orders": 500,
       "exceptions": {
         "total": 104,
@@ -258,7 +277,12 @@
           "cacheRead": 0,
           "cacheWrite": 0
         },
-        "sdkReportedMicroUsd": null
+        "estPaidMicroUsd": null,
+        "requests": 0,
+        "requestsPer1kOrders": 0,
+        "replayed": 0,
+        "fallbacks": 0,
+        "quotaUsedOfDay": null
       },
       "latency": {
         "investigations": 0,

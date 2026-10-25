@@ -66,6 +66,7 @@ SECRET_TABLE=(
   "ziro-database-url|$RUNTIME_SA|pooled|yes"
   "ziro-database-url-direct|$MIGRATE_SA|direct|yes"
   "ziro-redis-url|$RUNTIME_SA,$MIGRATE_SA|redis|yes"
+  "ziro-gemini-api-key|$RUNTIME_SA|gemini-key|no"
   "ziro-anthropic-api-key|$RUNTIME_SA|key|no"
 )
 
@@ -84,6 +85,8 @@ shape_error() { # name kind value -> prints a problem, or nothing
       [[ "$value" != *-pooler* ]] || echo "must be the DIRECT connection string (no -pooler in the host): migrations cannot use the pooler" ;;
     redis)
       [[ "$value" == rediss://* ]] || echo "must start with rediss:// (Upstash needs TLS)" ;;
+    gemini-key)
+      [[ "$value" == AIza* ]] || echo "does not look like a Gemini API key (AIza...)" ;;
     key)
       [[ "$value" == sk-ant-* ]] || echo "does not look like an Anthropic API key (sk-ant-...)" ;;
   esac

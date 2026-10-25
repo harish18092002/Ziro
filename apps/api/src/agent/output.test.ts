@@ -8,7 +8,6 @@ import {
   finalizeResult,
   type ModelResult,
   needsHuman,
-  OUTPUT_JSON_SCHEMA,
   parseModelOutput,
   wantsEscalation,
 } from './output.js';
@@ -335,12 +334,8 @@ describe('escalation and digest', () => {
   });
 });
 
-describe('OUTPUT_JSON_SCHEMA', () => {
-  it('is built once and is stable', () => {
-    expect(JSON.stringify(toAnthropicJsonSchema(modelOutputSchema))).toBe(
-      JSON.stringify(OUTPUT_JSON_SCHEMA),
-    );
-  });
+describe('the output schema as the Anthropic adapter sends it', () => {
+  const OUTPUT_JSON_SCHEMA = toAnthropicJsonSchema(modelOutputSchema);
 
   it('closes every object and uses none of the keywords the API rejects', () => {
     const banned = [

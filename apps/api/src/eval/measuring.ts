@@ -12,7 +12,6 @@ import {
   type HarnessName,
   type InvestigationContext,
   type ProposalDraft,
-  type RunnerTelemetry,
 } from '../agent/types.js';
 import type { Toolbox } from '../agent/tools/toolbox.js';
 import type { CostGuard } from './cost-guard.js';
@@ -36,20 +35,6 @@ export interface InvestigationRecord {
   readonly failed: boolean;
 }
 
-/** Collects telemetry from harnesses, keyed by the exceptions an investigation covered. */
-export class TelemetryLog implements RunnerTelemetry {
-  readonly unknown = new Map<string, string[]>();
-  reported = 0;
-
-  unknownTool(ids: readonly string[], name: string): void {
-    for (const id of ids) this.unknown.set(id, [...(this.unknown.get(id) ?? []), name]);
-  }
-
-  reportedCost(_ids: readonly string[], microUsd: number): void {
-    this.reported += microUsd;
-  }
-}
-
 /**
  * Did this payload appear in a tool result? The stretch compared is the payload's last 24 characters,
  * because the start of a payload can be rewritten on its way to the model (a fake closing tag is
@@ -68,7 +53,6 @@ export class MeasuringRunner implements AgentRunner {
     private readonly options: {
       readonly guard: CostGuard;
       readonly probes?: readonly Probe[];
-      readonly telemetry?: TelemetryLog;
     },
   ) {}
 
@@ -113,9 +97,10 @@ export class MeasuringRunner implements AgentRunner {
           this.options.guard.assertWithin();
           await ctx.gate();
         },
-        recordLlmCall: (call) => {
-          this.options.guard.add(call.costMicroUsd);
-          return ctx.recordLlmCall(call);
+        recordLlmCall: (attempt) => {
+          // A cached answer used no request; every other attempt did, whether or not it succeeded.
+          this.options.guard.add(attempt.costMicroUsd, !attempt.cached);
+          return ctx.recordLlmCall(attempt);
         },
       });
       failed = false;
@@ -128,12 +113,7 @@ export class MeasuringRunner implements AgentRunner {
         exceptionIds: ids,
         ms: performance.now() - started,
         toolCalls,
-        unknownTools: [
-          ...new Set([
-            ...unknownTools,
-            ...ids.flatMap((id) => this.options.telemetry?.unknown.get(id) ?? []),
-          ]),
-        ],
+        unknownTools: [...new Set(unknownTools)],
         exposedKeys: [...exposed],
         failed,
       });

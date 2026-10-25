@@ -42,6 +42,7 @@ const EXPECTED_TABLES = [
   'audit_events',
   'bank_lines',
   'ledger_entries',
+  'llm_cache',
   'llm_calls',
   'match_groups',
   'match_links',
@@ -55,7 +56,7 @@ const EXPECTED_TABLES = [
 ];
 
 describe('migrations on a fresh database', () => {
-  it('create exactly the 15 expected tables', async () => {
+  it('create exactly the 16 expected tables', async () => {
     const tables = await names(
       `SELECT table_name AS name FROM information_schema.tables
        WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY 1`,
@@ -96,13 +97,13 @@ describe('money is integer paise', () => {
     expect(rows.filter((r) => r.data_type !== 'bigint')).toEqual([]);
   });
 
-  it('has no float or decimal column except llm_calls.cost_usd (USD spend, not merchant money)', async () => {
+  it('has no float or decimal column except the two USD columns of llm_calls (LLM spend, not merchant money)', async () => {
     const found = await names(
       `SELECT table_name || '.' || column_name AS name FROM information_schema.columns
        WHERE table_schema = 'public' AND data_type IN ('numeric', 'real', 'double precision', 'money')
        ORDER BY 1`,
     );
-    expect(found).toEqual(['llm_calls.cost_usd']);
+    expect(found).toEqual(['llm_calls.cost_usd', 'llm_calls.est_cost_usd']);
   });
 });
 

@@ -48,6 +48,13 @@ const MAX_CANDIDATES_SHOWN = 25;
 const MAX_LINES_SHOWN = 15;
 const MAX_IDS = 60;
 
+/** Records ordered by what they are and their business key (never by their random row id). */
+const byBusinessKey = (
+  a: { type: string; key: string },
+  b: { type: string; key: string },
+): number =>
+  a.type === b.type ? (a.key < b.key ? -1 : a.key > b.key ? 1 : 0) : a.type < b.type ? -1 : 1;
+
 const key = z.string().min(1).max(120);
 const amount = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
 const date = z.string().refine(isBusinessDate, 'must be a real date written YYYY-MM-DD');
@@ -108,7 +115,9 @@ const getExceptionTool: AgentTool<z.output<typeof getExceptionArgs>> = {
         note: row.note,
         amountAtStakePaise: str(row.amountAtStakePaise),
         subject: described.find((d) => d.id === subject.recordId) ?? null,
-        candidates: described.filter((d) => d.id !== subject.recordId),
+        // Listed by type and business key, not in the order the matcher stored them: that order follows row ids,
+        // which are random, and a prompt that changes with them can be neither cached nor compared between runs.
+        candidates: described.filter((d) => d.id !== subject.recordId).sort(byBusinessKey),
         candidateCount: candidates.length,
       },
       summary: `exception ${row.id}: rules said ${row.reasonCode}${row.cause ? ` (${row.cause})` : ''}, ${candidates.length} candidate(s), ${str(row.amountAtStakePaise)} paise at stake`,

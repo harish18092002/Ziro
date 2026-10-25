@@ -16,7 +16,7 @@ import { DB } from '../db/db.module.js';
 import { createMigratedDb, type TestDb } from '../db/migrated-db.fixtures.js';
 import { agentProposals, auditEvents, reconExceptions, reconRuns } from '../db/schema.js';
 import { ReportModule } from '../report/report.module.js';
-import { CHAOS_MALFORMED_NOTE, CHAOS_TIMEOUT_MESSAGE } from './chaos-runner.js';
+import { CHAOS_MALFORMED_NOTE, CHAOS_QUOTA_NOTE, CHAOS_TIMEOUT_NOTE } from './chaos-runner.js';
 import { DemoModule } from './demo.module.js';
 
 const env = (demoMode: boolean) =>
@@ -25,8 +25,6 @@ const env = (demoMode: boolean) =>
     REDIS_URL: 'redis://localhost:6379',
     RAZORPAY_SOURCE: 'synthetic',
     SYNTHETIC_DATA_DIR: 'data/demo',
-    AGENT_MODEL_SMALL: 'claude-haiku-5-5',
-    AGENT_MODEL_LARGE: 'claude-sonnet-5-5',
     AGENT_HARNESS: 'loop',
     AUTO_ACCEPT_ENABLED: 'false',
     AUTO_ACCEPT_MAX_PAISE: '0',
@@ -72,7 +70,7 @@ interface Progress {
   error: string | null;
   note: string | null;
   expected: number | null;
-  chaos: { timeoutFor: string | null; malformedFor: string | null } | null;
+  chaos: { timeoutFor: string | null; malformedFor: string | null; quotaFor: string | null } | null;
   counts: { proposals: number; exceptions: number };
 }
 
@@ -125,24 +123,34 @@ describe('with the toggle off', () => {
 });
 
 describe('with the toggle on', () => {
-  it('still finishes the run, and says which two exceptions it broke', () => {
+  it('still finishes the run, and says which three exceptions it broke', () => {
     expect(chaotic.stage).toBe('ready');
     expect(chaotic.error).toBeNull();
-    expect(chaotic.chaos?.timeoutFor).toBeTruthy();
-    expect(chaotic.chaos?.malformedFor).toBeTruthy();
-    expect(chaotic.chaos?.timeoutFor).not.toBe(chaotic.chaos?.malformedFor);
+    const victims = [
+      chaotic.chaos?.timeoutFor,
+      chaotic.chaos?.malformedFor,
+      chaotic.chaos?.quotaFor,
+    ];
+    expect(victims.every(Boolean)).toBe(true);
+    expect(new Set(victims).size).toBe(3);
   });
 
-  it('degrades exactly those two, each for the right reason, and nothing else', async () => {
+  it('degrades exactly those three, each for the right reason, and nothing else', async () => {
     const degraded = await degradedIn(chaosRun);
     const byException = new Map(degraded.map((p) => [p.exceptionId, p]));
-    expect(degraded).toHaveLength(2);
+    expect(degraded).toHaveLength(3);
 
     const timeout = byException.get(chaotic.chaos?.timeoutFor ?? '');
     expect(timeout?.degraded).toBe('model_unavailable');
     expect(timeout?.verdict).toBe('NEEDS_HUMAN');
-    expect(timeout?.explanation).toContain('did not answer after 3 tries');
-    expect(timeout?.explanation).toContain(CHAOS_TIMEOUT_MESSAGE);
+    expect(timeout?.explanation).toContain('did not answer');
+    expect(timeout?.harnessFindings[0]).toBe(CHAOS_TIMEOUT_NOTE);
+
+    const quota = byException.get(chaotic.chaos?.quotaFor ?? '');
+    expect(quota?.degraded).toBe('quota_exhausted');
+    expect(quota?.verdict).toBe('NEEDS_HUMAN');
+    expect(quota?.explanation).toContain('AI quota exhausted');
+    expect(quota?.harnessFindings[0]).toBe(CHAOS_QUOTA_NOTE);
 
     const malformed = byException.get(chaotic.chaos?.malformedFor ?? '');
     expect(malformed?.degraded).toBe('invalid_reply');
@@ -165,7 +173,7 @@ describe('with the toggle on', () => {
     expect(open).toHaveLength(openPlain.length);
   });
 
-  it('audits both as handed to a person, with the reason in words', async () => {
+  it('audits all three as handed to a person, with the reason in words', async () => {
     const events = (
       await site.db
         .select()
@@ -173,6 +181,7 @@ describe('with the toggle on', () => {
         .where(and(eq(auditEvents.runId, chaosRun), eq(auditEvents.action, 'agent.propose')))
     ).filter((e) => (e.detail as { after: { degraded: string | null } }).after.degraded !== null);
     expect(events.map((e) => (e.detail as { reason: string }).reason).sort()).toEqual([
+      'handed to a person without a conclusion: AI quota exhausted',
       'handed to a person without a conclusion: the model API did not answer',
       'handed to a person without a conclusion: the model’s reply was not valid',
     ]);
@@ -243,7 +252,11 @@ interface Overview {
   failures: {
     handedToAPerson: number;
     byReason: { reason: string; label: string; count: number }[];
-    injected: { timeoutFor: string | null; malformedFor: string | null } | null;
+    injected: {
+      timeoutFor: string | null;
+      malformedFor: string | null;
+      quotaFor: string | null;
+    } | null;
     note: string | null;
   };
 }
@@ -260,10 +273,11 @@ describe('what the report says about it', () => {
 
   it('counts the investigations handed to a person, by reason, and names the injected ones', async () => {
     const o = await overview(chaosRun);
-    expect(o.failures.handedToAPerson).toBe(2);
+    expect(o.failures.handedToAPerson).toBe(3);
     expect(o.failures.byReason).toEqual([
       { reason: 'model_unavailable', label: 'the model API did not answer', count: 1 },
       { reason: 'invalid_reply', label: 'the model’s reply was not valid', count: 1 },
+      { reason: 'quota_exhausted', label: 'AI quota exhausted', count: 1 },
     ]);
     expect(o.failures.injected).toEqual(chaotic.chaos);
   });
@@ -276,7 +290,7 @@ describe('what the report says about it', () => {
   it('lists the degraded exceptions on their own, authored by the system, not by a model', async () => {
     const res = await request(site.server).get(`/runs/${chaosRun}/exceptions?filter=degraded`);
     const body = res.body as { total: number; items: ListedException[] };
-    expect(body.total).toBe(2);
+    expect(body.total).toBe(3);
     for (const item of body.items) {
       expect(item.proposal?.author).toBe('harness');
       expect(item.proposal?.degraded).not.toBeNull();

@@ -12,7 +12,8 @@ import { reconExceptions } from '../db/schema.js';
 import { AgentController } from './agent.controller.js';
 import { buildWorld, createMigratedDb, type TestDb, type World } from './agent.fixtures.js';
 import { AGENT_RUNNER, AgentService } from './agent.service.js';
-import { createRunner, loopRunnerOptions } from './agent.module.js';
+import { createRunner } from './agent.module.js';
+import { buildRouter } from '../llm/factory.js';
 import type { InvestigationJob } from './jobs.js';
 import { INVESTIGATION_QUEUE } from './queue.js';
 import type { AgentRunner } from './types.js';
@@ -30,7 +31,10 @@ afterAll(async () => {
   await dbClient.close();
 });
 
-const RUNNER = { harness: 'loop', investigate: () => Promise.resolve([]) } satisfies AgentRunner;
+const RUNNER = {
+  harness: 'single-shot',
+  investigate: () => Promise.resolve([]),
+} satisfies AgentRunner;
 
 async function app(runner: AgentRunner | null, settings: Record<string, unknown> = {}) {
   const queued: InvestigationJob[] = [];
@@ -182,26 +186,23 @@ describe('POST /runs/:id/investigate', () => {
     await nest.close();
   });
 
-  it('answers 503, and queues nothing, when no API key is configured', async () => {
+  it('answers 503, and queues nothing, when no model is usable', async () => {
     const { nest, queued, server } = await app(null);
     const res = await request(server).post(`/runs/${world.runId}/investigate`).send({});
     expect(res.status).toBe(503);
-    expect(JSON.stringify(res.body)).toContain('ANTHROPIC_API_KEY');
+    expect(JSON.stringify(res.body)).toContain('GEMINI_API_KEY');
     expect(queued).toHaveLength(0);
     await nest.close();
   });
 });
 
-describe('createRunner', () => {
+describe('createRunner and buildRouter', () => {
   const env = (over: Record<string, string | undefined>) =>
     loadEnv({
       DATABASE_URL: 'postgres://u:p@localhost:5432/d',
       REDIS_URL: 'redis://localhost:6379',
       SYNTHETIC_DATA_DIR: 'data/demo',
       RAZORPAY_SOURCE: 'synthetic',
-      AGENT_MODEL_SMALL: 'claude-haiku-5-5',
-      AGENT_MODEL_LARGE: 'claude-sonnet-5-5',
-      AGENT_HARNESS: 'loop',
       AUTO_ACCEPT_ENABLED: 'false',
       AUTO_ACCEPT_MAX_PAISE: '0',
       DEMO_MODE: 'true',
@@ -209,70 +210,105 @@ describe('createRunner', () => {
       AGENT_KILL_SWITCH: 'false',
       ...over,
     });
+  const build = (over: Record<string, string | undefined>) => {
+    const e = env(over);
+    return { e, built: buildRouter(e) };
+  };
 
-  it('builds no harness without an API key', () => {
-    expect(createRunner(env({}))).toBeNull();
-    expect(createRunner(env({ ANTHROPIC_API_KEY: '' }))).toBeNull();
+  it('builds no harness, and says why, when there is no chain', () => {
+    const { e, built } = build({});
+    expect(createRunner(e, built)).toBeNull();
+    expect(built.warnings.join(' ')).toContain('LLM_CHAIN is empty');
   });
 
-  it('builds the loop harness with a key and priced models', () => {
-    const runner = createRunner(env({ ANTHROPIC_API_KEY: 'sk-test' }));
-    expect(runner?.harness).toBe('loop');
+  it('builds no harness, and does not fail the boot, when the chain has no usable key', () => {
+    const { e, built } = build({ LLM_CHAIN: 'gemini:a,anthropic:b' });
+    expect(createRunner(e, built)).toBeNull();
+    expect(built.dropped.map((d) => d.id)).toEqual(['gemini:a', 'anthropic:b']);
+    expect(built.dropped[0]?.why).toContain('GEMINI_API_KEY');
+    expect(built.dropped[1]?.why).toContain('ANTHROPIC_API_KEY');
   });
 
-  it('refuses at boot a model it cannot price, naming the variable and never the key', () => {
-    expect(() =>
-      createRunner(
-        env({ ANTHROPIC_API_KEY: 'sk-secret-123', AGENT_MODEL_LARGE: 'claude-mystery-9' }),
-      ),
-    ).toThrow(/AGENT_MODEL_LARGE "claude-mystery-9"/);
-    try {
-      createRunner(env({ ANTHROPIC_API_KEY: 'sk-secret-123', AGENT_MODEL_SMALL: 'nope' }));
-    } catch (error) {
-      expect(String(error)).not.toContain('sk-secret-123');
-    }
+  it('builds the single-shot harness by default, from a Gemini key alone', () => {
+    const { e, built } = build({ LLM_CHAIN: 'gemini:a', GEMINI_API_KEY: 'g-test' });
+    expect(createRunner(e, built)?.harness).toBe('single-shot');
+    expect(built.router?.chain.map((c) => c.id)).toEqual(['gemini:a']);
   });
 
-  it('passes the models and the escalation setting from the environment to the loop harness', () => {
-    const client = { complete: () => Promise.reject(new Error('unused')) };
-    const on = loopRunnerOptions(env({ AGENT_ESCALATION: 'true' }), client);
-    expect(on).toEqual({
-      client,
-      smallModel: 'claude-haiku-5-5',
-      largeModel: 'claude-sonnet-5-5',
-      escalation: true,
+  it('builds the loop harness when AGENT_HARNESS says so', () => {
+    const { e, built } = build({
+      LLM_CHAIN: 'gemini:a',
+      GEMINI_API_KEY: 'g-test',
+      AGENT_HARNESS: 'loop',
     });
-    expect(loopRunnerOptions(env({ AGENT_ESCALATION: 'false' }), client).escalation).toBe(false);
-    expect(
-      loopRunnerOptions(
-        env({ AGENT_MODEL_SMALL: 'claude-sonnet-5-5', AGENT_MODEL_LARGE: 'claude-haiku-5-5' }),
-        client,
-      ),
-    ).toMatchObject({ smallModel: 'claude-sonnet-5-5', largeModel: 'claude-haiku-5-5' });
+    expect(createRunner(e, built)?.harness).toBe('loop');
   });
 
-  it('builds the Agent SDK harness when asked, and needs only the small model priced', () => {
-    const runner = createRunner(env({ ANTHROPIC_API_KEY: 'sk-test', AGENT_HARNESS: 'agent-sdk' }));
-    expect(runner?.harness).toBe('agent-sdk');
-    (runner as { close?: () => void } | null)?.close?.();
-    expect(() =>
-      createRunner(
-        env({
-          ANTHROPIC_API_KEY: 'sk-test',
-          AGENT_HARNESS: 'agent-sdk',
-          AGENT_MODEL_SMALL: 'claude-unpriced-9',
-        }),
-      ),
-    ).toThrow(/no known price/);
-    // The large model is not used by harness B, so it need not be priced.
-    expect(
-      createRunner(
-        env({
-          ANTHROPIC_API_KEY: 'sk-test',
-          AGENT_HARNESS: 'agent-sdk',
-          AGENT_MODEL_LARGE: 'claude-unpriced-9',
-        }),
-      )?.harness,
-    ).toBe('agent-sdk');
+  it('drops Claude with a warning when it has no key, and keeps Gemini: Anthropic is optional', () => {
+    const { built } = build({ LLM_CHAIN: 'gemini:a,anthropic:b', GEMINI_API_KEY: 'g-test' });
+    expect(built.router?.chain.map((c) => c.id)).toEqual(['gemini:a']);
+    expect(built.dropped).toEqual([
+      { id: 'anthropic:b', why: expect.stringContaining('ANTHROPIC_API_KEY') as string },
+    ]);
+  });
+
+  it('keeps Claude only with a key AND a price, because its spend must be counted', () => {
+    const noPrice = build({
+      LLM_CHAIN: 'gemini:a,anthropic:b',
+      GEMINI_API_KEY: 'g-test',
+      ANTHROPIC_API_KEY: 'sk-test',
+    });
+    expect(noPrice.built.router?.chain.map((c) => c.id)).toEqual(['gemini:a']);
+    expect(noPrice.built.dropped[0]?.why).toContain('LLM_PRICES');
+
+    const priced = build({
+      LLM_CHAIN: 'gemini:a,anthropic:b',
+      GEMINI_API_KEY: 'g-test',
+      ANTHROPIC_API_KEY: 'sk-test',
+      LLM_PRICES: '{"anthropic:b":{"input":"1","output":"5"}}',
+    });
+    expect(priced.built.router?.chain.map((c) => c.id)).toEqual(['gemini:a', 'anthropic:b']);
+  });
+
+  it('wants a price for Gemini too on the paid tier, but not on the free one', () => {
+    const free = build({ LLM_CHAIN: 'gemini:a', GEMINI_API_KEY: 'g-test' });
+    expect(free.built.router).not.toBeNull();
+    const paid = build({ LLM_CHAIN: 'gemini:a', GEMINI_API_KEY: 'g-test', GEMINI_TIER: 'paid' });
+    expect(paid.built.router).toBeNull();
+    expect(paid.built.dropped[0]?.why).toContain('LLM_PRICES');
+  });
+
+  it('warns, at boot, about a free-tier Gemini model with no limits, and never guesses any', () => {
+    const { built } = build({ LLM_CHAIN: 'gemini:a', GEMINI_API_KEY: 'g-test' });
+    expect(built.warnings.join(' ')).toContain('no request limits for gemini:a');
+    const withLimits = build({
+      LLM_CHAIN: 'gemini:a',
+      GEMINI_API_KEY: 'g-test',
+      GEMINI_LIMITS: '{"a":{"rpm":5,"rpd":20}}',
+    });
+    expect(withLimits.built.warnings).toEqual([]);
+  });
+
+  it('needs no key at all to replay: nothing is ever sent', () => {
+    const { e, built } = build({ LLM_CHAIN: 'gemini:a,anthropic:b', LLM_CACHE: 'replay' });
+    expect(createRunner(e, built)).not.toBeNull();
+    expect(built.dropped).toEqual([]);
+  });
+
+  it('never puts a key in a warning or a dropped reason', () => {
+    const { built } = build({
+      LLM_CHAIN: 'gemini:a,anthropic:b',
+      ANTHROPIC_API_KEY: 'sk-secret-123',
+    });
+    expect(JSON.stringify(built)).not.toContain('sk-secret-123');
+  });
+
+  it('passes the escalation setting and the tool-call limit from the environment', () => {
+    const base = { LLM_CHAIN: 'gemini:a,gemini:b', GEMINI_API_KEY: 'g-test' };
+    const on = build({ ...base, AGENT_ESCALATION: 'true', LLM_MAX_TOOL_CALLS: '6' });
+    expect(on.e.AGENT_ESCALATION).toBe(true);
+    expect(on.e.LLM_MAX_TOOL_CALLS).toBe(6);
+    expect(env(base).AGENT_ESCALATION).toBe(false); // off unless asked for
+    expect(env(base).LLM_MAX_TOOL_CALLS).toBe(4);
   });
 });

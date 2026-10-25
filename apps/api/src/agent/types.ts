@@ -1,33 +1,18 @@
 // The seam between the service (queue, persistence, audit) and a harness (how the investigation is
-// actually carried out). Harness A, the hand-rolled loop, implements `AgentRunner`; Harness B, the
-// Claude Agent SDK, will implement the same interface in P11 and be swapped in by AGENT_HARNESS.
+// actually carried out). Two harnesses implement `AgentRunner` (ADR-018): the tool-use loop and the
+// single-shot harness, chosen by AGENT_HARNESS. The scripted demo agent implements it too.
 import type { AgentProposalContent, ReasonCode } from '@ziro/core/domain';
+import type { Attempt } from '../llm/router.js';
 import type { DegradedReason } from './degraded.js';
-import type { Usage } from './pricing.js';
 import type { Toolbox } from './tools/toolbox.js';
 
-export type HarnessName = 'loop' | 'agent-sdk';
+export type HarnessName = 'loop' | 'single-shot';
 
 /** An exception to investigate, as the service loaded it. */
 export interface ExceptionToInvestigate {
   readonly id: string;
   /** What the matching rules concluded; the fallback reason code if the agent cannot conclude. */
   readonly ruleReasonCode: ReasonCode;
-}
-
-/** One model request, ready to be written to llm_calls. */
-export interface LlmCallRecord {
-  /** The exception it was for, or null when one conversation covered a cluster. */
-  readonly exceptionId: string | null;
-  readonly model: string;
-  readonly harness: HarnessName;
-  readonly usage: Usage;
-  readonly costMicroUsd: bigint;
-  readonly latencyMs: number;
-  /** sha-256 of system prompt, tool set and opening message. */
-  readonly promptHash: string;
-  readonly stopReason: string | null;
-  readonly requestId: string | null;
 }
 
 /** What a harness may use. Everything outside the model call itself is the service's business. */
@@ -37,8 +22,11 @@ export interface InvestigationContext {
   readonly toolbox: Toolbox;
   /** Throws if the kill switch is on or the daily LLM budget is spent. Awaited before every request. */
   gate(): Promise<void>;
-  /** Persists the call at once (spend is recorded even if the investigation later fails); returns its id. */
-  recordLlmCall(call: LlmCallRecord): Promise<string>;
+  /**
+   * Persists one model attempt at once (spend is recorded even if the investigation later fails, and so is
+   * a failed attempt that the router fell back from); returns the stored call's id.
+   */
+  recordLlmCall(attempt: Attempt): Promise<string | null>;
 }
 
 /** An investigation's answer for one exception, before the service stores it. */
@@ -46,6 +34,8 @@ export interface ProposalDraft {
   readonly content: AgentProposalContent;
   /** The model that produced the conclusion; null when none did. */
   readonly model: string | null;
+  /** Its provider (gemini, anthropic); null when no model concluded. */
+  readonly provider?: string | null;
   /** Why the harness changed or limited what the model said. */
   readonly harnessFindings: string[];
   /** The request that produced the conclusion. */
@@ -73,29 +63,16 @@ export interface AgentRunner {
 
 /** What a harness may tell a measurement beyond what the toolbox shows. Optional; production passes none. */
 export interface RunnerTelemetry {
-  /** The model asked for a tool that does not exist (harness B never reaches the toolbox with one). */
+  /** The model asked for a tool that does not exist. */
   unknownTool(exceptionIds: readonly string[], name: string): void;
-  /** The cost the harness's own library estimated, in micro-USD, for comparison with ours. */
-  reportedCost(exceptionIds: readonly string[], microUsd: number): void;
 }
 
 /** Why no more model calls will be made for now. The exception stays open for a later run. */
-export type HaltReason =
-  | 'kill_switch'
-  | 'daily_budget'
-  /** The provider says a usage or spend limit is reached (a 429 with no retry-after, or 402). */
-  | 'provider_limit'
-  /** The provider rejected our key (401 or 403): every call will fail alike. */
-  | 'model_auth'
-  /** The circuit breaker: several investigations in a row found the model API unavailable. */
-  | 'model_unavailable';
+export type HaltReason = 'kill_switch' | 'daily_budget';
 
 export const HALT_MESSAGE: Record<HaltReason, string> = {
   kill_switch: 'the agent kill switch is on',
   daily_budget: 'the daily LLM budget is spent',
-  provider_limit: 'the model provider says a usage or spend limit has been reached',
-  model_auth: 'the model provider rejected our API key',
-  model_unavailable: 'the model API has not been answering, so the agent is paused',
 };
 
 /** Thrown by `gate` when no more LLM calls may be made. The job stops; the exception stays open. */

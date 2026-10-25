@@ -1,13 +1,18 @@
-// npm run eval -- --seed 42 --preset eval --configs rules,small,large,harnessB --repeats 3 --max-cost-usd 30 --confirm
-// npm run eval:smoke            (demo preset, one repeat, hard cap, skipped without an API key)
+// npm run eval -- --seed 42 --preset eval --configs rules,lite-single --sample 10 --max-requests 40 --confirm
+// npm run eval -- --configs rules,lite-single,flash-single --cache replay     (free: answers from a record)
+// npm run eval:smoke            (demo preset, one repeat, hard caps, skipped without an API key)
 // npm run eval -- stress        (rules throughput only; free)
 //
-// Anything that calls a model does NOTHING until --confirm, and needs --max-cost-usd: without them it prints
-// what it would do and what that is expected to cost, and exits. The API key is not even read until then.
+// Anything that sends a request to a model does NOTHING until --confirm, and needs a ceiling
+// (--max-requests for Gemini's free tier, --max-cost-usd for Claude): without them it prints what it would do
+// and exits, and the API keys are not used. With --cache replay nothing is sent, so it runs without either.
+//
+// Which model "lite", "flash" and "claude" mean comes from LLM_CHAIN (the first and second Gemini entries and
+// the first Anthropic entry). Model ids, request limits and prices all come from the environment: none is in
+// this file.
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runMatcher } from '@ziro/core/matcher';
 import {
@@ -20,16 +25,19 @@ import {
   writeResult,
   writeStress,
 } from '@ziro/evals';
-import { costMicroUsd, ratesFor } from '../agent/pricing.js';
 import { skipReason } from '../agent/triage.js';
+import type { Env } from '../config/env.js';
 import { loadDotEnv } from '../config/dotenv.js';
 import { datasetDir } from '../demo/dataset.js';
+import { CACHE_MODES, type CacheMode, JsonlCacheStore } from '../llm/cache.js';
+import { MemoryLimiter } from '../llm/limiter.js';
+import { estimateCostMicroUsd } from '../llm/pricing.js';
 import { loadDomainDataset, matcherConfigFor } from '../matcher-eval/dataset.js';
-import { type EvalPlan, isPaid, parseEvalArgs, refusal, spendsMoney } from './args.js';
+import { type EvalPlan, callsModel, isPaid, parseEvalArgs, refusal, spendsMoney } from './args.js';
 import { CostGuard } from './cost-guard.js';
 import { type OverlayPlan, prepareOverlay } from './overlay.js';
-import { runOnce } from './pipeline.js';
-import { buildRunner, modelFor } from './runners.js';
+import { evalEnv, runOnce } from './pipeline.js';
+import { buildRunner, entryFor, harnessOf, rolesOf } from './runners.js';
 import { measureThroughput } from './stress.js';
 
 const REPO = fileURLToPath(new URL('../../../../', import.meta.url));
@@ -37,35 +45,33 @@ const DEFAULTS = {
   out: join(REPO, 'packages/evals/results'),
   stressDir: join(REPO, 'data/stress'),
 };
-/** Cheapest first, so a cost cap or a failure costs the least before it shows. */
-const ORDER: readonly ConfigName[] = ['rules', 'small', 'harnessB', 'large'];
-/** The guess the cost estimate rests on, until a pilot replaces it with a measurement. */
+/** Rules first, then the cheapest to run, so a cap or a failure costs the least before it shows. */
+const ORDER: readonly ConfigName[] = [
+  'rules',
+  'lite-single',
+  'lite-loop',
+  'flash-single',
+  'claude-single',
+  'claude-loop',
+];
+/** The guess the cost estimate for a charging provider rests on, until a pilot replaces it with a measurement. */
 const GUESS = { inputTokens: 30_000, outputTokens: 3_000 };
+
+/** The settings of the model layer, as text, from the environment (after .env has been read). */
+const LLM_VARS = [
+  'GEMINI_API_KEY',
+  'ANTHROPIC_API_KEY',
+  'GEMINI_TIER',
+  'LLM_CHAIN',
+  'GEMINI_LIMITS',
+  'LLM_PRICES',
+  'LLM_MAX_TOOL_CALLS',
+  'LLM_MAX_WAIT_SECONDS',
+] as const;
+const KEY_VARS = ['GEMINI_API_KEY', 'ANTHROPIC_API_KEY'] as const;
 
 const usd = (micro: number | bigint): string =>
   `$${(Number(micro) / 1_000_000).toFixed(Number(micro) < 1_000_000 ? 4 : 2)}`;
-
-function sdkVersion(): string | null {
-  try {
-    const entry = createRequire(import.meta.url).resolve('@anthropic-ai/claude-agent-sdk');
-    let dir = dirname(entry);
-    for (let i = 0; i < 4; i += 1) {
-      try {
-        const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {
-          name?: string;
-          version?: string;
-        };
-        if (pkg.name === '@anthropic-ai/claude-agent-sdk') return pkg.version ?? null;
-      } catch {
-        // keep climbing
-      }
-      dir = dirname(dir);
-    }
-  } catch {
-    // not installed
-  }
-  return null;
-}
 
 async function handledCount(
   dataDir: string,
@@ -84,45 +90,56 @@ async function handledCount(
 function describePlan(
   plan: EvalPlan,
   info: { orders: number; total: number; handled: number },
-  models: { small: string; large: string },
+  env: Env,
+  cache: CacheMode,
   overlay: OverlayPlan | null,
 ): string[] {
-  const paidConfigs = ORDER.filter((c) => plan.configs.includes(c) && spendsMoney(c));
+  const roles = rolesOf(env.LLM_CHAIN);
+  const modelConfigs = ORDER.filter((c) => plan.configs.includes(c) && callsModel(c));
   const runsOf = (c: ConfigName) =>
     c === 'rules'
       ? plan.repeats
       : plan.repeats * plan.legs.length + (plan.clusterConfigs.includes(c) ? plan.repeats : 0);
+  const investigations = Math.min(info.handled, plan.sample ?? info.handled);
   const lines = [
-    `dataset      ${plan.preset}, seed ${plan.seed}: ${info.orders} orders, ${info.total} exceptions, ${info.handled} go to an agent`,
-    `configs      ${ORDER.filter((c) => plan.configs.includes(c)).join(', ')}   ${paidConfigs.length > 0 ? `legs ${plan.legs.join(', ')}   ` : ''}repeats ${plan.repeats}   concurrency ${plan.concurrency}`,
+    `dataset      ${plan.preset}, seed ${plan.seed}: ${info.orders} orders, ${info.total} exceptions, ${info.handled} go to an agent${plan.sample === null ? '' : ` (--sample: only the first ${investigations} are investigated; results are labelled as a sample)`}`,
+    `configs      ${ORDER.filter((c) => plan.configs.includes(c)).join(', ')}   ${modelConfigs.length > 0 ? `legs ${plan.legs.join(', ')}   ` : ''}repeats ${plan.repeats}   concurrency ${plan.concurrency}   cache ${cache}${cache === 'replay' ? ' (no request is sent)' : ''}`,
   ];
   if (overlay !== null) {
     lines.push(
       `overlay      ${overlay.items.length} payloads planted on ledger memos / bank narrations of those exceptions (${overlay.slotCount} records could take one${overlay.shortfall > 0 ? `; ${overlay.shortfall} short` : ''}${overlay.rejected.length > 0 ? `; ${overlay.rejected.length} placements dropped because they changed the rules` : ''})`,
     );
   }
-  let total = 0n;
-  for (const c of paidConfigs) {
-    const model = modelFor(c, models) ?? '';
-    const per =
-      ratesFor(model) === undefined
+  let requests = 0;
+  let money = 0n;
+  for (const c of modelConfigs) {
+    const entry = entryFor(c, roles);
+    const runs = runsOf(c);
+    const perInvestigation = harnessOf(c) === 'loop' ? env.LLM_MAX_TOOL_CALLS + 1 : 1;
+    const asked = runs * investigations * perInvestigation;
+    const limit = entry === null ? undefined : env.GEMINI_LIMITS[entry.model]?.rpd;
+    const rates = entry === null ? undefined : env.LLM_PRICES[entry.id];
+    if (!spendsMoney(c)) requests += asked;
+    const cost =
+      rates === undefined
         ? null
-        : costMicroUsd(model, {
+        : estimateCostMicroUsd(rates, {
             inputTokens: GUESS.inputTokens,
             outputTokens: GUESS.outputTokens,
+            thoughtTokens: 0,
             cacheReadTokens: 0,
             cacheWriteTokens: 0,
-          });
-    const runCost = per === null ? null : per * BigInt(info.handled);
-    if (runCost !== null) total += runCost * BigInt(runsOf(c));
+          }) * BigInt(runs * investigations);
+    if (spendsMoney(c) && cost !== null) money += cost;
     lines.push(
-      `  ${c.padEnd(9)} ${model.padEnd(20)} ${runsOf(c)} run(s) x ${info.handled} investigations   ~${runCost === null ? '?' : usd(runCost)} per run (a GUESS: ${GUESS.inputTokens / 1000}k tokens in, ${GUESS.outputTokens / 1000}k out each, no caching)`,
+      `  ${c.padEnd(13)} ${(entry?.id ?? 'NO MODEL IN LLM_CHAIN').padEnd(34)} ${runs} run(s) x ${investigations} investigations   up to ${asked} requests${limit === undefined ? '' : ` (${((asked / limit) * 100).toFixed(0)}% of its ${limit}/day free-tier limit)`}${spendsMoney(c) ? `   ~${cost === null ? '?' : usd(cost)} (a GUESS: ${GUESS.inputTokens / 1000}k tokens in, ${GUESS.outputTokens / 1000}k out each)` : ''}`,
     );
   }
-  if (paidConfigs.length > 0)
+  if (modelConfigs.length > 0 && cache !== 'replay') {
     lines.push(
-      `estimate     about ${usd(total)} in all, if the guess is right; a pilot replaces the guess with a measurement`,
+      `estimate     up to ${requests} free-tier requests${money > 0n ? ` and about ${usd(money)} for Claude` : ''}. The free-tier day count is kept in this process only: check aistudio.google.com/rate-limit for what today has left`,
     );
+  }
   return lines;
 }
 
@@ -133,10 +150,11 @@ function write(
   leg: LegName,
   cluster: boolean,
   runs: RunRecord[],
-  models: { small: string; large: string },
+  env: Env,
 ): void {
+  const roles = rolesOf(env.LLM_CHAIN);
   const file: ResultFile = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     preset: plan.preset,
     seed: plan.seed,
     config,
@@ -145,28 +163,30 @@ function write(
     generatedAt: new Date().toISOString(),
     versions: {
       node: process.version,
-      agentSdk: config === 'harnessB' ? sdkVersion() : null,
-      models,
+      models: {
+        lite: roles.lite?.model ?? null,
+        flash: roles.flash?.model ?? null,
+        claude: roles.claude?.model ?? null,
+      },
     },
     runs,
   };
   console.log(`  wrote ${writeResult(out, file)}`);
 }
 
+const USAGE = `usage: npm run eval -- [run|smoke|stress] [--preset eval] [--seed 42]
+         [--configs rules,lite-loop,lite-single,flash-single | + claude-loop,claude-single]
+         [--repeats 1] [--legs plain,attacked] [--cluster lite-single|none] [--injections 16]
+         [--concurrency 4] [--sample N] [--max-requests N] [--max-cost-usd N]
+         [--cache off|record|replay] [--confirm] [--out dir]`;
+
 async function main(): Promise<number> {
   const parsed = parseEvalArgs(process.argv.slice(2), DEFAULTS);
   if ('error' in parsed) {
-    console.error(
-      `${parsed.error}\n\nusage: npm run eval -- [run|smoke|stress] [--preset eval] [--seed 42] [--configs rules,small,large,harnessB] [--repeats 3]\n         [--legs plain,attacked] [--cluster small|none] [--injections 16] [--concurrency 4] [--max-cost-usd N] [--confirm] [--out dir]`,
-    );
+    console.error(`${parsed.error}\n\n${USAGE}`);
     return 2;
   }
   const plan = parsed.plan;
-  const refused = refusal(plan);
-  if (refused !== null) {
-    console.error(refused);
-    return 2;
-  }
 
   if (plan.command === 'stress') {
     const result = await measureThroughput({
@@ -181,6 +201,46 @@ async function main(): Promise<number> {
     return 0;
   }
 
+  // The model layer's settings are read from .env so the plan can name the models. The API keys are put back
+  // as they were unless this is a confirmed run that sends requests: a dry run never uses one.
+  const keys = Object.fromEntries(KEY_VARS.map((k) => [k, process.env[k]]));
+  loadDotEnv();
+  const cacheText = plan.cache ?? process.env['LLM_CACHE'] ?? 'off';
+  if (!(CACHE_MODES as readonly string[]).includes(cacheText)) {
+    console.error(`LLM_CACHE must be ${CACHE_MODES.join(', ')}`);
+    return 2;
+  }
+  const cache = cacheText as CacheMode;
+  const refused = refusal(plan, cache);
+  if (refused !== null) {
+    console.error(refused);
+    return 2;
+  }
+  const paid = isPaid(plan, cache);
+  if (!(paid && plan.confirm)) {
+    for (const k of KEY_VARS) {
+      if (keys[k] === undefined) delete process.env[k];
+      else process.env[k] = keys[k];
+    }
+  }
+  const llmEnv: Record<string, string | undefined> = Object.fromEntries(
+    LLM_VARS.map((k) => [k, process.env[k]]),
+  );
+  const cacheFile = process.env['LLM_CACHE_FILE'] ?? join(REPO, 'data/llm-cache.jsonl');
+
+  let env: Env;
+  try {
+    env = evalEnv({
+      llm: { ...llmEnv, LLM_CACHE: cache },
+      cluster: false,
+      concurrency: plan.concurrency,
+      dataDir: '.',
+    });
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    return 2;
+  }
+
   const dataDir = await datasetDir(plan.preset, plan.seed);
   const truth = indexTruth(
     parseTruth(JSON.parse(readFileSync(join(dataDir, 'truth.json'), 'utf8'))),
@@ -188,22 +248,7 @@ async function main(): Promise<number> {
   const orders = truth.truth.meta.config.orders;
   const counts = await handledCount(dataDir, plan.preset, plan.seed);
 
-  // The key is read only for a confirmed run that spends money.
-  const paid = isPaid(plan);
-  if (paid && plan.confirm) loadDotEnv();
-  const models = {
-    small: process.env['AGENT_MODEL_SMALL'] ?? 'claude-haiku-5-5',
-    large: process.env['AGENT_MODEL_LARGE'] ?? 'claude-sonnet-5-5',
-  };
-  const unpriced = paid
-    ? [models.small, models.large].filter((m) => ratesFor(m) === undefined)
-    : [];
-  if (unpriced.length > 0) {
-    console.error(`no known price for ${unpriced.join(', ')}; add it to agent/pricing.ts first`);
-    return 2;
-  }
-
-  const wantsAttack = plan.legs.includes('attacked') && plan.configs.some(spendsMoney);
+  const wantsAttack = plan.legs.includes('attacked') && plan.configs.some(callsModel);
   const overlay = wantsAttack
     ? await prepareOverlay({
         sourceDir: dataDir,
@@ -213,33 +258,43 @@ async function main(): Promise<number> {
       })
     : null;
   try {
-    for (const line of describePlan(plan, { orders, ...counts }, models, overlay))
+    for (const line of describePlan(plan, { orders, ...counts }, env, cache, overlay))
       console.log(line);
+    if (plan.maxRequests !== null)
+      console.log(`ceiling      ${plan.maxRequests} requests for the whole invocation`);
     if (plan.maxCostUsd !== null)
       console.log(
-        `ceiling      ${usd(Math.round(plan.maxCostUsd * 1_000_000))} for the whole invocation`,
+        `ceiling      ${usd(Math.round(plan.maxCostUsd * 1_000_000))} of money for the whole invocation`,
       );
 
     // What will actually run: a smoke run with no key drops the model configs and keeps the free ones.
     const active = { configs: [...plan.configs], clusterConfigs: [...plan.clusterConfigs] };
-    let apiKey = '';
     if (paid) {
       if (!plan.confirm) {
         console.log(
-          '\nNothing was run and no key was read. To go ahead, add --confirm (and keep --max-cost-usd).',
+          '\nNothing was run and no key was used. To go ahead, add --confirm (and keep the ceilings).',
         );
         return 0;
       }
-      apiKey = process.env['ANTHROPIC_API_KEY'] ?? '';
-      if (apiKey === '') {
+    }
+    if (cache !== 'replay') {
+      const roles = rolesOf(env.LLM_CHAIN);
+      const problems: string[] = [];
+      for (const c of active.configs.filter(callsModel)) {
+        const entry = entryFor(c, roles);
+        const keyName = entry?.provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'GEMINI_API_KEY';
+        if (entry === null) problems.push(`${c}: LLM_CHAIN has no model for it`);
+        else if ((process.env[keyName] ?? '') === '') problems.push(`${c}: no ${keyName}`);
+      }
+      if (problems.length > 0) {
         if (plan.command === 'smoke') {
           console.log(
-            '\nSKIPPED: no ANTHROPIC_API_KEY, so the model configs were not run. The free rules check still runs.',
+            `\nSKIPPED: ${problems.join('; ')}, so the model configs were not run. The free rules check still runs.`,
           );
-          active.configs = active.configs.filter((c) => !spendsMoney(c));
+          active.configs = active.configs.filter((c) => !callsModel(c));
           active.clusterConfigs = [];
         } else {
-          console.error('\nno ANTHROPIC_API_KEY in the environment or .env');
+          console.error(`\n${problems.join('\n')}`);
           return 2;
         }
       }
@@ -248,7 +303,12 @@ async function main(): Promise<number> {
     const out = plan.out ?? mkdtempSync(join(tmpdir(), 'ziro-eval-smoke-'));
     const guard = new CostGuard(
       plan.maxCostUsd === null ? null : BigInt(Math.round(plan.maxCostUsd * 1_000_000)),
+      plan.maxRequests,
     );
+    // One limiter and one cache for the whole invocation: the daily allowance is shared by every run of a
+    // model, and an answer recorded by one run is there for the next.
+    const limiter = new MemoryLimiter();
+    const cacheStore = new JsonlCacheStore(cacheFile);
     const failures: string[] = [];
     let stopped = false;
 
@@ -264,7 +324,6 @@ async function main(): Promise<number> {
               stopped = true;
               break;
             }
-            const created: (() => void)[] = [];
             const record = await runOnce({
               dataDir: leg === 'attacked' && overlay !== null ? overlay.dir : dataDir,
               preset: plan.preset,
@@ -276,15 +335,17 @@ async function main(): Promise<number> {
               cluster,
               concurrency: plan.concurrency,
               guard,
-              models,
+              llmEnv,
+              sample: callsModel(config) ? plan.sample : null,
+              cache: callsModel(config) ? cache : 'off',
               overlay: leg === 'attacked' ? (overlay?.items ?? []) : [],
-              model: modelFor(config, models),
-              makeRunner: (telemetry) => {
-                const built = buildRunner(config, { apiKey, ...models }, telemetry);
-                created.push(built.close);
+              entry: entryFor(config, rolesOf(env.LLM_CHAIN)),
+              makeRunner: (runEnv) => {
+                const built = buildRunner(config, runEnv, { limiter, cacheStore });
+                if (built.unavailable !== null) throw new Error(built.unavailable);
                 return built.runner;
               },
-            }).finally(() => created.forEach((close) => close()));
+            });
             runs.push(record);
             const g = record.groups;
             console.log(
@@ -292,13 +353,17 @@ async function main(): Promise<number> {
                 (record.reasonCodes === null
                   ? ''
                   : `, codes ${record.reasonCodes.correct}/${record.reasonCodes.handled}`) +
-                `, rejected ${record.verifier.rejected}, cost ${usd(record.cost.totalMicroUsd)} (spent ${usd(guard.spentMicroUsd)}), ${(record.durationMs / 1000).toFixed(1)}s` +
+                `, rejected ${record.verifier.rejected}` +
+                (callsModel(config)
+                  ? `, ${record.cost.requests} requests${record.cost.replayed > 0 ? ` (+${record.cost.replayed} replayed)` : ''}${record.cost.fallbacks > 0 ? `, ${record.cost.fallbacks} fell back` : ''}, cost ${usd(record.cost.totalMicroUsd)}${record.cost.estPaidMicroUsd === null ? '' : ` (${usd(record.cost.estPaidMicroUsd)} at paid prices)`}`
+                  : '') +
+                `, ${(record.durationMs / 1000).toFixed(1)}s` +
                 (record.incomplete ? `  INCOMPLETE: ${record.incompleteReason}` : ''),
             );
             if (g.falseMatches > 0 && plan.command === 'smoke')
               failures.push(`${config}: ${g.falseMatches} false match(es)`);
           }
-          if (runs.length > 0) write(plan, out, config, leg, cluster, runs, models);
+          if (runs.length > 0) write(plan, out, config, leg, cluster, runs, env);
           if (config === 'rules' && runs.length > 1) {
             const same = runs.every(
               (r) =>
@@ -324,9 +389,11 @@ async function main(): Promise<number> {
     }
 
     console.log(
-      `\nspent ${usd(guard.spentMicroUsd)}${guard.cap === null ? '' : ` of ${usd(guard.cap)}`}${stopped ? '  (stopped early: the cap was reached)' : ''}`,
+      `\nsent ${guard.requests} request(s)${guard.requestCap === null ? '' : ` of ${guard.requestCap}`}; spent ${usd(guard.spentMicroUsd)}${guard.cap === null ? '' : ` of ${usd(guard.cap)}`}${stopped ? `  (stopped early: ${guard.why ?? 'a cap was reached'})` : ''}`,
     );
     if (plan.command === 'smoke') {
+      if (guard.requestCap !== null && guard.requests > guard.requestCap * 1.5)
+        failures.push('requests far exceeded the cap');
       if (guard.cap !== null && guard.spentMicroUsd > guard.cap + guard.cap / 2n)
         failures.push('spend far exceeded the cap');
       if (failures.length > 0) {

@@ -7,19 +7,19 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import type { Worker } from 'bullmq';
+import { Redis } from 'ioredis';
 import { ENV } from '../config/config.module.js';
 import type { Env } from '../config/env.js';
-import { DbModule } from '../db/db.module.js';
+import { DB, DbModule } from '../db/db.module.js';
+import { PgCacheStore } from '../llm/cache.pg.js';
+import { type BuiltRouter, buildRouter } from '../llm/factory.js';
+import { RedisLimiter } from '../llm/limiter.js';
 import { ReviewModule } from '../review/review.module.js';
-import { AnthropicLlmClient } from './anthropic-client.js';
-import { AGENT_HEALTH, AGENT_RUNNER, AgentService } from './agent.service.js';
+import { AGENT_RUNNER, AgentService, LLM_ROUTER } from './agent.service.js';
 import { AgentController, AgentStatusController } from './agent.controller.js';
-import type { LlmClient } from './llm.js';
-import { LoopRunner, type LoopRunnerOptions } from './loop-runner.js';
-import { AgentHealth } from './health.js';
-import { ratesFor } from './pricing.js';
-import { ResilientRunner } from './resilient-runner.js';
-import { SdkRunner } from './sdk-runner.js';
+import { DEFAULT_LIMITS } from './budget.js';
+import { LoopRunner } from './loop-runner.js';
+import { SingleShotRunner } from './single-shot.js';
 import {
   BullInvestigationQueue,
   INVESTIGATION_QUEUE,
@@ -27,52 +27,23 @@ import {
   startInvestigationWorker,
 } from './queue.js';
 import type { AgentRunner } from './types.js';
+import type { Executor } from '../db/executor.js';
+
+const LLM_REDIS = Symbol('LLM_REDIS');
 
 /**
- * The harness named by AGENT_HARNESS, or none when there is no API key (the free replay and the rest
- * of the app work without one). A harness that cannot work is a boot failure, not a silent no-op.
+ * The harness named by AGENT_HARNESS on the models LLM_CHAIN names, or none when no model in the chain can
+ * be used (the rules, the review console and the replay work without one). A chain entry that cannot be
+ * used is dropped with a warning in `built`, never a boot failure.
  */
-export function createRunner(
-  env: Env,
-  health: AgentHealth = new AgentHealth(),
-): AgentRunner | null {
-  if (!env.ANTHROPIC_API_KEY) return null;
-  const base = createHarness(env, env.ANTHROPIC_API_KEY);
-  // Whatever the harness, a model API that misbehaves degrades an investigation to a person, or pauses
-  // the agent; it never fails the job or the run (resilient-runner.ts).
-  return new ResilientRunner(base, { health });
-}
-
-function createHarness(env: Env, apiKey: string): AgentRunner {
-  // Harness B runs one model and does not escalate; it needs only the small model's price.
-  const models =
-    env.AGENT_HARNESS === 'agent-sdk'
-      ? ([['AGENT_MODEL_SMALL', env.AGENT_MODEL_SMALL]] as const)
-      : ([
-          ['AGENT_MODEL_SMALL', env.AGENT_MODEL_SMALL],
-          ['AGENT_MODEL_LARGE', env.AGENT_MODEL_LARGE],
-        ] as const);
-  for (const [name, model] of models) {
-    if (ratesFor(model) === undefined) {
-      throw new Error(
-        `${name} "${model}" has no known price; add it to agent/pricing.ts before using it`,
-      );
-    }
-  }
-  if (env.AGENT_HARNESS === 'agent-sdk') {
-    return new SdkRunner({ apiKey, model: env.AGENT_MODEL_SMALL });
-  }
-  return new LoopRunner(loopRunnerOptions(env, AnthropicLlmClient.fromApiKey(apiKey)));
-}
-
-/** What the environment decides about the loop harness: its models and whether it may escalate. */
-export function loopRunnerOptions(env: Env, client: LlmClient): LoopRunnerOptions {
-  return {
-    client,
-    smallModel: env.AGENT_MODEL_SMALL,
-    largeModel: env.AGENT_MODEL_LARGE,
+export function createRunner(env: Env, built: BuiltRouter): AgentRunner | null {
+  if (built.router === null) return null;
+  const options = {
+    router: built.router,
     escalation: env.AGENT_ESCALATION,
+    limits: { ...DEFAULT_LIMITS, maxToolCalls: env.LLM_MAX_TOOL_CALLS },
   };
+  return env.AGENT_HARNESS === 'loop' ? new LoopRunner(options) : new SingleShotRunner(options);
 }
 
 /** Starts the worker in this process when AGENT_WORKER_ENABLED, and stops it with the app. */
@@ -84,6 +55,7 @@ export class AgentWorkerHost implements OnModuleInit, OnApplicationShutdown {
     @Inject(ENV) private readonly env: Env,
     private readonly agent: AgentService,
     @Inject(INVESTIGATION_QUEUE) private readonly queue: InvestigationQueue,
+    @Inject(LLM_REDIS) private readonly limiterRedis: Redis,
   ) {}
 
   onModuleInit(): void {
@@ -101,6 +73,7 @@ export class AgentWorkerHost implements OnModuleInit, OnApplicationShutdown {
   async onApplicationShutdown(): Promise<void> {
     await this.worker?.close();
     await this.queue.close?.();
+    this.limiterRedis.disconnect();
   }
 }
 
@@ -108,11 +81,40 @@ export class AgentWorkerHost implements OnModuleInit, OnApplicationShutdown {
   imports: [DbModule, ReviewModule],
   controllers: [AgentController, AgentStatusController],
   providers: [
-    { provide: AGENT_HEALTH, useFactory: (): AgentHealth => new AgentHealth() },
+    {
+      // The limiter's own connection, opened on first use: a boot with no model configured never connects.
+      provide: LLM_REDIS,
+      inject: [ENV],
+      useFactory: (env: Env): Redis =>
+        new Redis(env.REDIS_URL, {
+          lazyConnect: true,
+          maxRetriesPerRequest: 1,
+          connectTimeout: 3_000,
+        }),
+    },
+    {
+      provide: LLM_ROUTER,
+      inject: [ENV, DB, LLM_REDIS],
+      useFactory: (env: Env, db: Executor, redis: Redis): BuiltRouter => {
+        const log = new Logger('Llm');
+        const built = buildRouter(env, {
+          limiter: new RedisLimiter(redis),
+          ...(env.LLM_CACHE === 'off' ? {} : { cacheStore: new PgCacheStore(db) }),
+          warn: (message) => log.warn(message),
+        });
+        for (const warning of built.warnings) log.warn(warning);
+        if (built.router !== null) {
+          log.log(
+            `model chain: ${built.router.chain.map((e) => e.id).join(' > ')} (cache ${env.LLM_CACHE}, ${env.GEMINI_TIER} tier)`,
+          );
+        }
+        return built;
+      },
+    },
     {
       provide: AGENT_RUNNER,
-      inject: [ENV, AGENT_HEALTH],
-      useFactory: (env: Env, health: AgentHealth) => createRunner(env, health),
+      inject: [ENV, LLM_ROUTER],
+      useFactory: (env: Env, built: BuiltRouter) => createRunner(env, built),
     },
     {
       provide: INVESTIGATION_QUEUE,

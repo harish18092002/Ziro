@@ -4,16 +4,28 @@
 // are integer paise as strings.
 import { z } from 'zod';
 
-export const CONFIGS = ['rules', 'small', 'large', 'harnessB'] as const;
+// Which model a config calls is decided by LLM_CHAIN (the first Gemini entry is the lite model, the second the
+// flash model, the first Anthropic entry is Claude), so no model id appears here. The harness is part of the
+// name: loop = the model drives read-only tools, single = the harness gathers evidence and asks once.
+export const CONFIGS = [
+  'rules',
+  'lite-loop',
+  'lite-single',
+  'flash-single',
+  'claude-loop',
+  'claude-single',
+] as const;
 export type ConfigName = (typeof CONFIGS)[number];
 export const LEGS = ['plain', 'attacked'] as const;
 export type LegName = (typeof LEGS)[number];
 
 export const CONFIG_LABEL: Record<ConfigName, string> = {
   rules: 'rules only',
-  small: 'rules + agent, small model (harness A)',
-  large: 'rules + agent, large model (harness A)',
-  harnessB: 'rules + agent, Claude Agent SDK (harness B)',
+  'lite-loop': 'rules + agent, Gemini lite model, tool loop',
+  'lite-single': 'rules + agent, Gemini lite model, single-shot',
+  'flash-single': 'rules + agent, Gemini flash model, single-shot',
+  'claude-loop': 'rules + agent, Claude, tool loop (needs a funded key)',
+  'claude-single': 'rules + agent, Claude, single-shot (needs a funded key)',
 };
 
 const rate = z.number().nullable();
@@ -78,8 +90,16 @@ const runSchema = z.object({
   leg: z.enum(LEGS),
   repeat: z.number().int().min(1),
   clusterExceptions: z.boolean(),
-  harness: z.enum(['loop', 'agent-sdk']).nullable(),
+  harness: z.enum(['loop', 'single-shot']).nullable(),
+  provider: z.string().nullable(),
   model: z.string().nullable(),
+  /**
+   * How the model's answers were obtained: off = live requests; record = live, and kept; replay = every answer
+   * came from a record, so nothing was asked and the cost, request and latency figures are not a measurement.
+   */
+  cache: z.enum(['off', 'record', 'replay']),
+  /** Investigations actually run when --sample cut the list short; null for the whole dataset. */
+  sample: z.number().int().nullable(),
   /** The cost cap was hit, or the run stopped early; its numbers are partial. */
   incomplete: z.boolean(),
   incompleteReason: z.string().nullable(),
@@ -129,8 +149,17 @@ const runSchema = z.object({
       cacheRead: z.number(),
       cacheWrite: z.number(),
     }),
-    /** What the Agent SDK itself estimated, for comparison; null for harness A. */
-    sdkReportedMicroUsd: z.number().nullable(),
+    /** What it would cost at the paid list price (LLM_PRICES); null when no price was given. */
+    estPaidMicroUsd: z.number().nullable(),
+    /** Requests actually sent, failed attempts included, replays not. The free tier's scarce resource. */
+    requests: z.number(),
+    requestsPer1kOrders: z.number(),
+    /** Answers served from the cache instead of a request. */
+    replayed: z.number(),
+    /** Attempts that failed and sent the investigation to the next model. */
+    fallbacks: z.number(),
+    /** Requests as a share of the model's configured daily limit; null when no limit is known. */
+    quotaUsedOfDay: z.number().nullable(),
   }),
   latency: z.object({
     investigations: z.number(),
@@ -142,7 +171,7 @@ const runSchema = z.object({
 export type RunRecord = z.output<typeof runSchema>;
 
 export const resultFileSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   preset: z.string(),
   seed: z.number().int(),
   config: z.enum(CONFIGS),
@@ -152,8 +181,12 @@ export const resultFileSchema = z.object({
   generatedAt: z.string(),
   versions: z.object({
     node: z.string(),
-    agentSdk: z.string().nullable(),
-    models: z.object({ small: z.string(), large: z.string() }),
+    /** The models the chain named when the file was written: lite, flash and Claude, or null where none. */
+    models: z.object({
+      lite: z.string().nullable(),
+      flash: z.string().nullable(),
+      claude: z.string().nullable(),
+    }),
   }),
   runs: z.array(runSchema).min(1),
 });

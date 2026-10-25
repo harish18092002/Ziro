@@ -3,9 +3,9 @@
 // recorder. Redis holds only job envelopes (run and exception ids, attempt numbers): no record data.
 import { Logger } from '@nestjs/common';
 import { type ConnectionOptions, type Job, Queue, UnrecoverableError, Worker } from 'bullmq';
-import { LlmError } from './llm.js';
+import { CacheMissError } from '../llm/cache.js';
 import { type InvestigationJob, investigationJobSchema, jobKey } from './jobs.js';
-import { PricingError } from './pricing.js';
+import { PricingError } from '../llm/pricing.js';
 import { AgentHalted } from './types.js';
 
 export const INVESTIGATION_QUEUE = Symbol('INVESTIGATION_QUEUE');
@@ -84,7 +84,8 @@ function isFinal(error: unknown): boolean {
   return (
     error instanceof AgentHalted ||
     error instanceof PricingError ||
-    (error instanceof LlmError && !error.retryable)
+    // A replay that is missing an answer is missing it on every try.
+    error instanceof CacheMissError
   );
 }
 

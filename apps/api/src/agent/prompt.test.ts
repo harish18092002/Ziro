@@ -36,7 +36,7 @@ describe('systemPrompt', () => {
   });
 
   it('states the tool-call limit it was built with', () => {
-    expect(system).toContain('at most 8 tool calls');
+    expect(system).toContain('at most 4 tool calls');
     expect(systemPrompt({ maxToolCalls: 5 })).toContain('at most 5 tool calls');
   });
 

@@ -24,9 +24,10 @@ import {
 } from './agent.fixtures.js';
 import { AgentService, type AgentSettings } from './agent.service.js';
 import type { InvestigationJob } from './jobs.js';
-import { formatMicroUsd } from './pricing.js';
+import { formatMicroUsd } from '../llm/pricing.js';
+import { fakeResult } from '../llm/fake.provider.js';
 import { LoopRunner } from './loop-runner.js';
-import { asksFor, replyWith, result, ScriptedLlm, toolUse } from './scripted-llm.fixtures.js';
+import { asksFor, replyWith, result, scriptedRouter, toolCall } from './scripted-llm.fixtures.js';
 import {
   AgentHalted,
   type AgentRunner,
@@ -254,20 +255,30 @@ describe('process', () => {
     const run = await freshRun();
     const stub = new StubRunner(async (members, ctx) => {
       const id = await ctx.recordLlmCall({
-        exceptionId: members[0]?.id ?? null,
+        provider: 'anthropic',
         model: 'claude-haiku-5-5',
-        harness: 'loop',
-        usage: {
-          inputTokens: 10_000,
-          outputTokens: 2_000,
-          cacheReadTokens: 20_000,
-          cacheWriteTokens: 5_000,
+        meta: {
+          harness: 'loop',
+          exceptionId: members[0]?.id ?? null,
+          promptHash: 'a'.repeat(64),
         },
-        costMicroUsd: 2_825n,
+        outcome: 'ok',
+        errorKind: null,
+        cached: false,
+        result: fakeResult({
+          usage: {
+            inputTokens: 10_000,
+            outputTokens: 2_000,
+            thoughtTokens: 300,
+            cacheReadTokens: 20_000,
+            cacheWriteTokens: 5_000,
+          },
+          stopReason: 'end_turn',
+          requestId: 'req_x',
+        }),
         latencyMs: 1234,
-        promptHash: 'a'.repeat(64),
-        stopReason: 'end_turn',
-        requestId: 'req_x',
+        costMicroUsd: 2_825n,
+        estCostMicroUsd: 2_900n,
       });
       return members.map((m) =>
         draftFor(
@@ -319,10 +330,16 @@ describe('process', () => {
     expect(call).toMatchObject({
       exceptionId: run.exception,
       tokensIn: 10_000,
-      tokensOut: 2_000,
+      // thinking is billed as output, so the column holds both
+      tokensOut: 2_300,
       cacheReadTokens: 20_000,
       cacheWriteTokens: 5_000,
       costUsd: '0.002825',
+      estCostUsd: '0.002900',
+      provider: 'anthropic',
+      outcome: 'ok',
+      errorKind: null,
+      cached: false,
       latencyMs: 1234,
       harness: 'loop',
       stopReason: 'end_turn',
@@ -515,31 +532,34 @@ describe('process', () => {
 describe('the whole pipeline, with a scripted model', () => {
   it('investigates, records every call, stores a grounded proposal and audits it', async () => {
     const run = await freshRun();
-    const llm = new ScriptedLlm([
-      asksFor([toolUse('t1', 'get_payment', { id: 'pay_F1' })]),
-      replyWith([
-        result(run.exception, {
-          reasonCode: 'DUPLICATE_PAYMENT',
-          evidence: [
-            { call: 0, keyFinding: 'one candidate payment' },
-            { call: 1, keyFinding: 'pay_F1 is captured for 500 paise' },
+    const sr = scriptedRouter(
+      [
+        [
+          'anthropic:claude-haiku-5-5',
+          [
+            asksFor([toolCall('t1', 'get_payment', { id: 'pay_F1' })]),
+            replyWith([
+              result(run.exception, {
+                reasonCode: 'DUPLICATE_PAYMENT',
+                evidence: [
+                  { call: 0, keyFinding: 'one candidate payment' },
+                  { call: 1, keyFinding: 'pay_F1 is captured for 500 paise' },
+                ],
+                links: [
+                  { recordType: 'ledger_entry', recordId: run.ledger },
+                  { recordType: 'rzp_payment', recordId: run.payment },
+                ],
+                verdict: 'MATCH_PROPOSED',
+                suggestedAction: 'ACCEPT_MATCH',
+                confidence: 0.95,
+              }),
+            ]),
           ],
-          links: [
-            { recordType: 'ledger_entry', recordId: run.ledger },
-            { recordType: 'rzp_payment', recordId: run.payment },
-          ],
-          verdict: 'MATCH_PROPOSED',
-          suggestedAction: 'ACCEPT_MATCH',
-          confidence: 0.95,
-        }),
-      ]),
-    ]);
-    const runner = new LoopRunner({
-      client: llm,
-      smallModel: 'claude-haiku-5-5',
-      largeModel: 'claude-sonnet-5-5',
-      escalation: false,
-    });
+        ],
+      ],
+      { prices: '{"anthropic:claude-haiku-5-5":{"input":"0.10","output":"0.50"}}' },
+    );
+    const runner = new LoopRunner({ router: sr.router, escalation: false });
     const s = new AgentService(db, settings(), runner);
     expect(await s.process(job(run.runId, [run.exception, 1]))).toEqual({
       stored: 1,
@@ -556,7 +576,10 @@ describe('the whole pipeline, with a scripted model', () => {
     expect(
       calls.every(
         (c) =>
-          c.model === 'claude-haiku-5-5' && c.harness === 'loop' && c.exceptionId === run.exception,
+          c.model === 'claude-haiku-5-5' &&
+          c.provider === 'anthropic' &&
+          c.harness === 'loop' &&
+          c.exceptionId === run.exception,
       ),
     ).toBe(true);
     expect(calls[0]?.stopReason).toBe('tool_use');
@@ -578,22 +601,25 @@ describe('the whole pipeline, with a scripted model', () => {
 
   it('records the spend of a halted investigation, and stores nothing', async () => {
     const run = await freshRun();
-    const llm = new ScriptedLlm([
-      asksFor([toolUse('t1', 'get_fee_contract', { method: 'upi' })]),
-      replyWith([result(run.exception)]),
-    ]);
-    const runner = new LoopRunner({
-      client: llm,
-      smallModel: 'claude-haiku-5-5',
-      largeModel: 'claude-sonnet-5-5',
-      escalation: false,
-    });
+    const sr = scriptedRouter(
+      [
+        [
+          'anthropic:claude-haiku-5-5',
+          [
+            asksFor([toolCall('t1', 'get_fee_contract', { method: 'upi', amount_paise: 1000 })]),
+            replyWith([result(run.exception)]),
+          ],
+        ],
+      ],
+      { prices: '{"anthropic:claude-haiku-5-5":{"input":"0.10","output":"0.50"}}' },
+    );
+    const runner = new LoopRunner({ router: sr.router, escalation: false });
     const probe = new AgentService(db, settings(), null);
     // Room for exactly one request: it costs 200 micro-USD (1000 in, 200 out on Haiku 5.5).
     const budget = Number(formatMicroUsd((await probe.spentToday()) + 200n));
     const s = new AgentService(db, settings({ DAILY_LLM_BUDGET_USD: budget }), runner);
     await expect(s.process(job(run.runId, [run.exception, 1]))).rejects.toBeInstanceOf(AgentHalted);
-    expect(llm.calls).toBe(1);
+    expect(sr.calls()).toBe(1);
     expect(
       await db
         .select()

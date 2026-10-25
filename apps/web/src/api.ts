@@ -41,12 +41,33 @@ export interface Availability {
   chaos: { available: boolean; reason: string | null };
 }
 
-/** Whether the agent will take work. `paused` says why not; the rules run either way. */
+/** One model of the chain: usable, cooling, out of quota until a time, or switched off. */
+export interface ModelStatus {
+  id: string;
+  provider: string;
+  model: string;
+  state: 'ok' | 'cooling' | 'quota_exhausted' | 'disabled';
+  until: string | null;
+  why: string | null;
+  usedToday: number;
+  limitPerDay: number | null;
+}
+
+/**
+ * Whether the agent will take work. `paused` says why not (an operator switch); `exhausted` says no model in
+ * the chain can answer right now. The rules run either way.
+ */
 export interface AgentStatus {
   configured: boolean;
   paused: { reason: string; message: string; since: string | null; until: string | null } | null;
   spentTodayUsd: string;
   dailyBudgetUsd: string;
+  models: ModelStatus[];
+  dropped: { id: string; why: string }[];
+  exhausted: boolean;
+  /** live (off), recorded as they come (record), or replayed from a record (replay). */
+  cache: 'off' | 'record' | 'replay';
+  tier: 'free' | 'paid';
 }
 
 /** Something the Razorpay import could not get; the run is PARTIAL while any is recorded. */
@@ -57,10 +78,11 @@ export interface Gap {
   days: string[];
 }
 
-/** The two exceptions the demo toggle broke on purpose. */
+/** The three exceptions the demo toggle broke on purpose. */
 export interface ChaosPlan {
   timeoutFor: string | null;
   malformedFor: string | null;
+  quotaFor: string | null;
 }
 export interface Progress {
   stage: 'matching' | 'investigating' | 'ready' | 'failed' | 'unknown';

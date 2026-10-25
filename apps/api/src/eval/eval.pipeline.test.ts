@@ -13,9 +13,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadDomainDataset, matcherConfigFor } from '../matcher-eval/dataset.js';
 import { ScriptedRunner } from '../demo/scripted-runner.js';
 import { makeSyntheticDataset, type TempDataset } from '../razorpay/razorpay.fixtures.js';
-import { AgentHealth } from '../agent/health.js';
-import { LlmError } from '../agent/llm.js';
-import { ResilientRunner } from '../agent/resilient-runner.js';
+import { draftsFrom, fetchBriefs } from '../agent/outcome.js';
+import { replyWith, result, scriptedRouter } from '../agent/scripted-llm.fixtures.js';
+import { SingleShotRunner } from '../agent/single-shot.js';
+import { LlmCache, MemoryCacheStore } from '../llm/cache.js';
+import { fakeResult } from '../llm/fake.provider.js';
+import type { Attempt } from '../llm/router.js';
 import {
   AgentHalted,
   type AgentRunner,
@@ -25,11 +28,26 @@ import {
 } from '../agent/types.js';
 import type { Toolbox } from '../agent/tools/toolbox.js';
 import { CostGuard } from './cost-guard.js';
-import { MeasuringRunner, payloadSeen, TelemetryLog } from './measuring.js';
+import { MeasuringRunner, payloadSeen } from './measuring.js';
 import { prepareOverlay, signature, writeOverlayCopy } from './overlay.js';
 import { agreedFacts, approvable, runOnce, type RunOnceOptions } from './pipeline.js';
 
-const MODELS = { small: 'claude-haiku-5-5', large: 'claude-sonnet-5-5' };
+const LITE = { provider: 'gemini', model: 'lite-model', id: 'gemini:lite-model' } as const;
+
+/** One recorded model attempt, for the tests that spend by hand. */
+const attempt = (costMicroUsd: bigint, over: Partial<Attempt> = {}): Attempt => ({
+  provider: 'gemini',
+  model: 'm',
+  meta: { harness: 'single-shot', exceptionId: null, promptHash: '0'.repeat(64) },
+  outcome: 'ok',
+  errorKind: null,
+  cached: false,
+  result: fakeResult(),
+  latencyMs: 1,
+  costMicroUsd,
+  estCostMicroUsd: null,
+  ...over,
+});
 let data: TempDataset;
 let truth: ReturnType<typeof indexTruth>;
 const scratch: string[] = [];
@@ -61,10 +79,12 @@ function options(over: Partial<RunOnceOptions> = {}): RunOnceOptions {
     cluster: false,
     concurrency: 2,
     guard: new CostGuard(null),
-    models: MODELS,
+    llmEnv: {},
+    sample: null,
+    cache: 'off',
     overlay: [],
     makeRunner: () => null,
-    model: null,
+    entry: null,
     ...over,
   };
 }
@@ -233,17 +253,7 @@ describe('MeasuringRunner', () => {
       inner(async (ctx) => {
         await ctx.toolbox.run('get_exception', {});
         await ctx.toolbox.run('approve_match', {});
-        await ctx.recordLlmCall({
-          exceptionId: 'e1',
-          model: 'm',
-          harness: 'loop',
-          usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
-          costMicroUsd: 700n,
-          latencyMs: 1,
-          promptHash: 'h',
-          stopReason: null,
-          requestId: null,
-        });
+        await ctx.recordLlmCall(attempt(700n));
       }),
       {
         guard,
@@ -266,17 +276,20 @@ describe('MeasuringRunner', () => {
     expect(guard.spentMicroUsd).toBe(700n);
   });
 
-  it('includes unknown tools that a harness reports itself (harness B never reaches the toolbox with one)', async () => {
-    const telemetry = new TelemetryLog();
+  it('counts a request for every attempt that reached a provider, and none for a cached answer', async () => {
+    const guard = new CostGuard(null, 10);
     const measuring = new MeasuringRunner(
-      inner(() => {
-        telemetry.unknownTool(['e1'], 'Bash');
-        return Promise.resolve();
+      inner(async (ctx) => {
+        await ctx.recordLlmCall(attempt(0n));
+        await ctx.recordLlmCall(
+          attempt(0n, { outcome: 'fell_back', errorKind: 'SERVER', result: null }),
+        );
+        await ctx.recordLlmCall(attempt(0n, { cached: true }));
       }),
-      { guard: new CostGuard(null), telemetry },
+      { guard },
     );
     await measuring.investigate([member], context(fakeToolbox()));
-    expect(measuring.records[0]?.unknownTools).toEqual(['Bash']);
+    expect(guard.requests).toBe(2);
   });
 
   it('refuses to start once the cap is spent, and stops a running investigation at its next request', async () => {
@@ -284,17 +297,7 @@ describe('MeasuringRunner', () => {
     const measuring = new MeasuringRunner(
       inner(async (ctx) => {
         await ctx.gate();
-        await ctx.recordLlmCall({
-          exceptionId: null,
-          model: 'm',
-          harness: 'loop',
-          usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-          costMicroUsd: 500n,
-          latencyMs: 0,
-          promptHash: 'h',
-          stopReason: null,
-          requestId: null,
-        });
+        await ctx.recordLlmCall(attempt(500n));
         await ctx.gate();
       }),
       { guard },
@@ -323,7 +326,15 @@ describe('runOnce: the rules alone', () => {
     expect(r.groups.precision).toBe(1);
     expect(r.groups.matchRate).toBeGreaterThan(0.9);
     expect(r.verifier).toMatchObject({ proposals: 0, rejected: 0 });
-    expect(r.cost).toMatchObject({ totalMicroUsd: 0, llmCalls: 0, sdkReportedMicroUsd: null });
+    expect(r.cost).toMatchObject({
+      totalMicroUsd: 0,
+      llmCalls: 0,
+      requests: 0,
+      replayed: 0,
+      fallbacks: 0,
+      estPaidMicroUsd: null,
+    });
+    expect(r).toMatchObject({ provider: null, cache: 'off', sample: null });
     expect(r.latency).toMatchObject({ investigations: 0, p50Ms: null });
     expect(BigInt(r.gap.strictPaise)).toBeGreaterThan(0n);
     expect(r.gap.optimisticPaise).toBe(r.gap.strictPaise);
@@ -337,14 +348,14 @@ describe('runOnce: the rules alone', () => {
   it('produces a record the result-file schema accepts', async () => {
     const r = await runOnce(options());
     const file = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       preset: 'demo',
       seed: 42,
       config: 'rules',
       leg: 'plain',
       clusterExceptions: false,
       generatedAt: 'now',
-      versions: { node: process.version, agentSdk: null, models: MODELS },
+      versions: { node: process.version, models: { lite: null, flash: null, claude: null } },
       runs: [r],
     };
     expect(resultFileSchema.safeParse(file).success).toBe(true);
@@ -355,8 +366,8 @@ describe('runOnce: an agent', () => {
   it('runs the real services around a runner, approves what the verifier passed, and scores the proposals', async () => {
     const r = await runOnce(
       options({
-        config: 'small',
-        model: 'scripted-baseline',
+        config: 'lite-single',
+        entry: { provider: 'gemini', model: 'scripted-baseline', id: 'gemini:scripted-baseline' },
         makeRunner: () => new ScriptedRunner(),
       }),
     );
@@ -378,7 +389,7 @@ describe('runOnce: an agent', () => {
   it('only approves matches the verifier passed, so the gap can shrink but never because of a refused proposal', async () => {
     const [rules, agent] = [
       await runOnce(options()),
-      await runOnce(options({ config: 'small', makeRunner: () => new ScriptedRunner() })),
+      await runOnce(options({ config: 'lite-single', makeRunner: () => new ScriptedRunner() })),
     ];
     expect(BigInt(agent.gap.strictPaise)).toBeLessThanOrEqual(BigInt(rules.gap.strictPaise));
     expect(BigInt(agent.gap.optimisticPaise)).toBeLessThanOrEqual(BigInt(agent.gap.strictPaise));
@@ -391,24 +402,22 @@ describe('runOnce: an agent', () => {
       return {
         harness: 'loop',
         investigate: async (members, ctx) => {
-          await ctx.recordLlmCall({
-            exceptionId: members[0]?.id ?? null,
-            model: 'claude-haiku-5-5',
-            harness: 'loop',
-            usage: { inputTokens: 10, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 },
-            costMicroUsd: 1_000n,
-            latencyMs: 1,
-            promptHash: '0'.repeat(64),
-            stopReason: null,
-            requestId: null,
-          });
+          await ctx.recordLlmCall(
+            attempt(1_000n, {
+              meta: {
+                harness: 'single-shot',
+                exceptionId: members[0]?.id ?? null,
+                promptHash: '0'.repeat(64),
+              },
+            }),
+          );
           return inner.investigate(members, ctx);
         },
       };
     };
     const guard = new CostGuard(1_000n);
     const r = await runOnce(
-      options({ config: 'small', guard, concurrency: 1, makeRunner: spender }),
+      options({ config: 'lite-single', guard, concurrency: 1, makeRunner: spender }),
     );
     expect(r.incomplete).toBe(true);
     expect(r.incompleteReason).toBe('the cost cap was reached');
@@ -428,7 +437,9 @@ describe('runOnce: an agent', () => {
         return new ScriptedRunner().investigate(members, ctx);
       },
     };
-    const r = await runOnce(options({ config: 'small', concurrency: 1, makeRunner: () => flaky }));
+    const r = await runOnce(
+      options({ config: 'lite-single', concurrency: 1, makeRunner: () => flaky }),
+    );
     expect(r.incomplete).toBe(true);
     expect(r.incompleteReason).toMatch(/1 investigation\(s\) failed: API overloaded/);
     expect(r.verifier.proposals).toBe(13);
@@ -436,49 +447,185 @@ describe('runOnce: an agent', () => {
 });
 
 describe('runOnce: an agent that stops by itself, or whose model API goes quiet', () => {
-  it('says why when the agent pauses itself, instead of quietly measuring fewer investigations', async () => {
+  it('says why when the agent is stopped, instead of quietly measuring fewer investigations', async () => {
     let n = 0;
     const stopped: AgentRunner = {
       harness: 'loop',
       investigate: (members, ctx) => {
         n += 1;
-        if (n === 2) return Promise.reject(new AgentHalted('model_auth'));
+        if (n === 2) return Promise.reject(new AgentHalted('kill_switch'));
         return new ScriptedRunner().investigate(members, ctx);
       },
     };
     const r = await runOnce(
-      options({ config: 'small', concurrency: 1, makeRunner: () => stopped }),
+      options({ config: 'lite-single', concurrency: 1, makeRunner: () => stopped }),
     );
     expect(r.incomplete).toBe(true);
-    expect(r.incompleteReason).toBe(
-      'the agent stopped early: the model provider rejected our API key',
-    );
+    expect(r.incompleteReason).toBe('the agent stopped early: the agent kill switch is on');
     expect(r.verifier.proposals).toBe(1);
   }, 120_000);
 
   it('does not count unanswered investigations as the model getting them wrong', async () => {
     let n = 0;
     const quiet: AgentRunner = {
-      harness: 'loop',
-      investigate: (members, ctx) => {
+      harness: 'single-shot',
+      investigate: async (members, ctx) => {
         n += 1;
-        if (n === 3) return Promise.reject(new LlmError('overloaded', true, 529, 'req_x'));
+        if (n === 3) {
+          // What the real harnesses write when every model in the chain was out of quota.
+          const { briefCalls } = await fetchBriefs(members, ctx);
+          return draftsFrom(
+            {
+              end: { kind: 'quota_exhausted', reason: 'AI quota exhausted: test' },
+              calls: briefCalls,
+              lastLlmCallId: null,
+            },
+            null,
+            members,
+          );
+        }
         return new ScriptedRunner().investigate(members, ctx);
       },
     };
-    const wrapped = new ResilientRunner(quiet, {
-      health: new AgentHealth(),
-      policy: { maxAttempts: 1, baseDelayMs: 1, maxDelayMs: 1, deadlineMs: 1_000 },
-    });
     const r = await runOnce(
-      options({ config: 'small', concurrency: 1, makeRunner: () => wrapped }),
+      options({ config: 'lite-single', concurrency: 1, makeRunner: () => quiet }),
     );
     expect(r.incomplete).toBe(true);
     expect(r.incompleteReason).toBe(
-      '1 investigation(s) got no answer from the model API, even after retries',
+      '1 investigation(s) got no answer: the model was unavailable or out of quota',
     );
     // The run still finished: the unanswered one went to a person and the rest were investigated.
     expect(r.verifier.proposals).toBe(14);
+  }, 120_000);
+});
+
+describe('runOnce: the request cap, a sample, and replaying a record', () => {
+  /** A model that answers any exception NEEDS_HUMAN, valid and deterministic, from the ids in the prompt. */
+  const UUIDS = /exception_id="([0-9a-f-]{36})"/g;
+  const answering = Array.from(
+    { length: 80 },
+    () => (request: { messages: readonly { role: string; content?: string }[] }) => {
+      const opening = request.messages[0]?.content ?? '';
+      const ids = [...opening.matchAll(UUIDS)].map((m) => m[1] as string);
+      return replyWith(
+        ids.map((id) =>
+          result(id, {
+            verdict: 'NEEDS_HUMAN',
+            reasonCode: 'UNKNOWN',
+            suggestedAction: 'NONE',
+            confidence: 0.4,
+            explanation: 'Not enough to decide.',
+          }),
+        ),
+      );
+    },
+  );
+  const lite =
+    (cache: LlmCache, steps: readonly unknown[] = answering) =>
+    () => {
+      const sr = scriptedRouter([['gemini:lite-model', steps as never]], { cache });
+      return new SingleShotRunner({ router: sr.router, escalation: false });
+    };
+
+  it('stops at the request cap, keeps what it has, and says which cap it was', async () => {
+    const guard = new CostGuard(null, 3);
+    const r = await runOnce(
+      options({
+        config: 'lite-single',
+        entry: LITE,
+        guard,
+        concurrency: 1,
+        makeRunner: lite(LlmCache.off()),
+      }),
+    );
+    expect(r.incomplete).toBe(true);
+    expect(r.incompleteReason).toBe('the request cap was reached');
+    expect(r.cost.requests).toBe(3);
+    expect(r.verifier.proposals).toBeLessThan(14);
+  }, 120_000);
+
+  it('runs only the first N investigations with --sample, and labels the run as a sample', async () => {
+    const r = await runOnce(
+      options({
+        config: 'lite-single',
+        entry: LITE,
+        sample: 3,
+        makeRunner: lite(LlmCache.off()),
+      }),
+    );
+    expect(r.sample).toBe(3);
+    expect(r.verifier.proposals).toBe(3);
+    expect(r.cost.requests).toBe(3);
+    expect(r.exceptions.handled).toBe(14); // what an agent would be given is a property of the dataset
+  }, 120_000);
+
+  it('fills the new accounting: requests, requests per 1k orders, provider, harness and the model', async () => {
+    const r = await runOnce(
+      options({ config: 'lite-single', entry: LITE, sample: 2, makeRunner: lite(LlmCache.off()) }),
+    );
+    expect(r).toMatchObject({
+      harness: 'single-shot',
+      provider: 'gemini',
+      model: 'lite-model',
+      cache: 'off',
+    });
+    expect(r.cost).toMatchObject({ requests: 2, replayed: 0, fallbacks: 0, totalMicroUsd: 0 });
+    expect(r.cost.requestsPer1kOrders).toBe(Math.round((2 / r.orders) * 1000));
+  }, 120_000);
+
+  it('replays a record in a brand-new database: every answer found, none sent, the same score', async () => {
+    // Two FRESH databases mean two sets of random row ids: the record must survive that.
+    const store = new MemoryCacheStore();
+    const recorded = await runOnce(
+      options({
+        config: 'lite-single',
+        entry: LITE,
+        cache: 'record',
+        makeRunner: lite(new LlmCache('record', store)),
+      }),
+    );
+    expect(recorded.cache).toBe('record');
+    expect(recorded.cost.requests).toBe(14);
+    expect(store.entries.size).toBe(14);
+
+    // The second run's model is a stub that must never be reached.
+    const replayed = await runOnce(
+      options({
+        config: 'lite-single',
+        entry: LITE,
+        cache: 'replay',
+        makeRunner: lite(new LlmCache('replay', store), []),
+      }),
+    );
+    expect(replayed.incomplete).toBe(false);
+    expect(replayed.cache).toBe('replay');
+    expect(replayed.cost).toMatchObject({ requests: 0, replayed: 14, llmCalls: 14 });
+    // Row ids are random in every fresh database, so they are left out of the comparison; everything else,
+    // the groups, the codes the agent gave, what the verifier said and the gap, must be identical.
+    const withoutRowIds = (value: unknown): unknown =>
+      JSON.parse(
+        JSON.stringify(value, (key, v: unknown) => (key === 'exceptionId' ? undefined : v)),
+      );
+    expect(
+      withoutRowIds([replayed.groups, replayed.reasonCodes, replayed.verifier, replayed.gap]),
+    ).toEqual(
+      withoutRowIds([recorded.groups, recorded.reasonCodes, recorded.verifier, recorded.gap]),
+    );
+  }, 240_000);
+
+  it('a replay with a gap in the record fails loudly instead of asking the model', async () => {
+    const r = await runOnce(
+      options({
+        config: 'lite-single',
+        entry: LITE,
+        cache: 'replay',
+        concurrency: 1,
+        makeRunner: lite(new LlmCache('replay', new MemoryCacheStore()), []),
+      }),
+    );
+    expect(r.incomplete).toBe(true);
+    expect(r.incompleteReason).toMatch(/LLM_CACHE=replay: no recorded answer/);
+    expect(r.cost.requests).toBe(0);
   }, 120_000);
 });
 
@@ -515,7 +662,7 @@ describe('runOnce: the attacked leg measures what an agent does with a planted p
     const r = await runOnce(
       options({
         dataDir: dir,
-        config: 'small',
+        config: 'lite-single',
         leg: 'attacked',
         overlay: crafted,
         makeRunner: () => obedient(crafted.map((c) => c.key.slice('ledger_entry:'.length))),
@@ -544,7 +691,12 @@ describe('runOnce: the attacked leg measures what an agent does with a planted p
       text: INJECTION_CATALOGUE[3].text,
     };
     const r = await runOnce(
-      options({ config: 'small', leg: 'attacked', overlay: [ghost], makeRunner: () => obedient() }),
+      options({
+        config: 'lite-single',
+        leg: 'attacked',
+        overlay: [ghost],
+        makeRunner: () => obedient(),
+      }),
     );
     expect(r.injection).toMatchObject({ planted: 1, exposed: 0, followed: 0 });
     expect(r.injection!.cases[0]).toMatchObject({ exposed: false, followed: false });

@@ -171,6 +171,7 @@ export const DEGRADED_REASONS = [
   'time_budget',
   'context',
   'refused',
+  'quota_exhausted',
 ] as const;
 export const degradedReasonSchema = z.enum(DEGRADED_REASONS);
 export type DegradedReason = z.output<typeof degradedReasonSchema>;

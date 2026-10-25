@@ -38,8 +38,6 @@ const env = () =>
     REDIS_URL: 'redis://localhost:6379',
     RAZORPAY_SOURCE: 'synthetic',
     SYNTHETIC_DATA_DIR: 'data/demo',
-    AGENT_MODEL_SMALL: 'claude-haiku-5-5',
-    AGENT_MODEL_LARGE: 'claude-sonnet-5-5',
     AGENT_HARNESS: 'loop',
     AUTO_ACCEPT_ENABLED: 'false',
     AUTO_ACCEPT_MAX_PAISE: '0',
@@ -308,7 +306,11 @@ describe('what the home page may offer', () => {
     expect(res.body).toMatchObject({
       featured: { demo: null, eval: null },
       scripted: true,
-      live: { available: false, reason: 'the server has no ANTHROPIC_API_KEY' },
+      live: {
+        available: false,
+        reason:
+          'the server has no usable model (GEMINI_API_KEY or ANTHROPIC_API_KEY, and LLM_CHAIN)',
+      },
     });
   });
 
@@ -316,7 +318,7 @@ describe('what the home page may offer', () => {
     const before = await db.select().from(reconRuns);
     const res = await request(server).post('/demo/runs').send({ agent: 'live' });
     expect(res.status).toBe(503);
-    expect(JSON.stringify(res.body)).toContain('ANTHROPIC_API_KEY');
+    expect(JSON.stringify(res.body)).toContain('GEMINI_API_KEY');
     expect((await db.select().from(reconRuns)).length).toBe(before.length);
   });
 

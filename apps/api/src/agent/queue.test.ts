@@ -4,8 +4,8 @@ import { randomUUID } from 'node:crypto';
 import { Queue, type Worker } from 'bullmq';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { InvestigationJob } from './jobs.js';
-import { LlmError } from './llm.js';
-import { PricingError } from './pricing.js';
+import { CacheMissError } from '../llm/cache.js';
+import { PricingError } from '../llm/pricing.js';
 import { LOCAL_REDIS_URL, localRedisAnswers, until } from './redis.fixtures.js';
 import { BullInvestigationQueue, redisConnection, startInvestigationWorker } from './queue.js';
 import { AgentHalted } from './types.js';
@@ -125,7 +125,10 @@ describe.skipIf(!available)('investigation queue on local Redis', () => {
   });
 
   it.each([
-    ['an API error that retrying cannot fix', () => new LlmError('bad request', false, 400, null)],
+    [
+      'a replay with no recorded answer',
+      () => new CacheMissError('k'.repeat(64), 'gemini', 'm', 'single-shot'),
+    ],
     ['a model with no price', () => new PricingError('no price')],
   ])('does not retry %s', async (_label, make) => {
     let ran = 0;
@@ -143,7 +146,7 @@ describe.skipIf(!available)('investigation queue on local Redis', () => {
     let ran = 0;
     await start(() => {
       ran += 1;
-      return Promise.reject(new LlmError('overloaded', true, 529, null));
+      return Promise.reject(new Error('overloaded'));
     });
     await queue.enqueue([makeJob()]);
     await until(() => ran === 3);
@@ -155,9 +158,7 @@ describe.skipIf(!available)('investigation queue on local Redis', () => {
     let ran = 0;
     await start(() => {
       ran += 1;
-      return ran === 1
-        ? Promise.reject(new LlmError('overloaded', true, 529, null))
-        : Promise.resolve();
+      return ran === 1 ? Promise.reject(new Error('overloaded')) : Promise.resolve();
     });
     await queue.enqueue([makeJob()]);
     await until(() => ran === 2);

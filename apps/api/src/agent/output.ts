@@ -16,7 +16,6 @@ import {
   SUGGESTED_ACTIONS,
 } from '@ziro/core/domain';
 import { z } from 'zod';
-import { type JsonSchema, toAnthropicJsonSchema } from '../llm/json-schema.js';
 import type { AgentToolName } from './tools/types.js';
 
 /** Most exceptions one conversation may cover (CLUSTER_EXCEPTIONS). */
@@ -64,9 +63,6 @@ export const modelOutputSchema = z.strictObject({
   results: z.array(modelResultSchema).min(1).max(MAX_CLUSTER_MEMBERS),
 });
 export type ModelOutput = z.output<typeof modelOutputSchema>;
-
-/** The schema sent to the API as the output format. Built once; it must stay byte-identical. */
-export const OUTPUT_JSON_SCHEMA: JsonSchema = toAnthropicJsonSchema(modelOutputSchema);
 
 // --- what happened during the investigation ---------------------------------------------------
 

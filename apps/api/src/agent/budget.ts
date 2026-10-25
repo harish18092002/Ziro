@@ -12,7 +12,7 @@ export interface Limits {
 }
 
 export const DEFAULT_LIMITS: Limits = {
-  maxToolCalls: 8,
+  maxToolCalls: 4,
   maxOutputTokens: 24_000,
   maxTokensPerRequest: 8_000,
   maxPromptTokensPerRequest: 80_000,

@@ -29,9 +29,11 @@ jobs:
       - run: npm test
 
   # A cheap end-to-end check of the whole pipeline against ground truth: the demo preset, one repeat, the
-  # small model, and a hard cost cap (apps/api/src/eval/args.ts: SMOKE_MAX_COST_USD). It fails on any false
-  # match. Without ANTHROPIC_API_KEY (a fork's pull request, or no secret set) the model configs are
-  # skipped, the free rules check still runs, and the job passes. The key reaches this one step only.
+  # lite model, and hard caps (apps/api/src/eval/args.ts: SMOKE_MAX_REQUESTS, SMOKE_MAX_COST_USD). It fails on
+  # any false match. Without GEMINI_API_KEY (a fork's pull request, or no secret set) or without LLM_CHAIN
+  # (a repository variable naming the models) the model configs are skipped, the free rules check still runs,
+  # and the job passes. The key reaches this one step only. GEMINI_LIMITS is a repository variable too: the
+  # numbers are copied by the author from aistudio.google.com/rate-limit, never written in code.
   eval-smoke:
     needs: verify
     runs-on: ubuntu-latest
@@ -47,4 +49,6 @@ jobs:
       - run: npm ci
       - run: npm run eval:smoke -- --confirm
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          LLM_CHAIN: ${{ vars.LLM_CHAIN }}
+          GEMINI_LIMITS: ${{ vars.GEMINI_LIMITS }}

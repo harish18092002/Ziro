@@ -45,30 +45,34 @@ const rules = makeFile({ config: 'rules' }, [
       per1kOrdersMicroUsd: 0,
       llmCalls: 0,
       tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      sdkReportedMicroUsd: null,
+      estPaidMicroUsd: null,
+      requests: 0,
+      requestsPer1kOrders: 0,
+      replayed: 0,
+      fallbacks: 0,
+      quotaUsedOfDay: null,
     },
     latency: { investigations: 0, p50Ms: null, p95Ms: null, meanMs: null },
     verifier: { proposals: 0, passed: 0, rejected: 0, notApplicable: 0, rejectedExamples: [] },
   }),
 ]);
-const small = makeFile({ config: 'small' }, [
+const small = makeFile({ config: 'lite-single' }, [
   makeRun({ repeat: 1, reasonCodes: { ...makeRun().reasonCodes!, accuracy: 0.6 } }),
   makeRun({ repeat: 2, reasonCodes: { ...makeRun().reasonCodes!, accuracy: 0.7 } }),
   makeRun({ repeat: 3, reasonCodes: { ...makeRun().reasonCodes!, accuracy: 0.65 } }),
 ]);
 const large = makeFile(
   {
-    config: 'large',
+    config: 'flash-single',
     versions: {
       node: 'v24',
-      agentSdk: null,
-      models: { small: 'claude-haiku-5-5', large: 'claude-sonnet-5-5' },
+      models: { lite: 'lite-model', flash: 'flash-model', claude: null },
     },
   },
   [
     makeRun({
-      config: 'large',
-      model: 'claude-sonnet-5-5',
+      config: 'flash-single',
+      model: 'flash-model',
       reasonCodes: { ...makeRun().reasonCodes!, accuracy: 0.9 },
       cost: { ...makeRun().cost, per1kOrdersMicroUsd: 10_000_000 },
     }),
@@ -92,19 +96,22 @@ describe('the result files', () => {
       groups: 99_000,
     });
 
-    expect(resultPath(dir, 'eval', 42, 'small', 'plain', true)).toMatch(
-      /small\+cluster-plain\.json$/,
+    expect(resultPath(dir, 'eval', 42, 'lite-single', 'plain', true)).toMatch(
+      /lite-single\+cluster-plain\.json$/,
     );
     const set = readResultSet(dir, 'eval', 42);
-    expect([...set.files.keys()].sort()).toEqual(['small+cluster/plain', 'small/plain']);
-    expect(set.files.get('small/plain')?.runs).toHaveLength(3);
+    expect([...set.files.keys()].sort()).toEqual([
+      'lite-single+cluster/plain',
+      'lite-single/plain',
+    ]);
+    expect(set.files.get('lite-single/plain')?.runs).toHaveLength(3);
     expect(set.stress?.inputRows).toBe(410_214);
   });
 
   it('refuses a file that does not match the schema instead of writing it', () => {
     const bad = { ...small, runs: [] };
     expect(() => writeResult(temp(), bad)).toThrow();
-    expect(resultFileSchema.safeParse({ ...small, schemaVersion: 2 }).success).toBe(false);
+    expect(resultFileSchema.safeParse({ ...small, schemaVersion: 1 }).success).toBe(false);
   });
 
   it('a real score parses under the schema, so the types and the schema cannot drift', () => {
@@ -132,14 +139,14 @@ describe('renderEvals', () => {
   it('shows every config, says plainly which were not run, and shows mean with min-max', () => {
     const md = renderEvals({ set: setOf([rules, small]), previous: null });
     expect(md).toContain('# EVALS');
-    expect(md).toMatch(/\*\*large\*\* \| not run/);
-    expect(md).toMatch(/\*\*harnessB\*\* \| not run/);
+    expect(md).toMatch(/\*\*flash-single\*\* \| not run/);
+    expect(md).toMatch(/\*\*claude-loop\*\* \| not run/);
     expect(md).toContain('65.0% (59.5%'.slice(0, 5)); // the accuracy cell starts with the mean
     expect(md).toMatch(/\(\d+\.\d%–\d+\.\d%\)/);
   });
 
   it('reports the false match count explicitly, in the table and in its own section', () => {
-    const withFalse = makeFile({ config: 'small' }, [
+    const withFalse = makeFile({ config: 'lite-single' }, [
       makeRun({
         groups: emptyGroups({
           falseMatches: 2,
@@ -158,7 +165,7 @@ describe('renderEvals', () => {
     ]);
     const md = renderEvals({ set: setOf([rules, withFalse]), previous: null });
     expect(md).toContain('**false matches**');
-    expect(md).toMatch(/\*\*small\*\*: \*\*2\*\* false matches in 1 run\(s\)/);
+    expect(md).toMatch(/\*\*lite-single\*\*: \*\*2\*\* false matches in 1 run\(s\)/);
     expect(md).toContain('group g9 (agent) linked ledger_entry:A, rzp_payment:p2');
   });
 
@@ -167,22 +174,25 @@ describe('renderEvals', () => {
       set: setOf([
         rules,
         small,
-        makeFile({ config: 'large' }, [
-          makeRun({ config: 'large', reasonCodes: { ...makeRun().reasonCodes!, accuracy: 0.66 } }),
+        makeFile({ config: 'flash-single' }, [
+          makeRun({
+            config: 'flash-single',
+            reasonCodes: { ...makeRun().reasonCodes!, accuracy: 0.66 },
+          }),
         ]),
       ]),
       previous: null,
     });
-    expect(overlap).toMatch(/Reason-code accuracy, small vs large: .*overlap/);
+    expect(overlap).toMatch(/Reason-code accuracy, lite-single vs flash-single: .*overlap/);
     const apart = renderEvals({ set: setOf([rules, small, large]), previous: null });
-    expect(apart).toMatch(/small vs large: .*do not overlap/);
+    expect(apart).toMatch(/lite-single vs flash-single: .*do not overlap/);
     expect(apart).not.toMatch(/\b(best|winner|should ship|recommend)\b/i);
   });
 
   it('prints cost as the ratio of two configs without saying which is better', () => {
     const md = renderEvals({ set: setOf([rules, small, large]), previous: null });
     expect(md).toMatch(
-      /Cost per 1k orders, small vs large: \$0\.5000 vs \$10\.00 \(20\.0× large to small\)/,
+      /Cost per 1k orders, lite-single vs flash-single: \$0\.5000 vs \$10\.00 \(20\.0× flash-single to lite-single\)/,
     );
   });
 
@@ -220,7 +230,7 @@ describe('renderEvals', () => {
   });
 
   it('shows the attacked leg: exposures, followed cases and accuracy plain to attacked', () => {
-    const attacked = makeFile({ config: 'small', leg: 'attacked' }, [
+    const attacked = makeFile({ config: 'lite-single', leg: 'attacked' }, [
       makeRun({
         leg: 'attacked',
         reasonCodes: { ...makeRun().reasonCodes!, accuracy: 0.5 },
@@ -244,7 +254,7 @@ describe('renderEvals', () => {
       }),
     ]);
     const md = renderEvals({ set: setOf([rules, small, attacked]), previous: null });
-    expect(md).toMatch(/\| \*\*small\*\* \| 1 \| 16 \| 15 \| 1 \| 93\.3% \| 6 \|/);
+    expect(md).toMatch(/\| \*\*lite-single\*\* \| 1 \| 16 \| 15 \| 1 \| 93\.3% \| 6 \|/);
     expect(md).toContain('**tool_call_lure** on rzp_refund:rfnd_1');
     expect(md).toContain('heuristic');
   });

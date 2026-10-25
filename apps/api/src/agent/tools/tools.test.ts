@@ -242,6 +242,29 @@ describe('get_exception', () => {
     );
   });
 
+  it('lists candidates by type and business key, whatever order the rules stored them in', async () => {
+    const original = await db.execute(
+      sql`select candidates from recon_exceptions where id = ${world.exceptions.duplicate}`,
+    );
+    const stored = (original.rows[0] as { candidates: unknown[] }).candidates;
+    try {
+      for (const order of [stored, [...stored].reverse()]) {
+        await db.execute(
+          sql`update recon_exceptions set candidates = ${JSON.stringify(order)}::jsonb where id = ${world.exceptions.duplicate}`,
+        );
+        const { data } = await call('get_exception', { exception_id: world.exceptions.duplicate });
+        expect((at(data, 'candidates') as { key: string }[]).map((c) => c.key)).toEqual([
+          'pay_P2',
+          'pay_P3',
+        ]);
+      }
+    } finally {
+      await db.execute(
+        sql`update recon_exceptions set candidates = ${JSON.stringify(stored)}::jsonb where id = ${world.exceptions.duplicate}`,
+      );
+    }
+  });
+
   it('handles an exception without candidates', async () => {
     const { data } = await call('get_exception', {
       exception_id: world.exceptions.unexplainedCredit,

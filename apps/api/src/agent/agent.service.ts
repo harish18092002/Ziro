@@ -25,28 +25,30 @@ import { agentProposals, llmCalls, reconExceptions, reconRuns } from '../db/sche
 import { deterministicUuid } from '../razorpay/identity.js';
 import { PROPOSAL_PIPELINE, type ProposalPipeline } from '../review/pipeline.js';
 import { DEGRADED_LABEL } from './degraded.js';
-import { AgentHealth } from './health.js';
 import { type InvestigationJob } from './jobs.js';
-import { formatMicroUsd, parseMicroUsd } from './pricing.js';
+import type { BuiltRouter, Dropped } from '../llm/factory.js';
+import { formatMicroUsd, parseMicroUsd } from '../llm/pricing.js';
+import type { Attempt, SlotStatus } from '../llm/router.js';
 import { cluster, type Skipped, triage } from './triage.js';
 import { Toolbox } from './tools/toolbox.js';
 import {
   AgentHalted,
   type AgentRunner,
   type ExceptionToInvestigate,
+  type HarnessName,
   HALT_MESSAGE,
   type HaltReason,
   type InvestigationContext,
-  type LlmCallRecord,
   type ProposalDraft,
 } from './types.js';
 
 export const AGENT_RUNNER = Symbol('AGENT_RUNNER');
-export const AGENT_HEALTH = Symbol('AGENT_HEALTH');
+export const LLM_ROUTER = Symbol('LLM_ROUTER');
 
 /** Whether the agent will take work right now, and if not, why. Shown as a banner. */
 export interface AgentStatus {
   readonly configured: boolean;
+  /** Stopped by an operator switch: the kill switch or the daily budget. */
   readonly paused: {
     readonly reason: HaltReason;
     readonly message: string;
@@ -55,12 +57,26 @@ export interface AgentStatus {
   } | null;
   readonly spentTodayUsd: string;
   readonly dailyBudgetUsd: string;
+  /** Each model in the chain: usable, cooling, out of quota until a time, or switched off. */
+  readonly models: readonly SlotStatus[];
+  /** Models left out at boot (no key, no price) and why. */
+  readonly dropped: readonly Dropped[];
+  /**
+   * True when a chain is configured and no model in it can answer right now. New exceptions go to a
+   * person with the reason "AI quota exhausted"; the rules keep running.
+   */
+  readonly exhausted: boolean;
+  /** How answers are obtained: live, recorded as they come, or replayed from a record. */
+  readonly cache: Env['LLM_CACHE'];
+  readonly tier: Env['GEMINI_TIER'];
 }
 
+/** The model-layer fields are optional: a test of the agent without a model layer has none (off, free). */
 export type AgentSettings = Pick<
   Env,
   'AGENT_KILL_SWITCH' | 'DAILY_LLM_BUDGET_USD' | 'CLUSTER_EXCEPTIONS'
->;
+> &
+  Partial<Pick<Env, 'LLM_CACHE' | 'GEMINI_TIER'>>;
 
 export interface Plan {
   readonly runId: string;
@@ -93,10 +109,10 @@ export class AgentService {
     @Optional()
     @Inject(PROPOSAL_PIPELINE)
     private readonly pipeline: ProposalPipeline | null = null,
-    /** What the system has learned about the model API (a rejected key, a spend limit, an outage). */
+    /** The models behind the runner, for the status banner. Absent in tests of the agent alone. */
     @Optional()
-    @Inject(AGENT_HEALTH)
-    private readonly health: AgentHealth = new AgentHealth(),
+    @Inject(LLM_ROUTER)
+    private readonly models: BuiltRouter | null = null,
   ) {}
 
   /** The time source for the daily budget; a test replaces it. */
@@ -217,12 +233,11 @@ export class AgentService {
     if (this.settings.AGENT_KILL_SWITCH) throw new AgentHalted('kill_switch');
     const budget = BigInt(Math.round(this.settings.DAILY_LLM_BUDGET_USD * MICRO));
     if ((await this.spentToday()) >= budget) throw new AgentHalted('daily_budget');
-    this.health.assertRunning();
   }
 
   /**
-   * Whether the agent will take work, for the banner. The two operator switches come first, then what the
-   * system has learned. Rules never depend on this: they run whether or not the agent is paused.
+   * Whether the agent will take work, for the banner. The two operator switches come first, then the state
+   * of each model. Rules never depend on this: they run whether or not the agent can answer.
    */
   async status(): Promise<AgentStatus> {
     const budget = BigInt(Math.round(this.settings.DAILY_LLM_BUDGET_USD * MICRO));
@@ -233,35 +248,50 @@ export class AgentService {
       since: null,
       until: null,
     });
+    const models = (await this.models?.router?.status()) ?? [];
     return {
       configured: this.configured,
       paused: this.settings.AGENT_KILL_SWITCH
         ? halted('kill_switch')
         : spent >= budget
           ? halted('daily_budget')
-          : this.health.state(),
+          : null,
       spentTodayUsd: formatMicroUsd(spent),
       dailyBudgetUsd: formatMicroUsd(budget),
+      models,
+      dropped: this.models?.dropped ?? [],
+      exhausted: models.length > 0 && models.every((m) => m.state !== 'ok'),
+      cache: this.settings.LLM_CACHE ?? 'off',
+      tier: this.settings.GEMINI_TIER ?? 'free',
     };
   }
 
-  private async recordLlmCall(runId: string, call: LlmCallRecord): Promise<string> {
+  private async recordLlmCall(runId: string, attempt: Attempt): Promise<string> {
+    const usage = attempt.result?.usage;
     const [row] = await this.db
       .insert(llmCalls)
       .values({
         runId,
-        exceptionId: call.exceptionId,
-        model: call.model,
-        harness: call.harness,
-        tokensIn: call.usage.inputTokens,
-        tokensOut: call.usage.outputTokens,
-        costUsd: formatMicroUsd(call.costMicroUsd),
-        latencyMs: call.latencyMs,
-        promptHash: call.promptHash,
-        cacheReadTokens: call.usage.cacheReadTokens,
-        cacheWriteTokens: call.usage.cacheWriteTokens,
-        stopReason: call.stopReason,
-        requestId: call.requestId,
+        exceptionId: attempt.meta.exceptionId,
+        model: attempt.model,
+        provider: attempt.provider,
+        // A text column in the database, a fixed set in the harnesses.
+        harness: attempt.meta.harness as HarnessName,
+        tokensIn: usage?.inputTokens ?? 0,
+        // Thinking is billed as output, and the estimate counts it so; the column holds both.
+        tokensOut: (usage?.outputTokens ?? 0) + (usage?.thoughtTokens ?? 0),
+        costUsd: formatMicroUsd(attempt.costMicroUsd),
+        estCostUsd:
+          attempt.estCostMicroUsd === null ? null : formatMicroUsd(attempt.estCostMicroUsd),
+        latencyMs: attempt.latencyMs,
+        promptHash: attempt.meta.promptHash,
+        cacheReadTokens: usage?.cacheReadTokens ?? 0,
+        cacheWriteTokens: usage?.cacheWriteTokens ?? 0,
+        stopReason: attempt.result?.stopReason ?? null,
+        requestId: attempt.result?.requestId ?? null,
+        outcome: attempt.outcome,
+        errorKind: attempt.errorKind,
+        cached: attempt.cached,
       })
       .returning({ id: llmCalls.id });
     if (row === undefined) throw new Error('llm_calls insert returned nothing');
@@ -307,7 +337,7 @@ export class AgentService {
       runId: job.runId,
       toolbox: await Toolbox.create(this.db, job.runId),
       gate: () => this.gate(),
-      recordLlmCall: (call) => this.recordLlmCall(job.runId, call),
+      recordLlmCall: (attempt) => this.recordLlmCall(job.runId, attempt),
     };
     const drafts = await this.runner.investigate(
       members.map((m) => m.exception),
@@ -375,6 +405,7 @@ export class AgentService {
             attempt: item.attempt,
             clusterId: job.clusterId,
             model: draft.model,
+            provider: draft.provider ?? null,
             verdict: c.verdict,
             reasonCode: c.reasonCode,
             links: c.links,
@@ -422,6 +453,7 @@ export class AgentService {
             suggestedAction: c.suggestedAction,
             confidencePermille: Math.round(c.confidence * 1000),
             model: draft.model,
+            provider: draft.provider ?? null,
             harness: this.runner?.harness,
             llmCallId: draft.llmCallId,
             harnessFindings: draft.harnessFindings.length,

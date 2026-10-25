@@ -3,9 +3,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildWorld, createMigratedDb, type TestDb, type World } from './agent.fixtures.js';
 import { DEFAULT_LIMITS } from './budget.js';
-import { LlmAbortedError } from './llm.js';
+import { LlmAbortedError } from '../llm/provider.js';
 import { LoopRunner } from './loop-runner.js';
-import { ScriptedLlm, testContext, type Step } from './scripted-llm.fixtures.js';
+import { type FakeStep, scriptedRouter, testContext } from './scripted-llm.fixtures.js';
 import { Toolbox } from './tools/toolbox.js';
 
 let db: TestDb;
@@ -22,14 +22,13 @@ afterAll(async () => {
 
 describe('the time budget reaches the request', () => {
   it('aborts a request that outlives it, and ends in NEEDS_HUMAN long before the default budget', async () => {
-    const hang: Step = (request) =>
+    // A fake whose request never answers on its own; only the abort signal ends it.
+    const hang = ((request: { signal: AbortSignal }) =>
       new Promise((_resolve, reject) => {
         request.signal.addEventListener('abort', () => reject(new LlmAbortedError()));
-      });
+      })) as unknown as FakeStep;
     const runner = new LoopRunner({
-      client: new ScriptedLlm([hang]),
-      smallModel: 'claude-haiku-5-5',
-      largeModel: 'claude-sonnet-5-5',
+      router: scriptedRouter([['gemini:small', [hang]]]).router,
       escalation: false,
       limits: { ...DEFAULT_LIMITS, timeoutMs: 80 },
     });

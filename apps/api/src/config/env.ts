@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { type Parsed, parseChain, parseLimits, parsePrices } from '../llm/config.js';
 
 /** Thrown at boot when the environment is unusable. Messages never contain variable values. */
 export class EnvValidationError extends Error {
@@ -91,6 +92,17 @@ const usd = z
   .regex(/^\d+(\.\d{1,2})?$/, 'must be a USD amount such as 5 or 5.00')
   .transform(Number);
 
+/** A setting written as text that one of the llm/config.ts parsers turns into a value; blank means "not set". */
+const parsedText = <T>(parse: (raw: string | undefined) => Parsed<T>) =>
+  z.preprocess(blankToUndefined, z.string().optional()).transform((raw, ctx) => {
+    const result = parse(raw);
+    if (!result.ok) {
+      ctx.addIssue({ code: 'custom', message: result.error });
+      return z.NEVER;
+    }
+    return result.value;
+  });
+
 // Field-level on purpose: the live-key guard must fire even when other variables are also invalid.
 const razorpayKeyId = z.preprocess(
   blankToUndefined,
@@ -123,13 +135,40 @@ export const envSchema = z
     }),
     RAZORPAY_KEY_ID: razorpayKeyId,
     RAZORPAY_KEY_SECRET: optionalSecret,
-    // Optional at boot: the free demo replay must work with no key. Checked when a run starts.
+    // Optional, like the Gemini key: Claude is a fallback, and an Anthropic account with no credit must not
+    // stop the app. A chain entry without its key is dropped with a warning at boot.
     ANTHROPIC_API_KEY: optionalSecret,
-    AGENT_MODEL_SMALL: text,
-    AGENT_MODEL_LARGE: text,
-    AGENT_HARNESS: z.enum(['loop', 'agent-sdk'], {
-      error: requiredError('must be "loop" or "agent-sdk"'),
-    }),
+    // single-shot = the harness gathers the evidence and makes one structured call; loop = the model drives
+    // read-only tools (LLM_MAX_TOOL_CALLS). Same tools, verifier and checks either way (ADR-018).
+    AGENT_HARNESS: z.preprocess(
+      (value) => blankToUndefined(value) ?? 'single-shot',
+      z.enum(['loop', 'single-shot'], { error: 'must be "loop" or "single-shot"' }),
+    ),
+    // --- the model layer (ADR-018) -------------------------------------------------------------------
+    // The Gemini key is optional at boot like the Anthropic one: with no usable provider the agent is off,
+    // and the rules, the review console and the replay keep working.
+    GEMINI_API_KEY: optionalSecret,
+    // free = Google may use what is sent and the key has daily request limits; the actual cost is $0.
+    GEMINI_TIER: z.preprocess(
+      (value) => blankToUndefined(value) ?? 'free',
+      z.enum(['free', 'paid'], { error: 'must be "free" or "paid"' }),
+    ),
+    // Models in the order they are tried: gemini:<id>,gemini:<id>,anthropic:<id>. No ids in code.
+    LLM_CHAIN: parsedText(parseChain),
+    // Free-tier request limits per model, copied from aistudio.google.com/rate-limit. Never guessed.
+    GEMINI_LIMITS: parsedText(parseLimits),
+    // Paid list prices per provider:model, for the "estimated cost at paid prices" column.
+    LLM_PRICES: parsedText(parsePrices),
+    // off = every call goes to the provider; record = also keep the answers; replay = answers from the
+    // cache only, and a call that is not in it fails loudly.
+    LLM_CACHE: z.preprocess(
+      (value) => blankToUndefined(value) ?? 'off',
+      z.enum(['off', 'record', 'replay'], { error: 'must be off, record or replay' }),
+    ),
+    // Tool calls one investigation may make in the loop harness (the single-shot harness makes none).
+    LLM_MAX_TOOL_CALLS: boundedInt('4', 1, 16),
+    // The longest the router waits on a rate limit before it moves to the next model.
+    LLM_MAX_WAIT_SECONDS: boundedInt('30', 0, 600),
     AUTO_ACCEPT_ENABLED: flag,
     AUTO_ACCEPT_MAX_PAISE: paise,
     // Auto-accept needs at least this much confidence from the agent, on top of every other condition.
@@ -139,8 +178,9 @@ export const envSchema = z
     AGENT_KILL_SWITCH: flag,
     // Investigate related exceptions (same candidates) in one conversation instead of one each.
     CLUSTER_EXCEPTIONS: optionalFlag('false'),
-    // Retry once on the large model when the small one is unsure or gives up.
-    AGENT_ESCALATION: optionalFlag('true'),
+    // Give an unsure answer one second look from the NEXT model in LLM_CHAIN. Off by default: on the free tier
+    // every extra look spends the scarce daily requests, and fallback (availability) is a separate thing.
+    AGENT_ESCALATION: optionalFlag('false'),
     // Build the featured demo and eval runs in the background at boot if they are missing.
     DEMO_SEED_ON_BOOT: optionalFlag('true'),
     // Run the investigation worker inside this process. Turn off to only enqueue.

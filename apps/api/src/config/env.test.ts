@@ -7,8 +7,6 @@ const validEnv = (): Record<string, string> => ({
   REDIS_URL: 'redis://localhost:6379',
   RAZORPAY_SOURCE: 'synthetic',
   SYNTHETIC_DATA_DIR: 'data/demo',
-  AGENT_MODEL_SMALL: 'small-model-id',
-  AGENT_MODEL_LARGE: 'large-model-id',
   AGENT_HARNESS: 'loop',
   AUTO_ACCEPT_ENABLED: 'false',
   AUTO_ACCEPT_MAX_PAISE: '100000',
@@ -75,9 +73,6 @@ describe('loadEnv', () => {
       'REDIS_URL',
       'RAZORPAY_SOURCE',
       'SYNTHETIC_DATA_DIR',
-      'AGENT_MODEL_SMALL',
-      'AGENT_MODEL_LARGE',
-      'AGENT_HARNESS',
       'AUTO_ACCEPT_ENABLED',
       'AUTO_ACCEPT_MAX_PAISE',
       'DEMO_MODE',
@@ -88,6 +83,19 @@ describe('loadEnv', () => {
     }
     expect(issues.some((issue) => issue.startsWith('PORT'))).toBe(false);
     expect(issues.some((issue) => issue.startsWith('ANTHROPIC_API_KEY'))).toBe(false);
+    // The model layer is optional at boot, and the harness has a default: none of it is ever required.
+    for (const name of [
+      'AGENT_HARNESS',
+      'GEMINI_API_KEY',
+      'LLM_CHAIN',
+      'GEMINI_LIMITS',
+      'LLM_PRICES',
+    ]) {
+      expect(
+        issues.some((issue) => issue.startsWith(name)),
+        name,
+      ).toBe(false);
+    }
   });
 
   it('rejects malformed values', () => {
@@ -95,7 +103,7 @@ describe('loadEnv', () => {
       ...validEnv(),
       AUTO_ACCEPT_MAX_PAISE: '10.5',
       DAILY_LLM_BUDGET_USD: '-1',
-      AGENT_HARNESS: 'sideways',
+      AGENT_HARNESS: 'agent-sdk',
       DEMO_MODE: 'yes',
       PORT: '70000',
       DATABASE_URL: 'mysql://nope',
@@ -187,10 +195,10 @@ describe('loadEnv', () => {
 });
 
 describe('investigation agent settings', () => {
-  it('default to: no clustering, escalation on, worker on, 4 at a time', () => {
+  it('default to: no clustering, escalation off, worker on, 4 at a time', () => {
     expect(loadEnv(validEnv())).toMatchObject({
       CLUSTER_EXCEPTIONS: false,
-      AGENT_ESCALATION: true,
+      AGENT_ESCALATION: false,
       AGENT_WORKER_ENABLED: true,
       AGENT_CONCURRENCY: 4,
     });

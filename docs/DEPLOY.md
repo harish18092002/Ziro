@@ -11,7 +11,7 @@ runs against your accounts until you run it, and nothing here calls git.
                                  │  /health      startup probe (database + redis)    /health/live  liveness
                                  ├──▶ Neon Postgres   POOLED url, role ziro_app (cannot touch the audit trail)
                                  ├──▶ Upstash Redis   rediss:// (health check and job producer only)
-                                 └──▶ Anthropic API   only if you deployed with --with-key
+                                 └──▶ Gemini API      only if you deployed with --with-key (Claude: --with-claude)
 
  scripts/deploy.sh ─▶ Cloud Run JOB "ziro-prepare"  (same image, role ziro_migrate, Neon DIRECT url)
                         1. apply migrations   2. grant ziro_app its privileges   3. build the featured runs
@@ -22,12 +22,12 @@ runs against your accounts until you run it, and nothing here calls git.
 | Decision          | Choice                                                            | Why                                                                                                                                                                                                                                                                                                      |
 | ----------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | CPU               | **always allocated** (`--no-cpu-throttling`)                      | By default Cloud Run gives an instance CPU only while it is handling a request. A demo run continues in the background after `POST /demo/runs` has answered, so with the default it would crawl between the browser's polls. ([docs](https://docs.cloud.google.com/run/docs/configuring/cpu-allocation)) |
-| Instances         | **max 1**                                                         | The per-visitor rate limits, the model circuit breaker and the featured-run check live in the process. One instance makes them exact, and bounds Neon connections and cost. The daily model budget is summed from the database, so it holds regardless.                                                  |
+| Instances         | **max 1**                                                         | The per-visitor rate limits, the model breakers and the featured-run check live in the process. One instance makes them exact, and bounds Neon connections and cost. The daily model budget is summed from the database, so it holds regardless.                                                         |
 | Minimum instances | **0 normally; 1 while people are looking** (see below)            | Cost against first-visit latency.                                                                                                                                                                                                                                                                        |
 | Memory            | 512 MiB (the job: 1 GiB)                                          | Measured: about 80 MiB resident after a whole smoke run, 228 KB of generated data in `/tmp`. Always-on CPU needs at least 512 MiB.                                                                                                                                                                       |
 | Queue worker      | **off** (`AGENT_WORKER_ENABLED=false`)                            | The demo runs the agent in-process; the BullMQ worker would poll Redis while idle, and Upstash bills per command. ([Upstash](https://upstash.com/docs/redis/integrations/bullmq))                                                                                                                        |
 | Featured runs     | built by the deploy job, not at boot (`DEMO_SEED_ON_BOOT=false`)  | A visitor never waits for a 500-order run, and a cold start stays short.                                                                                                                                                                                                                                 |
-| Image             | production dependencies only, **no Agent SDK binary**, non-root   | The SDK's native binary (about 285 MB) belongs to harness B, an eval-time tool. Harness A (the loop) is what runs here.                                                                                                                                                                                  |
+| Image             | production dependencies only, non-root                            | The Agent SDK is no longer a dependency at all (ADR-018). Both harnesses run on plain HTTP clients.                                                                                                                                                                                                      |
 | Database roles    | `ziro_owner`-style role migrates; **`ziro_app`** runs the service | ADR-005: a role that does not own the tables cannot disable the audit trail's append-only trigger. The job re-grants on every deploy, so a new table is covered at once.                                                                                                                                 |
 
 ### Minimum instances: 0 or 1
@@ -74,7 +74,7 @@ gcloud config set project "$PROJECT"
 ## 2. Rehearse locally first
 
 This builds the production image and runs it exactly as Cloud Run will, against the compose services, with the
-service connected as the restricted role. The Anthropic key is **not** passed in.
+service connected as the restricted role. No model key is passed in.
 
 ```bash
 docker compose up -d --wait postgres redis        # once; the script also does this
@@ -134,14 +134,15 @@ two service accounts so the service cannot read what only the deploy job needs:
 
 It then asks for each secret, **typed silently** (never on a command line or in a file), checks its shape (the
 pooled URL must contain `-pooler`, the direct one must not, Redis must be `rediss://`), and stores it as a new
-version. The Anthropic key is optional: press Enter to skip it.
+version. The Gemini and Anthropic keys are optional: press Enter to skip either. A Gemini key is checked for the `AIza` prefix, an Anthropic key for `sk-ant-`.
 
 ## 6. Deploy
 
 ```bash
 scripts/deploy.sh --project "$PROJECT" --dry-run        # every command, none run
 scripts/deploy.sh --project "$PROJECT"                  # replay + scripted runs, no model
-scripts/deploy.sh --project "$PROJECT" --with-key       # also the live model option (needs the key secret)
+scripts/deploy.sh --project "$PROJECT" --with-key       # also the live model option (the Gemini key secret)
+scripts/deploy.sh --project "$PROJECT" --with-key --with-claude   # and Claude as a fallback (a funded key AND a price in LLM_PRICES)
 scripts/deploy.sh --project "$PROJECT" --min-instances 1 --version 2026-10-24-a
 ```
 
@@ -170,10 +171,10 @@ Open the URL printed at the end in a **private window**. You should be able to, 
 2. click **Run demo batch (50 orders)**, watch it work, then review: the totals add up, two planted proposals are
    refused by the checker, and a match can be approved;
 3. click **Reset demo**: your run is archived (still readable, no longer reviewable) and a fresh one starts;
-4. (DEMO_MODE) tick **Break two investigations on purpose** and see a timeout retried and handed to a person.
+4. (DEMO_MODE) tick the chaos option and see a model timeout, an out-of-quota chain and a cut-off reply each handed to a person.
 
-The replay, runs, review and reset all work with `ANTHROPIC_API_KEY` unset. With no key the live checkbox is not
-even offered. The same checks, scripted:
+The replay, runs, review and reset all work with no model key. With no usable model the live checkbox is not
+even offered; with one, it is offered only while the free tier has the requests for a run left today. The same checks, scripted:
 
 ```bash
 node scripts/smoke.mjs "$(gcloud run services describe ziro --region "$REGION" --format='value(status.url)')" --no-key
@@ -193,8 +194,12 @@ node scripts/smoke.mjs "$(gcloud run services describe ziro --region "$REGION" -
 | Test keys only                            | The app refuses an `rzp_live_` key at boot; `deploy.sh` refuses to ship one; the public demo uses generated data and deploys no Razorpay keys at all                                     | `config/env.ts`, `deploy.sh`           |
 | The audit trail cannot be edited          | The service's role has no `UPDATE` on it and does not own the table, so it cannot disable the trigger                                                                                    | `scripts/migrate.ts`                   |
 
-Set a **spend limit on the Anthropic side** for the key you deploy (in the Console's limits settings): it is the
-backstop if everything above failed. Use a key made for this demo and nothing else.
+On the **Gemini free tier** nothing is charged, but Google may use the prompts it receives: the public demo
+generates its own synthetic records and takes none from a visitor, and that must stay true. Copy the request
+limits from aistudio.google.com/rate-limit into `GEMINI_LIMITS` in `deploy/demo.env` (the app warns at boot when
+they are missing and never guesses them). If you also deploy Claude, set a **spend limit on the Anthropic side**
+for its key (in the Console's limits settings): it is the backstop if everything above failed. Use keys made for
+this demo and nothing else.
 
 ## 9. Operating it
 
@@ -206,7 +211,7 @@ gcloud run services logs read ziro --region "$REGION" --limit 50
 # Stop all model calls now (the next deploy puts it back to what deploy/demo.env says)
 gcloud run services update ziro --region "$REGION" --update-env-vars AGENT_KILL_SWITCH=true
 
-# Remove the live option entirely: deploy without --with-key
+# Remove the live option entirely: deploy without --with-key (and without --with-claude)
 scripts/deploy.sh --project "$PROJECT" --skip-build --skip-prepare --version SAME_TAG_AS_NOW
 
 # Roll back to the previous revision

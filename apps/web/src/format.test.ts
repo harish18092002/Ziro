@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentStatus } from './api';
-import { agentBanner, failureSentence, inr, linkTo, parseHash, percent, words } from './format';
+import type { AgentStatus, ModelStatus } from './api';
+import {
+  agentBanner,
+  failureSentence,
+  inr,
+  linkTo,
+  parseHash,
+  percent,
+  replayNote,
+  words,
+} from './format';
 
 const RUN = '3f2b8c1e-5d4a-4b6f-9a7e-1c2d3e4f5a6b';
 const ITEM = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
@@ -68,11 +77,32 @@ describe('small formatters', () => {
   });
 });
 
-const status = (paused: AgentStatus['paused']): AgentStatus => ({
+const model = (
+  id: string,
+  state: ModelStatus['state'],
+  until: string | null = null,
+): ModelStatus => ({
+  id,
+  provider: id.split(':')[0] ?? '',
+  model: id.split(':')[1] ?? '',
+  state,
+  until,
+  why: null,
+  usedToday: 0,
+  limitPerDay: null,
+});
+
+const status = (paused: AgentStatus['paused'], over: Partial<AgentStatus> = {}): AgentStatus => ({
   configured: true,
   paused,
   spentTodayUsd: '0.000000',
   dailyBudgetUsd: '5.000000',
+  models: [model('gemini:a', 'ok')],
+  dropped: [],
+  exhausted: false,
+  cache: 'off',
+  tier: 'free',
+  ...over,
 });
 
 describe('agentBanner', () => {
@@ -106,6 +136,58 @@ describe('agentBanner', () => {
       }),
     );
     expect(text).toContain('It will try again after 10:15 UTC.');
+  });
+});
+
+describe('agentBanner when the models run out', () => {
+  it('says AI quota is exhausted, which models, and when the first is back', () => {
+    const text = agentBanner(
+      status(null, {
+        exhausted: true,
+        models: [
+          model('gemini:a', 'quota_exhausted', '2026-10-26T07:00:00.000Z'),
+          model('anthropic:b', 'disabled'),
+        ],
+      }),
+    );
+    expect(text).toContain('AI quota exhausted');
+    expect(text).toContain('gemini:a out of quota for today');
+    expect(text).toContain('anthropic:b switched off');
+    expect(text).toContain('Matching and review still work');
+    expect(text).toContain('back after 07:00 UTC');
+  });
+
+  it('does not promise a return time when nothing says one', () => {
+    const text = agentBanner(
+      status(null, { exhausted: true, models: [model('anthropic:b', 'disabled')] }),
+    );
+    expect(text).not.toContain('back after');
+  });
+
+  it('names the fallback when some models are out and another is answering', () => {
+    const text = agentBanner(
+      status(null, { models: [model('gemini:a', 'quota_exhausted'), model('gemini:b', 'ok')] }),
+    );
+    expect(text).toBe('Running on a fallback model: gemini:a is out of quota for today.');
+  });
+
+  it('puts an operator pause before a quota problem', () => {
+    const text = agentBanner(
+      status(
+        { reason: 'kill_switch', message: 'the agent kill switch is on', since: null, until: null },
+        { exhausted: true, models: [model('gemini:a', 'disabled')] },
+      ),
+    );
+    expect(text).toContain('The agent is paused');
+  });
+});
+
+describe('replayNote', () => {
+  it('appears only in replay mode', () => {
+    expect(replayNote(null)).toBeNull();
+    expect(replayNote(status(null))).toBeNull();
+    expect(replayNote(status(null, { cache: 'record' }))).toBeNull();
+    expect(replayNote(status(null, { cache: 'replay' }))).toContain('recorded run');
   });
 });
 

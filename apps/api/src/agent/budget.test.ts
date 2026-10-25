@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { Budget, DEFAULT_LIMITS, type Limits } from './budget.js';
-import { PRICED_PROMPT_LIMIT } from './pricing.js';
 import { MAX_RESULT_CHARS } from './tools/toolbox.js';
 import { AGENT_TOOLS } from './tools/definitions.js';
 import { systemPrompt } from './prompt.js';
 import { toAnthropicJsonSchema } from '../llm/json-schema.js';
+
+// Providers bill a prompt above a size at a higher rate, which LLM_PRICES (one rate per model) cannot express. The
+// loop keeps every conversation under the smallest such boundary we know of.
+const PRICED_PROMPT_LIMIT = 100_000;
 
 const limits: Limits = {
   maxToolCalls: 3,
@@ -83,8 +86,8 @@ describe('Budget', () => {
 });
 
 describe('the default limits', () => {
-  it('are the ones in the brief: 8 tool calls and 60 seconds', () => {
-    expect(DEFAULT_LIMITS.maxToolCalls).toBe(8);
+  it('are the ones in the brief: 4 tool calls (LLM_MAX_TOOL_CALLS) and 60 seconds', () => {
+    expect(DEFAULT_LIMITS.maxToolCalls).toBe(4);
     expect(DEFAULT_LIMITS.timeoutMs).toBe(60_000);
   });
 
@@ -96,7 +99,7 @@ describe('the default limits', () => {
   // A prompt above 100K tokens is billed at a tier this code cannot price, so a full conversation must
   // not be able to reach it: every output token and every tool result is read again on later requests.
   // UUIDs tokenise at about two characters per token, so characters are divided by two to be safe.
-  it('cannot add up to a prompt above the tier the pricing table covers', () => {
+  it('cannot add up to a prompt above the size where prices step up', () => {
     const fixed =
       systemPrompt(DEFAULT_LIMITS).length +
       JSON.stringify(AGENT_TOOLS.map((t) => toAnthropicJsonSchema(t.args))).length +

@@ -15,6 +15,8 @@ const OPINION_PLACEHOLDER =
 // --- formatting ------------------------------------------------------------------------------------------
 
 const pct = (x: number): string => `${(x * 100).toFixed(1)}%`;
+/** A number that is already a percentage. */
+const pctPoints = (x: number): string => `${x.toFixed(1)}%`;
 const num = (x: number): string => (Number.isInteger(x) ? String(x) : x.toFixed(1));
 const usd = (micro: number): string => {
   const dollars = micro / 1_000_000;
@@ -62,20 +64,27 @@ function table(header: readonly string[], rows: readonly (readonly string[])[]):
   return [line(header), line(header.map(() => '---')), ...rows.map(line)].join('\n');
 }
 
-const label = (config: ConfigName, cluster = false): string =>
-  `**${config}**${cluster ? ' + clustering' : ''}`;
+const label = (config: ConfigName, cluster = false, runs: readonly RunRecord[] = []): string => {
+  const first = runs[0];
+  const notes = [
+    cluster ? 'clustering' : null,
+    first?.cache === 'replay' ? 'REPLAYED from recorded answers' : null,
+    first?.sample == null ? null : `sample of ${first.sample}`,
+  ].filter((n): n is string => n !== null);
+  return `**${config}**${notes.length === 0 ? '' : ` (${notes.join(', ')})`}`;
+};
 
 function headline(set: ResultSet): string {
   const rows: string[][] = [];
   for (const config of CONFIGS) {
     const runs = runsOf(set, config, 'plain');
     if (runs.length === 0) {
-      rows.push([label(config), 'not run', '', '', '', '', '', '', '', '']);
+      rows.push([label(config), 'not run', '', '', '', '', '', '', '', '', '']);
       continue;
     }
     const llm = config !== 'rules';
     rows.push([
-      label(config),
+      label(config, false, runs),
       String(runs.length),
       spread(
         col(runs, (r) => r.groups.matchRate),
@@ -107,7 +116,17 @@ function headline(set: ResultSet): string {
       ),
       llm
         ? spread(
-            col(runs, (r) => r.cost.per1kOrdersMicroUsd),
+            col(runs, (r) => r.cost.requestsPer1kOrders),
+            num,
+          )
+        : '–',
+      llm
+        ? spread(
+            col(runs, (r) =>
+              r.cost.estPaidMicroUsd === null
+                ? null
+                : Math.round((r.cost.estPaidMicroUsd / r.orders) * 1000),
+            ),
             usd,
           )
         : '–',
@@ -132,7 +151,8 @@ function headline(set: ResultSet): string {
       'reason-code accuracy',
       'rejected by verifier',
       'Ziro gap (strict)',
-      'cost / 1k orders',
+      'requests / 1k orders',
+      'est. paid cost / 1k orders',
       'latency p50 / p95',
     ],
     rows,
@@ -145,7 +165,7 @@ function tokensTable(set: ResultSet): string {
     const runs = runsOf(set, config, 'plain');
     if (runs.length === 0) continue;
     rows.push([
-      label(config),
+      label(config, false, runs),
       spread(
         col(runs, (r) => r.cost.tokens.input),
         tokens,
@@ -170,12 +190,22 @@ function tokensTable(set: ResultSet): string {
         col(runs, (r) => r.cost.totalMicroUsd),
         usd,
       ),
-      config === 'harnessB'
-        ? spread(
-            col(runs, (r) => r.cost.sdkReportedMicroUsd),
-            usd,
-          )
-        : '–',
+      spread(
+        col(runs, (r) => r.cost.estPaidMicroUsd),
+        usd,
+      ),
+      spread(
+        col(runs, (r) => r.cost.requests),
+        num,
+      ),
+      spread(
+        col(runs, (r) => r.cost.fallbacks),
+        num,
+      ),
+      spread(
+        col(runs, (r) => (r.cost.quotaUsedOfDay === null ? null : r.cost.quotaUsedOfDay * 100)),
+        pctPoints,
+      ),
     ]);
   }
   return rows.length === 0
@@ -188,8 +218,11 @@ function tokensTable(set: ResultSet): string {
           'cache reads',
           'model calls',
           'investigations',
-          'run cost',
-          'cost the SDK reported',
+          'actual cost',
+          'est. cost at paid prices',
+          'requests sent',
+          'fallbacks',
+          'share of one free-tier day',
         ],
         rows,
       );
@@ -488,8 +521,10 @@ const LIMITS = [
   'Accepted groups include every verified agent match, as if a reviewer approved all of them. A careful human would reject some, so false matches here are an upper bound on what a person would let through.',
   'Reason-code accuracy is scored against the codes datagen planted; several reasons have only a handful of records, so read the per-code counts, not just the percentage.',
   'Injection “followed” is decided by heuristics on what the agent did; every flagged case is listed so it can be overruled. “Exposed” means the payload appeared in a tool result during the investigation.',
-  'Costs are computed from token counts with the rates in `agent/pricing.ts` for every config, so they compare like for like; the Agent SDK’s own estimate is shown beside it.',
-  'Latency is wall time per investigation with four investigations running at once, and includes the Agent SDK’s process start for harness B.',
+  'Actual cost is what the key was charged: $0 on the Gemini free tier. The estimate at paid prices is computed from token counts with the prices in `LLM_PRICES` (copied by the author from the price pages) for every config, so they compare like for like; thinking tokens are priced as output, and the usage fields of the Gemini API have not been checked against a live call, so treat the estimate as an approximation.',
+  'Requests sent counts every attempt that reached a provider, failed ones included, and not answers served from the record. It is the free tier’s scarce resource; the share-of-a-day column divides it by the model’s configured daily limit.',
+  'A run marked REPLAYED was served from recorded answers: its accuracy numbers are real (they score the recorded answers), but its requests, cost and latency are not a measurement of anything. A run marked sample used only the first N investigations, and is not comparable with a full run.',
+  'Latency is wall time per investigation with four investigations running at once, and on the free tier includes any wait for the per-minute limit.',
 ];
 
 // --- the document --------------------------------------------------------------------------------------------
@@ -525,7 +560,7 @@ export function renderEvals({ set, previous }: RenderInput): string {
     `**Dataset:** ${dataset}.`,
     versions === undefined
       ? ''
-      : `**Models:** small \`${versions.models.small}\`, large \`${versions.models.large}\`. **Agent SDK:** ${versions.agentSdk ?? 'not used'}. **Node:** ${versions.node}.`,
+      : `**Models:** lite \`${versions.models.lite ?? 'none'}\`, flash \`${versions.models.flash ?? 'none'}\`, Claude \`${versions.models.claude ?? 'none'}\`. **Node:** ${versions.node}.`,
     '',
     '## Results',
     '',
@@ -608,8 +643,9 @@ function alignedTable(header: readonly string[], rows: readonly (readonly string
 
 const README_COLUMNS: readonly (readonly [ConfigName, string])[] = [
   ['rules', 'Rules only'],
-  ['small', 'Rules + small model'],
-  ['large', 'Rules + large model'],
+  ['lite-single', 'Rules + lite model, one call'],
+  ['lite-loop', 'Rules + lite model, tool loop'],
+  ['flash-single', 'Rules + flash model, one call'],
 ];
 
 /** The README's table: one column per configuration, one row per thing worth knowing. */
@@ -677,15 +713,32 @@ export function renderReadmeResults(set: ResultSet): string {
       ),
     ],
     [
-      'Cost per 1,000 orders',
+      'Model requests per 1,000 orders',
+      ...README_COLUMNS.map(([c]) =>
+        cell(c, (runs) =>
+          c === 'rules'
+            ? '0'
+            : spread(
+                col(runs, (r) => r.cost.requestsPer1kOrders),
+                num,
+              ),
+        ),
+      ),
+    ],
+    [
+      'Cost per 1,000 orders (free tier: $0; at paid prices:)',
       ...README_COLUMNS.map(([c]) =>
         cell(c, (runs) =>
           c === 'rules'
             ? '$0'
-            : spread(
-                col(runs, (r) => r.cost.per1kOrdersMicroUsd),
+            : `$0 (${spread(
+                col(runs, (r) =>
+                  r.cost.estPaidMicroUsd === null
+                    ? null
+                    : Math.round((r.cost.estPaidMicroUsd / r.orders) * 1000),
+                ),
                 usd,
-              ),
+              )})`,
         ),
       ),
     ],
@@ -719,7 +772,7 @@ export function renderReadmeResults(set: ResultSet): string {
   const models =
     versions === undefined
       ? ''
-      : ` Configured models: small ${versions.models.small}, large ${versions.models.large}.`;
+      : ` Models: lite ${versions.models.lite ?? 'none'}, flash ${versions.models.flash ?? 'none'}.`;
 
   return [
     alignedTable(['', ...README_COLUMNS.map(([, name]) => name)], rows),
