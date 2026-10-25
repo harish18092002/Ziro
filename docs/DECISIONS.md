@@ -4,27 +4,28 @@ Notable decisions, oldest first. Each has a status, the context, what was decide
 rejected, and the consequences, including the ones that hurt. A later ADR can amend an earlier one; the earlier
 one's status says so and names the later one.
 
-| ADR           | Decision                                    | In one line                                                                             | Status            |
-| ------------- | ------------------------------------------- | --------------------------------------------------------------------------------------- | ----------------- |
-| [001][adr001] | Monorepo with a framework-free core package | Pure logic cannot import IO, so it stays provable.                                      | accepted          |
-| [002][adr002] | ESM and Vitest everywhere                   | Nest 12 is ESM-only; one test runner for every package.                                 | accepted          |
-| [003][adr003] | TypeScript pinned to 6.0.x                  | A pinned compiler so typecheck results do not drift.                                    | accepted          |
-| [004][adr004] | Razorpay `fee` is GST-inclusive             | Base fee is fee minus tax; the settlement formula matches 49 of 49 settlements.         | accepted          |
-| [005][adr005] | Database invariants                         | A record is in at most one accepted group; the audit log is append-only.                | accepted          |
-| [006][adr006] | Database tests on PGlite                    | Real migrations, in-process Postgres, fast tests.                                       | accepted          |
-| [007][adr007] | Ground truth for synthetic data             | Every record is labelled, so a match rate can be measured.                              | accepted          |
-| [008][adr008] | Synthetic settlements and bank lines        | Test mode appears to have none; payments are real where available.                      | accepted, amended |
-| [009][adr009] | Ingestion                                   | Strict parsing, immutable rows, one transaction per import.                             | accepted          |
-| [010][adr010] | The rule matcher                            | A waterfall that never guesses; ambiguity is an exception.                              | accepted          |
-| [011][adr011] | The investigation agent                     | A loop we own, read-only tools, every claim checked in code.                            | accepted, amended |
-| [012][adr012] | The verifier and the human gate             | An agent claim is never a match until code and a person agree.                          | accepted, amended |
-| [013][adr013] | The console and the free demo               | One click runs the whole loop; what the gap means.                                      | accepted, amended |
-| [014][adr014] | The run report and the books                | Totals that add up, fee leakage, delays, voucher export.                                | accepted          |
-| [015][adr015] | The eval                                    | How the proof is scored against ground truth, and what it cannot show.                  | accepted, amended |
-| [016][adr016] | Failures are first-class                    | Retry what is transient, say what was lost, never end the run.                          | accepted          |
-| [017][adr017] | Deployment                                  | One image, a public demo that can do three things, a job that migrates first.           | accepted          |
-| [018][adr018] | The model layer                             | A provider port, Gemini's free tier first, Claude optional; no mixed history.           | accepted          |
-| [019][adr019] | Test mode is real                           | No generated fallback; a starter ledger; test payments from the console; an admin gate. | accepted          |
+| ADR           | Decision                                    | In one line                                                                                       | Status            |
+| ------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------- |
+| [001][adr001] | Monorepo with a framework-free core package | Pure logic cannot import IO, so it stays provable.                                                | accepted          |
+| [002][adr002] | ESM and Vitest everywhere                   | Nest 12 is ESM-only; one test runner for every package.                                           | accepted          |
+| [003][adr003] | TypeScript pinned to 6.0.x                  | A pinned compiler so typecheck results do not drift.                                              | accepted          |
+| [004][adr004] | Razorpay `fee` is GST-inclusive             | Base fee is fee minus tax; the settlement formula matches 49 of 49 settlements.                   | accepted          |
+| [005][adr005] | Database invariants                         | A record is in at most one accepted group; the audit log is append-only.                          | accepted          |
+| [006][adr006] | Database tests on PGlite                    | Real migrations, in-process Postgres, fast tests.                                                 | accepted          |
+| [007][adr007] | Ground truth for synthetic data             | Every record is labelled, so a match rate can be measured.                                        | accepted          |
+| [008][adr008] | Synthetic settlements and bank lines        | Test mode appears to have none; payments are real where available.                                | accepted, amended |
+| [009][adr009] | Ingestion                                   | Strict parsing, immutable rows, one transaction per import.                                       | accepted          |
+| [010][adr010] | The rule matcher                            | A waterfall that never guesses; ambiguity is an exception.                                        | accepted          |
+| [011][adr011] | The investigation agent                     | A loop we own, read-only tools, every claim checked in code.                                      | accepted, amended |
+| [012][adr012] | The verifier and the human gate             | An agent claim is never a match until code and a person agree.                                    | accepted, amended |
+| [013][adr013] | The console and the free demo               | One click runs the whole loop; what the gap means.                                                | accepted, amended |
+| [014][adr014] | The run report and the books                | Totals that add up, fee leakage, delays, voucher export.                                          | accepted          |
+| [015][adr015] | The eval                                    | How the proof is scored against ground truth, and what it cannot show.                            | accepted, amended |
+| [016][adr016] | Failures are first-class                    | Retry what is transient, say what was lost, never end the run.                                    | accepted          |
+| [017][adr017] | Deployment                                  | One image, a public demo that can do three things, a job that migrates first.                     | accepted          |
+| [018][adr018] | The model layer                             | A provider port, Gemini's free tier first, Claude optional; no mixed history.                     | accepted          |
+| [019][adr019] | Test mode is real                           | No generated fallback; a starter ledger; test payments from the console; an admin gate.           | accepted, amended |
+| [020][adr020] | Two paths and a refund that looks first     | The home page asks which data; a live account view; refunds are checked before Razorpay is asked. | accepted          |
 
 [adr001]: #adr-001-monorepo-with-a-framework-free-core-package
 [adr002]: #adr-002-esm-everywhere-vitest-everywhere
@@ -45,6 +46,7 @@ one's status says so and names the later one.
 [adr017]: #adr-017-deployment--one-image-a-public-demo-that-can-only-do-three-things-and-a-job-that-migrates-first
 [adr018]: #adr-018-the-model-layer--a-provider-port-geminis-free-tier-first-claude-optional
 [adr019]: #adr-019-test-mode-is-real--no-generated-fallback-a-starter-ledger-and-an-optional-admin-gate
+[adr020]: #adr-020-two-paths-a-live-account-view-and-a-refund-that-looks-first
 
 ---
 
@@ -1066,7 +1068,7 @@ request around until some model accepted it.
 
 ## ADR-019: Test mode is real — no generated fallback, a starter ledger, and an optional admin gate
 
-**Status:** accepted. Amends ADR-008 (the fallback and the `mixed` label are gone).
+**Status:** accepted, amended by [ADR-020](#adr-020-two-paths-a-live-account-view-and-a-refund-that-looks-first) (the console's shape, and how a refund is made). Amends ADR-008 (the fallback and the `mixed` label are gone).
 
 **Context.** ADR-008 let a `RAZORPAY_SOURCE=testmode` run fall back, per entity, to generated settlements when
 test mode had none. The author wants test mode to mean the author's own Razorpay test account and nothing else,
@@ -1119,3 +1121,55 @@ every page for one); OAuth or user accounts (far more than one operator needs).
   against live Checkout rests on Razorpay's documentation: no order was created while building it.
 - The admin token is one shared secret. It stops strangers; it does not say who approved something (the reviewer
   name is still recorded as given).
+
+## ADR-020: Two paths, a live account view, and a refund that looks first
+
+**Status:** accepted. Amends ADR-019.
+
+**Context.** The first version of ADR-019 worked: the author made a real test payment through Checkout. Their first
+refund then failed with Razorpay's `BAD_REQUEST_ERROR: invalid request sent`, and the console showed that sentence
+and nothing else. Razorpay's documentation lists no such error (its refund page lists about twenty failures, each
+with a message, and gives a low balance a message of its own).
+Two public issues on the official Node SDK report exactly this text on `payments.refund` in test mode, one on a
+captured payment of either method (razorpay-node #438) and one whose commenter blames the account not having
+enough balance (#454). Neither has an answer from Razorpay, and the balance explanation is a guess. Separately, the console put two different jobs behind one "Try it" (a
+generated demo, and the author's own account), and the instructions for making a test payment were a folded
+paragraph on a second page.
+
+**Decision.**
+
+- **The home page asks one question** and answers it with two equal cards under the hero: _Your Razorpay test
+  account_ (real) and _Built-in demo_ (generated). The first says what this server can do for it: ready, needs
+  set-up, `DEMO_MODE` in the way, or not available on the public demo. The old "Try it" block is gone.
+- **`#/test` is the test-account workspace**, in four numbered steps: payments, ledger, bank (optional),
+  reconcile. Step 1 shows the payments the account holds right now, read from Razorpay when the page opens, on
+  Refresh and when the tab is focused again (`GET /razorpay/test-payments`, read-only, up to 93 days and 500 rows,
+  nothing stored), with a status for each, what has been refunded, and a Refund button where Razorpay allows one.
+  The exact set-up steps (dashboard path, a copyable `.env` block, the restart) and the test values to type in
+  Razorpay's window are on the page, not in a document.
+- **A refund looks first.** The server reads the payment, then `refundState` decides: captured, at least Re 1 left,
+  and not more than what is left. The same pure function marks which rows show a Refund button. Only then is
+  Razorpay asked, once (a second POST could refund twice).
+- **Razorpay's failures are said in words** (`explainRazorpayFailure`: what Razorpay said, with its status and code,
+  and what to do about the cases that have a known remedy). The reasonless refund refusal is described for what it
+  is: undocumented, reported by other developers in test mode when the balance is too small, unconfirmed. The
+  refund box offers "Just ₹1" as the quickest way to find out.
+- **`/pay.html` only creates payments** (it needs Razorpay's script, so it keeps its own narrow policy). Refunds
+  moved to the account page, where the payment can be checked first.
+- **`ADMIN_TOKEN` leaves the main path**: one collapsed note in the set-up guide, for a server other people can
+  reach.
+
+**Alternatives.** Retrying a refused refund with a smaller amount automatically (hides the limit and spends the
+account's balance without being asked); putting Checkout inside the console (needs Razorpay's hosts in the policy of
+every page); polling Razorpay on a timer (extra requests for a list that changes when the person acts); a Capture
+button (not needed while Razorpay captures by default, and the page says where that setting is).
+
+**Consequences.**
+
+- **The cause of the author's 400 is not proven.** The checks remove the causes that can be known beforehand (not
+  captured, already refunded, more than what is left); for the one that cannot (the reasonless refusal) the message
+  says what is reported and claims no cause. No request was made to the author's account to test it.
+- The list costs at least two reads of Razorpay each time it loads (payments, then their orders for the receipt);
+  a return to the tab refreshes it, not more often than every 1.5 seconds.
+- The CSV templates are made in the browser and offered as downloads; a click raised no policy violation, but a
+  file landing on disk was not seen (headless browser).

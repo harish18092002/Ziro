@@ -46,11 +46,14 @@ describe('parseHash', () => {
       expect(parseHash(hash)).toEqual({ page: 'home' });
   });
 
-  it('knows the test-account page, and only exactly that', () => {
-    expect(parseHash('#/new')).toEqual({ page: 'new' });
-    expect(parseHash('#/new/')).toEqual({ page: 'new' });
+  it('knows the test-account page, under its old name too, and only exactly that', () => {
+    for (const hash of ['#/test', '#/test/', '#/new', '#/new/']) {
+      expect(parseHash(hash)).toEqual({ page: 'test' });
+    }
+    expect(parseHash('#/test/extra')).toEqual({ page: 'home' });
     expect(parseHash('#/new/extra')).toEqual({ page: 'home' });
     expect(parseHash('#/newer')).toEqual({ page: 'home' });
+    expect(parseHash('#/tests')).toEqual({ page: 'home' });
   });
 
   it('reads a run, its tab and an optional item', () => {

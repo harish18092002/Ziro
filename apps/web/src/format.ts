@@ -22,16 +22,21 @@ export const sentence = (code: string): string => {
 
 export type Route =
   | { page: 'home' }
-  | { page: 'new' }
+  | { page: 'test' }
   | { page: 'run'; runId: string; tab: Tab; itemId: string | null };
 export type Tab = 'summary' | 'exceptions' | 'audit' | 'downloads';
 const TABS: readonly Tab[] = ['summary', 'exceptions', 'audit', 'downloads'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** `#/new` is the test-account workflow; `#/runs/<uuid>/<tab>[/<exception uuid>]` a run; anything else the home page. */
+/**
+ * `#/test` is the test-account workspace (`#/new` was its first name and still works);
+ * `#/runs/<uuid>/<tab>[/<exception uuid>]` a run; anything else the home page.
+ */
 export function parseHash(hash: string): Route {
   const [, root, runId, tab, itemId] = hash.replace(/^#/, '').split('/');
-  if (root === 'new' && (runId === undefined || runId === '')) return { page: 'new' };
+  if ((root === 'test' || root === 'new') && (runId === undefined || runId === '')) {
+    return { page: 'test' };
+  }
   if (root !== 'runs' || runId === undefined || !UUID.test(runId)) return { page: 'home' };
   const chosen = TABS.find((t) => t === tab) ?? 'summary';
   return {

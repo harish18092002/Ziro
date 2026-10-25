@@ -8,6 +8,9 @@ import type { RazorpaySource } from './source.js';
 import { SyntheticSource } from './synthetic.source.js';
 import { TestModeSource } from './testmode.source.js';
 
+/** The run id behind a listing that is shown and thrown away. Not a run: nothing is written under it. */
+const LISTING_RUN_ID = '00000000-0000-4000-8000-000000000000';
+
 /** Builds the Razorpay source a run should use, from configuration. */
 @Injectable()
 export class RazorpaySourceFactory {
@@ -26,6 +29,18 @@ export class RazorpaySourceFactory {
     if (this.env.RAZORPAY_SOURCE === 'synthetic') return this.synthetic(runId);
     const { keyId, keySecret } = this.testKeys();
     return new TestModeSource({ runId, client: createSdkClient({ keyId, keySecret }) });
+  }
+
+  /**
+   * A read-only view of the test account for the console's live payments list. It is not part of any run:
+   * the ids it makes belong to no run and are never stored.
+   */
+  account(): RazorpaySource {
+    const { keyId, keySecret } = this.testKeys();
+    return new TestModeSource({
+      runId: LISTING_RUN_ID,
+      client: createSdkClient({ keyId, keySecret }),
+    });
   }
 
   /** The writer for the test-payments helper. Only exists in test mode. */

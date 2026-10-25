@@ -7,8 +7,8 @@ import { Home } from './Home';
 import { type ThemeMode, useHash, useLoad, useTheme } from './hooks';
 import { Icon, type IconName } from './Icons';
 import { LoginGate } from './Login';
-import { NewRun } from './NewRun';
 import { RunPage } from './RunPage';
+import { TestAccount } from './TestAccount';
 import { Banner } from './ui';
 
 const THEME_ICON: Record<ThemeMode, IconName> = { system: 'monitor', light: 'sun', dark: 'moon' };
@@ -31,7 +31,8 @@ function Shell() {
   const [theme, stepTheme] = useTheme();
   const razorpay = useLoad<RazorpayStatus>('/razorpay/status').data;
   const home = route.page === 'home';
-  const canImport = razorpay?.ready === true && razorpay.importsOpen;
+  // The public demo has no test-account tools to offer; every other server does (or says how to set it up).
+  const offerTest = razorpay !== null && (razorpay.source === 'testmode' || razorpay.importsOpen);
   return (
     <>
       <header className="shell-top">
@@ -47,7 +48,7 @@ function Shell() {
             <nav className="nav" aria-label="Sections">
               <a href="#how">How it works</a>
               <a href="#trust">Trust</a>
-              <a href="#try">Try it</a>
+              <a href="#start">Start</a>
             </nav>
           ) : null}
           <div className="shell-right">
@@ -64,13 +65,14 @@ function Shell() {
                 <Icon name={THEME_ICON[theme]} size={18} />
               </span>
             </button>
-            {canImport && route.page !== 'new' ? (
-              <a className="button primary sm" href="#/new">
-                New reconciliation
+            {offerTest && route.page !== 'test' ? (
+              <a className="button sm" href="#/test">
+                Test account
               </a>
-            ) : home ? (
-              <a className="button primary sm" href="#try">
-                Try it
+            ) : null}
+            {home ? (
+              <a className="button primary sm" href="#start">
+                Start
               </a>
             ) : (
               <a className="button sm" href="#/">
@@ -84,8 +86,8 @@ function Shell() {
       <main className={home ? 'bleed' : ''}>
         {route.page === 'home' ? (
           <Home razorpay={razorpay} />
-        ) : route.page === 'new' ? (
-          <NewRun />
+        ) : route.page === 'test' ? (
+          <TestAccount />
         ) : (
           <RunPage route={route} />
         )}

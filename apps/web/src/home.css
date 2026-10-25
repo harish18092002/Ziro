@@ -655,43 +655,6 @@
   font-size: 0.8rem;
 }
 
-/* ---------- try it ---------- */
-.try {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
-  gap: 28px;
-  align-items: center;
-}
-.try h2 {
-  font-size: clamp(1.3rem, 2.4vw, 1.7rem);
-}
-.try-sub {
-  margin: 4px 0 14px;
-  color: var(--ink-2);
-}
-.try-options {
-  display: grid;
-  gap: 14px;
-  padding-left: 28px;
-  border-left: 1px solid var(--hair);
-}
-.try-options:empty {
-  display: none;
-}
-.honest {
-  display: flex;
-  gap: 9px;
-  align-items: flex-start;
-  max-width: 76ch;
-  margin: 22px 0 0;
-  color: var(--ink-3);
-  font-size: 0.84rem;
-}
-.honest svg {
-  flex: none;
-  margin-top: 2px;
-}
-
 /* ---------- footer ---------- */
 .footer {
   padding: 22px 0 30px;
@@ -724,7 +687,6 @@
 @media (max-width: 900px) {
   .hero-grid,
   .why,
-  .try,
   .flow-detail {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -742,11 +704,6 @@
   }
   .trust-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .try-options {
-    padding: 14px 0 0;
-    border-left: 0;
-    border-top: 1px solid var(--hair);
   }
   .hero {
     padding-top: 28px;

@@ -370,8 +370,9 @@ recon report if the account has any) and nothing else: an empty account is an em
 with generated data (ADR-019, which removed ADR-008's fallback). The ledger and bank statement are not
 Razorpay's: a **starter ledger** is built from the captured orders and goes through the normal CSV import
 (`ingest/starter.ts`), a bank statement is uploaded or, if settlements exist, simulated from them and
-labelled as such. `/pay.html` and `POST /razorpay/test-orders|test-refunds` create test payments and
-refunds through a one-attempt `RazorpayWriter`. Time conversion (Unix seconds → IST business date) is
+labelled as such. `GET /razorpay/test-payments` is the console's live, read-only view of the account (nothing
+stored), and `/pay.html` plus `POST /razorpay/test-orders|test-refunds` create test payments and refunds through a
+one-attempt `RazorpayWriter`; a refund first reads the payment and checks it with `refundState` (ADR-020). Time conversion (Unix seconds → IST business date) is
 `@ziro/core/time`.
 
 ## Ingestion

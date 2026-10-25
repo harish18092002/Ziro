@@ -1,7 +1,7 @@
-// The test-payments page: make an order in YOUR Razorpay test account, pay it in Razorpay's own test window,
-// and optionally refund it. It is a plain page (no framework) so that the one script that must talk to
-// Razorpay's Checkout stays small and easy to read. Everything shown from the network is put on the page as
-// text, never as markup.
+// The payment page: make an order in YOUR Razorpay test account and pay it in Razorpay's own test window.
+// Refunds live in the test-account page, which looks at a payment before asking Razorpay to refund it. This is
+// a plain page (no framework) so that the one script that must talk to Razorpay's Checkout stays small and
+// easy to read. Everything shown from the network is put on the page as text, never as markup.
 import './theme.css';
 import './base.css';
 import './pay.css';
@@ -114,31 +114,20 @@ function addMade(entry: { paymentId: string; receipt: string; amountPaise: numbe
   const id = document.createElement('code');
   id.textContent = entry.paymentId;
 
-  const note = document.createElement('span');
-  note.className = 'made-note';
-  const refund = document.createElement('button');
-  refund.className = 'sm';
-  refund.type = 'button';
-  refund.textContent = 'Refund it';
-  refund.addEventListener('click', () => {
-    refund.disabled = true;
-    note.textContent = 'Refunding…';
-    api<{ refundId: string; amountPaise: number }>('POST', '/razorpay/test-refunds', {
-      paymentId: entry.paymentId,
-    }).then(
-      (done) => {
-        note.textContent = `Refunded ${showPaise(done.amountPaise)}`;
-        refund.remove();
-      },
-      (error: unknown) => {
-        note.textContent = error instanceof Error ? error.message : String(error);
-        refund.disabled = false;
-      },
-    );
-  });
-
-  item.append(main, id, refund, note);
+  item.append(main, id);
   madeList.prepend(item);
+}
+
+// Every [data-copy] button copies its value and says so for two seconds.
+for (const button of document.querySelectorAll<HTMLButtonElement>('button[data-copy]')) {
+  button.addEventListener('click', () => {
+    const label = button.textContent;
+    navigator.clipboard.writeText(button.dataset['copy'] ?? '').then(
+      () => (button.textContent = 'Copied'),
+      () => (button.textContent = 'Select and copy'),
+    );
+    setTimeout(() => (button.textContent = label), 2000);
+  });
 }
 
 async function payNow(): Promise<void> {
@@ -175,7 +164,7 @@ async function payNow(): Promise<void> {
           amountPaise: order.amountPaise,
         });
         say(
-          `Paid ${showPaise(order.amountPaise)} for ${order.receipt}. Make another, or go back.`,
+          `Paid ${showPaise(order.amountPaise)} for ${order.receipt}. It is in your test account now: make another, or go back to see it.`,
           'ok',
         );
         payButton.disabled = false;
@@ -204,11 +193,16 @@ api<Status>('GET', '/razorpay/status').then(
   (status) => {
     if (!status.ready) {
       say(
-        'Test mode is off. In .env set RAZORPAY_SOURCE=testmode with your rzp_test_ keys, then restart the server.',
+        'Test mode is not set up yet. Open "Your test account" (top right) for the two-minute set-up.',
         'bad',
       );
     } else if (!status.importsOpen) {
-      say('This is the public demo: making test payments is switched off here.', 'bad');
+      say(
+        status.ready
+          ? 'DEMO_MODE=true switches payments off. Set DEMO_MODE=false in .env and restart the server.'
+          : 'This is the public demo: making test payments is switched off here.',
+        'bad',
+      );
     } else {
       say(`Test mode is on. Key ${status.keyId ?? ''}. Nothing here moves real money.`, 'ok');
       form.hidden = false;

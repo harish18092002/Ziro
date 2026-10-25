@@ -11,6 +11,17 @@ export class ApiError extends Error {
   }
 }
 
+/** What to tell a person: a rejected file's own reasons, else the server's message, else the error's text. */
+export function reasonOf(error: unknown): string {
+  if (error instanceof ApiError) {
+    const body = error.body as { fatal?: unknown } | null;
+    const fatal = body?.fatal;
+    if (Array.isArray(fatal) && fatal.length > 0) return fatal.map(String).join('; ');
+    return error.message;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
 async function send<T>(method: string, path: string, init: RequestInit): Promise<T> {
   const res = await fetch(path, { method, ...init });
   const text = await res.text();
@@ -109,6 +120,39 @@ export interface MatchResult {
   groups: number;
   exceptions: number;
   ignored: number;
+}
+/** One payment in the test account, as the live list shows it. Money is a digit string of paise. */
+export interface TestPayment {
+  paymentId: string;
+  orderId: string | null;
+  receipt: string | null;
+  method: string;
+  /** Razorpay's own word: created, authorized, captured, refunded or failed. */
+  status: string;
+  captured: boolean;
+  amountPaise: string;
+  amountRefundedPaise: string;
+  refundablePaise: string;
+  canRefund: boolean;
+  cannotRefundBecause: string | null;
+  createdAt: string;
+  businessDate: string;
+}
+export interface TestPaymentList {
+  from: string;
+  to: string;
+  keyId: string | null;
+  fetchedAt: string;
+  payments: TestPayment[];
+  truncated: boolean;
+  /** False when Razorpay stopped answering part-way: what is listed is real, the rest is missing. */
+  complete: boolean;
+  warnings: string[];
+}
+export interface RefundResult {
+  refundId: string;
+  paymentId: string;
+  amountPaise: number;
 }
 
 export interface Availability {

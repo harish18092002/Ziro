@@ -47,12 +47,12 @@ export function Home({ razorpay }: { razorpay: RazorpayStatus | null }) {
 
   return (
     <div className="landing page">
-      <Hero starter={starter} replay={replay} />
+      <Hero replay={replay} />
+      <StartHere starter={starter} offer={offer} razorpay={razorpay} replay={replay} />
       <StatsBar proof={proof.data} replay={replay} />
       <WhyHard />
       <HowItWorks proof={proof.data} />
       <Trust />
-      <TryIt starter={starter} offer={offer} razorpay={razorpay} />
       <Footer />
     </div>
   );
@@ -84,7 +84,7 @@ function ReplayLink({ replay }: { replay: string | null }) {
   );
 }
 
-function Hero({ starter, replay }: { starter: Starter; replay: string | null }) {
+function Hero({ replay }: { replay: string | null }) {
   return (
     <section className="hero">
       <div className="blob a" />
@@ -100,16 +100,14 @@ function Hero({ starter, replay }: { starter: Starter; replay: string | null }) 
             AI explains the rest, and you approve.
           </p>
           <div className="cta-row">
-            <StartButton starter={starter} />
+            <a className="button primary lg" href="#start">
+              Choose how to start <Icon name="arrow" size={16} />
+            </a>
             <ReplayLink replay={replay} />
           </div>
-          {starter.problem ? (
-            <p className="problem" role="alert">
-              <Icon name="alert" size={15} /> {starter.problem}
-            </p>
-          ) : (
-            <p className="micro">No sign-up. Synthetic data. No API key needed.</p>
-          )}
+          <p className="micro">
+            Use your own Razorpay test account, or built-in demo data. No sign-up.
+          </p>
         </div>
         <div className="hero-visual">
           <HeroArt />
@@ -307,82 +305,148 @@ function Trust() {
   );
 }
 
-function TryIt({
+type PathState = 'loading' | 'ready' | 'setup' | 'demo-mode' | 'public';
+
+/** What the "your own account" card can honestly offer on this server. */
+function pathState(razorpay: RazorpayStatus | null): PathState {
+  if (razorpay === null) return 'loading';
+  if (razorpay.ready && razorpay.importsOpen) return 'ready';
+  if (razorpay.ready) return 'demo-mode';
+  return razorpay.importsOpen ? 'setup' : 'public';
+}
+
+const REAL_BUTTON: Record<Exclude<PathState, 'loading' | 'public'>, string> = {
+  ready: 'Open my test account',
+  setup: 'Set it up (about 2 minutes)',
+  'demo-mode': 'One setting to change',
+};
+const REAL_NOTE: Record<PathState, string> = {
+  loading: '',
+  ready: 'Connected. Payments and refunds are made in your own test account.',
+  setup: 'Needs a pair of test keys from your Razorpay dashboard. The page walks you through it.',
+  'demo-mode':
+    'Your keys are connected, but DEMO_MODE=true switches this off. The page shows the fix.',
+  public: 'Not available on the public demo: run Ziro on your own computer to use your account.',
+};
+
+/** The one question the home page asks: whose data do you want to reconcile? */
+function StartHere({
   starter,
   offer,
   razorpay,
+  replay,
 }: {
   starter: Starter;
   offer: Availability | null;
   razorpay: RazorpayStatus | null;
+  replay: string | null;
 }) {
-  const ownAccount = razorpay?.ready === true && razorpay.importsOpen;
+  const state = pathState(razorpay);
   return (
-    <section className="section alt" id="try">
+    <section className="section start" id="start">
       <div className="wrap">
-        <Reveal>
-          <div className="try">
-            <div>
-              <h2>Try it on 50 synthetic orders</h2>
-              <p className="try-sub">About two seconds. No sign-up.</p>
-              <div className="cta-row">
-                <StartButton starter={starter} />
-                {ownAccount ? (
-                  <a className="button lg" href="#/new">
-                    Use your Razorpay test account
+        <Reveal className="sec-title">
+          <h2>Two ways to start</h2>
+          <p>Reconcile your own Razorpay test account, or watch built-in demo data go through.</p>
+        </Reveal>
+        <div className="paths">
+          <Reveal>
+            <article className="card path">
+              <span className="path-tag real">Real test data</span>
+              <h3>Your Razorpay test account</h3>
+              <p>
+                Make test payments and refunds in your own Razorpay test account, then reconcile
+                them against your ledger.
+              </p>
+              <ul className="path-list">
+                <li>Payments and refunds read live from Razorpay</li>
+                <li>Bring your own ledger, or start one from your orders</li>
+                <li>Nothing made up: an empty account stays empty</li>
+              </ul>
+              <div className="path-foot">
+                {state === 'loading' ? (
+                  <div className="skel path-skel" />
+                ) : state === 'public' ? (
+                  <span className="button lg disabled">Not on the public demo</span>
+                ) : (
+                  <a className={`button lg${state === 'ready' ? ' primary' : ''}`} href="#/test">
+                    {REAL_BUTTON[state]} <Icon name="arrow" size={16} />
                   </a>
+                )}
+                <p className="path-note">{REAL_NOTE[state]}</p>
+              </div>
+            </article>
+          </Reveal>
+
+          <Reveal i={1}>
+            <article className="card path">
+              <span className="path-tag demo">Demo data</span>
+              <h3>Built-in demo</h3>
+              <p>
+                50 generated orders go through the whole pipeline in about two seconds. No setup and
+                no keys.
+              </p>
+              <ul className="path-list">
+                <li>Rules match what they can prove, to the paisa</li>
+                <li>An agent explains the rest, and a checker can refuse it</li>
+                <li>Every step is written to an audit log</li>
+              </ul>
+              <div className="path-foot">
+                <div className="cta-row">
+                  <StartButton starter={starter} />
+                  <ReplayLink replay={replay} />
+                </div>
+                {starter.problem ? (
+                  <p className="problem" role="alert">
+                    <Icon name="alert" size={15} /> {starter.problem}
+                  </p>
+                ) : (
+                  <p className="path-note">
+                    Synthetic data. The free demo’s agent is a script, not an AI model, and each run
+                    plants two wrong proposals so you can watch the checker refuse them.
+                  </p>
+                )}
+                {offer?.live.available || offer?.chaos.available ? (
+                  <details className="fold path-options">
+                    <summary>Options</summary>
+                    {offer.live.available ? (
+                      <label className="switch">
+                        <input
+                          type="checkbox"
+                          checked={starter.live}
+                          onChange={(e) => {
+                            starter.setLive(e.target.checked);
+                            if (e.target.checked) starter.setChaos(false);
+                          }}
+                        />
+                        <span className="track" />
+                        <span className="words">
+                          <b>Use a live AI model</b>
+                          <span>Uses free-tier requests.</span>
+                        </span>
+                      </label>
+                    ) : null}
+                    {offer.chaos.available ? (
+                      <label className="switch">
+                        <input
+                          type="checkbox"
+                          checked={starter.chaos}
+                          disabled={starter.live}
+                          onChange={(e) => starter.setChaos(e.target.checked)}
+                        />
+                        <span className="track" />
+                        <span className="words">
+                          <b>Break three investigations</b>
+                          <span>Watch failures get handled.</span>
+                        </span>
+                      </label>
+                    ) : null}
+                  </details>
                 ) : null}
               </div>
-              {starter.problem ? (
-                <p className="problem" role="alert">
-                  <Icon name="alert" size={15} /> {starter.problem}
-                </p>
-              ) : null}
-            </div>
-            <div className="try-options">
-              {offer?.live.available ? (
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={starter.live}
-                    onChange={(e) => {
-                      starter.setLive(e.target.checked);
-                      if (e.target.checked) starter.setChaos(false);
-                    }}
-                  />
-                  <span className="track" />
-                  <span className="words">
-                    <b>Use a live AI model</b>
-                    <span>Uses free-tier requests.</span>
-                  </span>
-                </label>
-              ) : null}
-              {offer?.chaos.available ? (
-                <label className="switch">
-                  <input
-                    type="checkbox"
-                    checked={starter.chaos}
-                    disabled={starter.live}
-                    onChange={(e) => starter.setChaos(e.target.checked)}
-                  />
-                  <span className="track" />
-                  <span className="words">
-                    <b>Break three investigations</b>
-                    <span>Watch failures get handled.</span>
-                  </span>
-                </label>
-              ) : null}
-            </div>
-          </div>
-          <p className="honest">
-            <Icon name="info" size={15} />
-            <span>
-              Everything is synthetic, in Razorpay test mode. The free demo’s agent is a script, not
-              an AI model, and each run plants two wrong proposals so you can watch the checker
-              refuse them.
-            </span>
-          </p>
-        </Reveal>
+            </article>
+          </Reveal>
+        </div>
       </div>
     </section>
   );
@@ -400,7 +464,7 @@ function Footer() {
         <nav aria-label="Footer">
           <a href="#how">How it works</a>
           <a href="#trust">Trust</a>
-          <a href="#try">Try it</a>
+          <a href="#start">Start</a>
         </nav>
       </div>
     </footer>

@@ -1,4 +1,4 @@
-/* The test-payments page. Tokens and base styles come from theme.css and base.css. */
+/* The payment page. Tokens and base styles come from theme.css and base.css. */
 .pay {
   display: grid;
   gap: 16px;
@@ -11,10 +11,11 @@
   letter-spacing: -0.03em;
 }
 .pay h2 {
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   font-size: 1rem;
 }
 .pay .lead {
+  margin-top: 6px;
   color: var(--ink-2);
 }
 .state {
@@ -36,9 +37,38 @@
   background: color-mix(in srgb, var(--critical) 8%, var(--card));
   color: var(--ink);
 }
+
+/* the three steps, as a quiet strip */
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-2);
+  font-size: 0.86rem;
+}
+.strip li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.strip b {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid color-mix(in srgb, var(--brand) 35%, transparent);
+  border-radius: 50%;
+  background: var(--brand-soft);
+  color: var(--ink);
+  font-size: 0.75rem;
+}
+
 .pay-form {
   display: grid;
-  gap: 14px;
+  gap: 16px;
 }
 .pay-form label {
   display: grid;
@@ -52,6 +82,11 @@
   font-style: normal;
   font-weight: 400;
 }
+.pay-form small {
+  color: var(--ink-3);
+  font-size: 0.78rem;
+  font-weight: 400;
+}
 .pay-form .problem {
   margin: 0;
   color: var(--ink);
@@ -62,16 +97,52 @@
   content: '! ';
   color: var(--critical);
 }
+
+/* what to type in Razorpay's window */
+.testdata dl {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+.testdata dt {
+  color: var(--ink-2);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+.testdata dt span {
+  color: var(--ink-3);
+  font-weight: 400;
+}
+.testdata dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 3px 0 0;
+}
+.testdata dd code {
+  padding: 3px 9px;
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  background: var(--card-2);
+  font-size: 0.9em;
+  user-select: all;
+}
+.testdata p {
+  margin: 12px 0 0;
+  font-size: 0.82rem;
+}
+
 .made-list {
   display: grid;
-  margin: 0;
+  margin: 0 0 12px;
   padding: 0;
   list-style: none;
 }
 .made-list li {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 6px 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
   align-items: center;
   padding: 10px 0;
   border-top: 1px solid var(--hair);
@@ -82,25 +153,16 @@
 .made-main {
   min-width: 0;
 }
-.made-note {
-  grid-column: 1 / -1;
+.pay .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+.pay .muted {
   color: var(--ink-3);
-  font-size: 0.82rem;
-}
-.made-note:empty {
-  display: none;
-}
-.how summary {
-  cursor: pointer;
-  font-weight: 650;
-}
-.how ul {
-  display: grid;
-  gap: 8px;
-  margin: 12px 0 0;
-  padding-left: 18px;
-  color: var(--ink-2);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
 }
 .shell-in .brand img {
   border-radius: 8px;

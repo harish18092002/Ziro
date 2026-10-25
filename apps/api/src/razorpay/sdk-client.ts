@@ -52,6 +52,8 @@ export interface RazorpayWriter {
     paymentId: string,
     input: { readonly amountPaise?: number; readonly notes?: Record<string, string> },
   ): Promise<unknown>;
+  /** A read, used just before a refund to check the payment is captured and how much is left to refund. */
+  fetchPayment(paymentId: string): Promise<unknown>;
 }
 
 export interface SdkClientOptions {
@@ -218,5 +220,6 @@ export function createSdkWriter(options: SdkClientOptions): RazorpayWriter {
           ...(input.notes === undefined ? {} : { notes: input.notes }),
         }),
       ),
+    fetchPayment: (paymentId) => call(() => razorpay.payments.fetch(paymentId)),
   };
 }
