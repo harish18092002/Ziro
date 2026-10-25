@@ -24,6 +24,7 @@
     "datagen": "npm run build:libs && npm run datagen -w @ziro/datagen --",
     "eval": "npm run build:libs && npm run eval -w @ziro/api --",
     "db:generate": "npm run build:libs && npm run db:generate -w @ziro/api",
+    "predb:migrate": "node scripts/ensure-env.mjs",
     "db:migrate": "npm run build:libs && npm run db:migrate -w @ziro/api",
     "seed": "npm run seed -w @ziro/api",
     "bench:matcher": "npm run build:libs && npm run bench:matcher -w @ziro/api --",

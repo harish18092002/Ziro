@@ -1,6 +1,6 @@
 // The one thing the loop needs from a model API: send a conversation, get a response. A small port,
 // so the loop is tested against a scripted fake and only AnthropicLlmClient touches the SDK.
-import type { JsonSchema } from './json-schema.js';
+import type { JsonSchema } from '../llm/json-schema.js';
 import type { Usage } from './pricing.js';
 import type { ToolDefinition } from './tools/toolbox.js';
 

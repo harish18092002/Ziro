@@ -4,7 +4,7 @@ import { PRICED_PROMPT_LIMIT } from './pricing.js';
 import { MAX_RESULT_CHARS } from './tools/toolbox.js';
 import { AGENT_TOOLS } from './tools/definitions.js';
 import { systemPrompt } from './prompt.js';
-import { toStrictJsonSchema } from './json-schema.js';
+import { toAnthropicJsonSchema } from '../llm/json-schema.js';
 
 const limits: Limits = {
   maxToolCalls: 3,
@@ -99,7 +99,7 @@ describe('the default limits', () => {
   it('cannot add up to a prompt above the tier the pricing table covers', () => {
     const fixed =
       systemPrompt(DEFAULT_LIMITS).length +
-      JSON.stringify(AGENT_TOOLS.map((t) => toStrictJsonSchema(t.args))).length +
+      JSON.stringify(AGENT_TOOLS.map((t) => toAnthropicJsonSchema(t.args))).length +
       20_000;
     const worst =
       DEFAULT_LIMITS.maxOutputTokens +

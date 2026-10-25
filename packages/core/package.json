@@ -38,6 +38,10 @@
     "./verify": {
       "types": "./dist/verify/index.d.ts",
       "default": "./dist/verify/index.js"
+    },
+    "./llm": {
+      "types": "./dist/llm/index.d.ts",
+      "default": "./dist/llm/index.js"
     }
   },
   "files": [

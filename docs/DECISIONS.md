@@ -1,6 +1,48 @@
 # Architecture Decision Records
 
-Notable decisions, newest last. Each: context, decision, alternatives, consequences.
+Notable decisions, oldest first. Each has a status, the context, what was decided, the alternatives that were
+rejected, and the consequences, including the ones that hurt. A later ADR can amend an earlier one; the earlier
+one's status says so and names the later one.
+
+| ADR           | Decision                                    | In one line                                                                     | Status               |
+| ------------- | ------------------------------------------- | ------------------------------------------------------------------------------- | -------------------- |
+| [001][adr001] | Monorepo with a framework-free core package | Pure logic cannot import IO, so it stays provable.                              | accepted             |
+| [002][adr002] | ESM and Vitest everywhere                   | Nest 12 is ESM-only; one test runner for every package.                         | accepted             |
+| [003][adr003] | TypeScript pinned to 6.0.x                  | A pinned compiler so typecheck results do not drift.                            | accepted             |
+| [004][adr004] | Razorpay `fee` is GST-inclusive             | Base fee is fee minus tax; the settlement formula matches 49 of 49 settlements. | accepted             |
+| [005][adr005] | Database invariants                         | A record is in at most one accepted group; the audit log is append-only.        | accepted             |
+| [006][adr006] | Database tests on PGlite                    | Real migrations, in-process Postgres, fast tests.                               | accepted             |
+| [007][adr007] | Ground truth for synthetic data             | Every record is labelled, so a match rate can be measured.                      | accepted             |
+| [008][adr008] | Synthetic settlements and bank lines        | Test mode appears to have none; payments are real where available.              | accepted             |
+| [009][adr009] | Ingestion                                   | Strict parsing, immutable rows, one transaction per import.                     | accepted             |
+| [010][adr010] | The rule matcher                            | A waterfall that never guesses; ambiguity is an exception.                      | accepted             |
+| [011][adr011] | The investigation agent                     | A loop we own, read-only tools, every claim checked in code.                    | accepted, amended    |
+| [012][adr012] | The verifier and the human gate             | An agent claim is never a match until code and a person agree.                  | accepted, amended    |
+| [013][adr013] | The console and the free demo               | One click runs the whole loop; what the gap means.                              | accepted, amended    |
+| [014][adr014] | The run report and the books                | Totals that add up, fee leakage, delays, voucher export.                        | accepted             |
+| [015][adr015] | The eval                                    | How the proof is scored against ground truth, and what it cannot show.          | accepted, amended    |
+| [016][adr016] | Failures are first-class                    | Retry what is transient, say what was lost, never end the run.                  | accepted             |
+| [017][adr017] | Deployment                                  | One image, a public demo that can do three things, a job that migrates first.   | accepted             |
+| [018][adr018] | The model layer                             | A provider port, Gemini's free tier first, Claude optional; no mixed history.   | accepted, part built |
+
+[adr001]: #adr-001-monorepo-with-a-framework-free-core-package
+[adr002]: #adr-002-esm-everywhere-vitest-everywhere
+[adr003]: #adr-003-typescript-pinned-to-60x
+[adr004]: #adr-004-razorpay-fee-is-gst-inclusive
+[adr005]: #adr-005-database-invariants--match-groups-and-the-append-only-audit-log
+[adr006]: #adr-006-database-tests-run-on-in-process-postgres-pglite
+[adr007]: #adr-007-ground-truth-semantics-for-synthetic-data
+[adr008]: #adr-008-synthetic-settlements--bank-statements-test-mode-payments-where-available
+[adr009]: #adr-009-ingestion--strict-parsing-immutable-rows-one-transaction-per-import
+[adr010]: #adr-010-the-rule-matcher--a-waterfall-that-never-guesses
+[adr011]: #adr-011-the-investigation-agent--a-hand-rolled-loop-whose-every-claim-is-checked
+[adr012]: #adr-012-the-verifier-and-the-human-gate--an-agents-claim-is-never-a-match
+[adr013]: #adr-013-the-console-the-free-demo-and-what-the-gap-means
+[adr014]: #adr-014-the-run-report-fee-leakage-and-the-voucher-format-for-the-books
+[adr015]: #adr-015-the-eval--how-the-proof-is-scored-and-what-it-cannot-show
+[adr016]: #adr-016-failures-are-first-class--retry-what-is-transient-say-what-was-lost-never-end-the-run
+[adr017]: #adr-017-deployment--one-image-a-public-demo-that-can-only-do-three-things-and-a-job-that-migrates-first
+[adr018]: #adr-018-the-model-layer--a-provider-port-geminis-free-tier-first-claude-optional
 
 ---
 
@@ -108,7 +150,7 @@ when the Razorpay integration lands.
 
 ## ADR-005: Database invariants — match groups and the append-only audit log
 
-**Status:** accepted
+**Status:** accepted; the non-owner application role it recommends is implemented by ADR-017
 
 **Context.** "Every paisa accounted for" needs the database, not only the code, to refuse bad
 states: a record matched twice, an "accepted" match that does not reconcile, a rewritten audit trail.
@@ -280,7 +322,7 @@ the canary test.
 
 ## ADR-009: Ingestion — strict parsing, immutable rows, one transaction per import
 
-**Status:** accepted
+**Status:** accepted; the open-endpoint caveat is handled for the public demo by ADR-017
 
 **Context.** Three sources enter Ziro as untrusted files or API data, and every later claim (a match,
 a metric) rests on the rows being exactly what was sent. Real exports are messy: one bad row, a
@@ -331,8 +373,8 @@ column, but the audit trail could no longer say why a line matched at its tier).
 - `@types/multer` is a dev dependency (types for `Express.Multer.File`); multer itself ships inside
   `@nestjs/platform-express`. Uploads are held in memory, so `IMPORT_MAX_BYTES` (default 25 MiB) is
   also the memory bound.
-- The endpoints take no authentication yet (the demo has no login). Before a public deploy they need a
-  rate limit and a cap on runs, or anyone can fill the database.
+- The endpoints take no authentication (the demo has no login). On the public demo ADR-017 switches them off
+  or rate-limits them; anywhere else they need a rate limit and a cap on runs, or anyone can fill the database.
 - UTR layouts inside the 16/22-character references are documented only by third-party articles that
   disagree, and the shapes assumed beyond length (3–5 letters, then digits) are verified only against
   datagen and one real statement. Real narrations from the merchant's bank should extend the table of
@@ -393,12 +435,12 @@ wrong whenever a part-payment is the real cause).
   batch-dismiss step is needed before the agent runs at scale.
 - The retry-receipt convention (`<ref>-R<n>`) is the generator's and each merchant's to define. It is a
   config pattern, and null turns the `DUPLICATE_PAYMENT` rule off.
-- Persisting groups and exceptions, running the matcher on a run, and the endpoints for that are the
-  next task. This one delivers the pure function, its measurements and the schema column.
+- This decision covers the pure function, its measurements and the schema column. Running it over a stored
+  run and persisting the groups and exceptions is `ReconService.match` (ADR-013).
 
 ## ADR-011: The investigation agent — a hand-rolled loop whose every claim is checked
 
-**Status:** accepted
+**Status:** accepted; amended by ADR-016 (a resilience layer and structured degraded reasons) and ADR-017 (the investigate endpoint is off on the public demo)
 
 **Context.** The rules (ADR-010) leave the genuinely uncertain exceptions: duplicate payments, edited
 ledger amounts, fee overcharges, short or late payouts. An LLM can investigate these, but it can be
@@ -408,7 +450,7 @@ wrong or hostile answer harmless, and the spend bounded and visible.
 **Decision.**
 
 - **Harness A is a loop we own**, on `@anthropic-ai/sdk`, behind `AgentRunner.investigate(members, ctx)`.
-  Harness B (the Claude Agent SDK, P11) will implement the same interface. The loop is append-only: the
+  Harness B (the Claude Agent SDK, `agent/sdk-runner.ts`, ADR-015) implements the same interface. The loop is append-only: the
   model's response goes back unchanged (thinking blocks are bound to their turn), and an escalation is a
   fresh conversation, never a continuation on another model.
 - **Nine read-only tools**, each with a strict zod schema (the API's copy is a sanitised derivative; zod
@@ -460,20 +502,20 @@ but a proposal that cannot be validated or stored per exception); escalating aft
 
 **Consequences.**
 
-- The agent can only propose. The verifier (next) re-checks the paise, ids and windows, and a person
+- The agent can only propose. The verifier (ADR-012) re-checks the paise, ids and windows, and a person
   approves; the agent's grounding checks are a first line, not the last.
 - Cost and accuracy of the small model, the escalation, and clustering are **not yet measured**, so no
   cost figure is quoted here. A live smoke test exists
   (`RUN_LIVE_LLM_TESTS=1`, one investigation, hard-capped spend), and the eval harness will compare the
   settings.
-- The investigate endpoint has no authentication or rate limit and spends money. The kill switch and the
-  daily budget bound the damage; auth is needed before a public deploy.
-- A worker holds a Redis connection for blocking commands; Upstash's command usage under BullMQ must be
-  checked at deploy time.
+- The investigate endpoint has no authentication and spends money. The kill switch and the daily budget bound
+  the damage; on the public demo it answers 403 (ADR-017), and anywhere else it needs authentication first.
+- A worker holds a Redis connection for blocking commands, and BullMQ polls Redis even when idle, which
+  Upstash bills per command. The public deployment therefore runs without the worker (ADR-017).
 
 ## ADR-012: The verifier and the human gate — an agent's claim is never a match
 
-**Status:** accepted
+**Status:** accepted; amended by ADR-017 (read-only featured runs, default-deny public endpoints)
 
 **Context.** The agent (ADR-011) proposes matches. Its own checks make a wrong proposal unlikely; they do
 not make it impossible, and a wrong accepted match hides exactly the discrepancy this product exists to
@@ -539,16 +581,19 @@ would then fail on any run that had a rejection).
   groups do. The other 35 carry a refund as an annotation, the rule-only form above, and are refused by
   exactly the refund amount. Pinned by a test that runs both on the same data.
 - The review and audit endpoints have no authentication. `reviewer` is a name recorded as given, so the
-  audit trail identifies a reviewer but does not authenticate one. This must be fixed before any public
-  deployment; the kill switch and daily budget do not protect these endpoints.
+  audit trail identifies a reviewer but does not authenticate one. ADR-017 limits what a stranger can do on
+  the public demo (approve or reject only in a run of their own); real authentication is still needed before
+  any multi-user use.
 - A group approved by a person has `basis = 'agent'`; who approved it is the review row and the audit
   trail.
-- Nothing persists the rule matcher's output yet, so on real data there are no exceptions to propose about;
-  the next task (P7) persists them through the same `writeGroup`.
+- The rule matcher's output is persisted through the same `writeGroup` (`ReconService.match`, ADR-013), so
+  a run has exceptions for the agent to propose about.
 
 ---
 
 ## ADR-013: The console, the free demo, and what the gap means
+
+**Status:** accepted; amended by ADR-016 (the chaos toggle) and ADR-017 (limits, read-only featured runs, Reset demo, featured runs built by the deploy job)
 
 **Context.** A reviewer must see the whole loop (rules, agent, verifier, human) from one click, at no
 cost, on a public URL, and every number on the page must be one a person can defend.
@@ -575,7 +620,7 @@ cost, on a public URL, and every number on the page must be one a person can def
   unsettled member is unsettled, so approving one exception can leave the headline unchanged when a sibling
   (for example a second bank credit of the same amount) is still unexplained. That is the intended
   conservatism, not a rounding choice.
-- **Persisting the rules (P7).** `ReconService.match` stores the matcher's output through the same
+- **Persisting the rules.** `ReconService.match` stores the matcher's output through the same
   `writeGroups` path the review uses, and is verified to round-trip to the direct matcher result.
 - **Downloads.** JSON (integer paise as strings) and CSV (plain rupees). Every text cell is defused against
   spreadsheet formula injection. The journal CSV lists only drafts the verifier did not refuse, with their
@@ -589,12 +634,14 @@ follow-up. Summing every exception's stake as the gap: double counts one differe
 
 - The demo run takes about two seconds and costs nothing, so the 2-minute acceptance has wide margin.
 - The scripted baseline's answers are rules in disguise. Do not quote its behaviour as agent performance.
-- Creating a run is unauthenticated and rate-limited in memory (per process); a multi-instance deployment
-  needs a shared limiter.
+- Creating a run is unauthenticated and rate-limited in memory (per process; the limits are in ADR-017); a
+  multi-instance deployment needs a shared limiter.
 
 ---
 
 ## ADR-014: The run report, fee leakage, and the voucher format for the books
+
+**Status:** accepted
 
 **Context.** At month-end finance needs four things from a run: whether the totals add up, what is still
 unexplained and for how long, what Razorpay charged or delayed that it should not have, and entries to bring
@@ -679,6 +726,8 @@ hides a real overcharge behind an unrelated error in Ziro's favour.
 ---
 
 ## ADR-015: The eval — how the proof is scored, and what it cannot show
+
+**Status:** accepted; amended by ADR-016 (measured runners get the same resilience layer; a halt marks a run incomplete)
 
 **Context.** Every claim about the agent has to be a number a stranger can check against ground truth: how
 many true matches it finds, how many false ones it lets through (the worst error), whether it explains an
@@ -885,3 +934,94 @@ benefit a week; the script switches it on for the days that matter.
   code runs parallel queries on one transaction's connection. It works on pg 8; pg 9 will refuse it.
 - Verified here: the image, the job, the service as the restricted role and the stranger's path against the
   compose Postgres and Redis. **Not verified: any real Google Cloud, Neon or Upstash account.**
+
+---
+
+## ADR-018: The model layer — a provider port, Gemini's free tier first, Claude optional
+
+**Status:** accepted; part built. The port and both adapters exist. The limiter, the router, the cache and the
+single-shot harness are decided and not built; this ADR is edited as each lands. When the harnesses land it
+amends ADR-011 (the agent no longer assumes one vendor) and ADR-015 (the Agent SDK harness is withdrawn).
+
+**Context.** No language model has ever been called in this project, and the author's Anthropic key has no
+credit, so the live agent, the model columns of the eval and a live demo could not run at all. The Gemini API's
+free tier needs no card. The agent was also welded to one vendor: a client on `@anthropic-ai/sdk`, an Agent SDK
+harness, a price table of Anthropic rates and failure classes taken from Anthropic's semantics. The free tier
+has its own rules: limits per project in requests per minute, tokens per minute and requests per day, a day
+that resets at midnight Pacific, and numbers the documentation does not publish (the account page does). Its
+terms also say that content sent may be used to improve Google's products and read by human reviewers, and
+that sensitive, confidential or personal information must not be submitted.
+
+**Decision — built.**
+
+- **Neutral types in `@ziro/core/llm`:** messages, a tool definition (name, description, a zod schema), a tool
+  call, a result with usage and finish reason, and `LlmError` with nine kinds: `RATE_LIMITED` (carrying the
+  server's retry hint), `QUOTA_EXHAUSTED`, `BILLING`, `AUTH`, `TIMEOUT`, `SERVER`, `BAD_REQUEST`,
+  `SAFETY_BLOCKED`, `MALFORMED`. No SDK is imported there; the ESLint ban list now includes `@google/*`.
+- **A port, `LlmProvider`, that makes exactly one attempt.** It never waits and never retries; that is the
+  router's job, so the one place that decides to spend another request is also the one place that counts it.
+  Each adapter turns every SDK failure into one `LlmError` kind. Both SDKs' own retries are switched off: the
+  Gemini SDK retries up to four times on 408, 409, 429 and 5xx by default, which would spend quota nothing
+  counted.
+- **Tools are written once, as zod.** Each adapter gets its own sanitised JSON Schema. The Gemini one is an
+  allow-list of the keywords its documentation lists, writes "a value or null" as a type list instead of
+  `anyOf`, and throws on a real union or an unknown keyword, so an unsupported schema fails in a test and not as
+  a 400 on the first live call.
+- **Gemini through the Interactions API, stateless (`store: false`).** The documentation presents it as generally
+  available and recommended for new projects. Sending the whole transcript each time keeps the conversation in our
+  hands, which the router needs in order to restart an investigation on another model, and leaves nothing on
+  the server to expire.
+- **Thought signatures are not parsed, they are preserved.** The steps a Gemini response returns are kept whole,
+  in order, as an opaque payload on the assistant message and sent back untouched, as the stateless-mode
+  documentation requires (every thought block resent exactly as received). A payload from another provider or
+  model is refused, which makes "never mix models inside one investigation" an error and not a convention. A
+  missing signature would be our bug, so it is `BAD_REQUEST` and never triggers a fallback.
+- **A reply cut off by the output limit returns no tool calls:** a half-written call is never executed.
+
+**Decision — not built yet.**
+
+- **A chain from the environment.** `LLM_CHAIN` is an ordered list of `provider:model`; no model ID appears in
+  code. The router works through it per investigation. It moves to the next entry on `QUOTA_EXHAUSTED`,
+  `BILLING`, `TIMEOUT`, `SERVER`, or `RATE_LIMITED` when the wait would exceed a maximum. `BAD_REQUEST`,
+  `MALFORMED` (one repair, as before) and `SAFETY_BLOCKED` do not fall back: another model would meet the same
+  request. A fallback restarts the investigation from its first message with fresh history.
+- **Breakers.** `BILLING` and `AUTH` disable a provider for the life of the process; `QUOTA_EXHAUSTED` skips that
+  model until the Pacific date changes. An optional provider with no key is dropped with a warning, never a boot
+  failure. When the whole chain is spent, the exception goes to a person as NEEDS_HUMAN, "AI quota exhausted";
+  the rules keep running and the console says so.
+- **A client-side limiter** per model (a requests-per-minute bucket and a requests-per-day counter in Redis, the day
+  taken in America/Los_Angeles), fed only from `GEMINI_LIMITS`. The numbers are the author's to copy; they are
+  not guessed here. A server retry hint on a 429 is honoured.
+- **A record/replay cache** (`LLM_CACHE=off|record|replay`) keyed on provider, model, harness and request, with
+  row ids canonicalised, because every prompt embeds a random UUID and a naive hash would never hit. Replay
+  serves from the cache only and fails loudly on a miss; replayed results are labelled as replays.
+- **Two harnesses.** A tool loop capped at `LLM_MAX_TOOL_CALLS` (4), and a single-shot harness that gathers the
+  evidence with the same read-only tools in a fixed order and makes one structured-output call. Single-shot is
+  the default. The proposal schema, the verifier, the `<untrusted>` tagging and the grounding checks are the same
+  for every provider and harness. The Agent SDK harness goes; it stays a "future, if funded" note.
+- **Accounting.** Each call records provider, outcome and whether it was cached. The cost on the free tier is
+  zero; an estimate "at paid list price" comes from prices the author puts in `LLM_PRICES`, never from the code.
+
+**Alternatives.** Gemini's `generateContent`: not chosen because the documentation steers new work to the
+Interactions API. Letting the server hold the conversation (`store: true`): fewer bytes sent, but a fallback to
+another provider could not replay it and the history would live where we cannot audit it. A multi-provider
+library: one more dependency between us and the two things that must be exact here, each vendor's signature
+rules and error semantics; the port is one method. Gemini only: a second vendor is the answer to an exhausted
+quota. Keeping the SDK retries: hidden requests the limiter never saw.
+
+**Consequences.**
+
+- **Free-tier calls carry synthetic data only.** Google may use what is sent and people may read it. The demo and
+  the eval use synthetic data (ADR-007) and Razorpay test mode only; real merchant data must not go through a
+  free-tier key. A paid key or the Claude provider is the way for that, and the README must say so.
+- The free tier is small. A run with many exceptions can spend a day's allowance, which is why the chain, the
+  replay cache and the single-shot harness exist. A fallback re-spends the investigation's calls on the next
+  model.
+- Gemini's `thinking_level` support differs by model, so the configuration has to choose a valid level per model.
+- Verified: both adapters against the real SDKs over a local HTTP server (the request bodies the SDKs build;
+  every status and error-code case reaching exactly one `LlmError` kind with exactly one HTTP request; abort and
+  an unreachable server), and 19 of 19 planted bugs caught. **Not verified: no Gemini request has been made.**
+  The stub's replies come from the documentation, so the response fields (whether `total_output_tokens`
+  includes thinking tokens, whether cached tokens sit inside `total_input_tokens`) and tool calls together
+  with structured output in one request are unconfirmed until the first live call. Anthropic's out-of-credit
+  error is likewise taken from its documentation (a 402, plus a message pattern on a 400).

@@ -8,6 +8,7 @@ import tseslint from 'typescript-eslint';
 const CORE_FORBIDDEN_IMPORTS = [
   '@nestjs/*',
   '@anthropic-ai/*',
+  '@google/*',
   'drizzle-orm',
   'drizzle-orm/*',
   'pg',

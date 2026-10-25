@@ -12,7 +12,7 @@ import {
   parseModelOutput,
   wantsEscalation,
 } from './output.js';
-import { toStrictJsonSchema } from './json-schema.js';
+import { toAnthropicJsonSchema } from '../llm/json-schema.js';
 import { modelOutputSchema } from './output.js';
 import { result as aResult } from './scripted-llm.fixtures.js';
 
@@ -337,7 +337,7 @@ describe('escalation and digest', () => {
 
 describe('OUTPUT_JSON_SCHEMA', () => {
   it('is built once and is stable', () => {
-    expect(JSON.stringify(toStrictJsonSchema(modelOutputSchema))).toBe(
+    expect(JSON.stringify(toAnthropicJsonSchema(modelOutputSchema))).toBe(
       JSON.stringify(OUTPUT_JSON_SCHEMA),
     );
   });

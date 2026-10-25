@@ -579,3 +579,168 @@ export function renderEvals({ set, previous }: RenderInput): string {
     .filter((line, i, all) => !(line === '' && all[i - 1] === ''))
     .join('\n');
 }
+
+// --- the README's results table -------------------------------------------------------------------------------
+//
+// README.md shows a short table of the same numbers, between two markers, so it can never drift from
+// EVALS.md: `npm run eval:report` rewrites both from the stored result files. Text outside the markers is
+// the author's and is never touched.
+
+export const README_START = '<!-- RESULTS:START -->';
+export const README_END = '<!-- RESULTS:END -->';
+
+const NOT_RUN = 'not run yet';
+
+/** A markdown table laid out the way Prettier lays it out (cells padded, dashes to the column width). */
+function alignedTable(header: readonly string[], rows: readonly (readonly string[])[]): string {
+  const widths = header.map((h, i) =>
+    Math.max(3, [...h].length, ...rows.map((r) => [...(r[i] ?? '')].length)),
+  );
+  const pad = (cell: string, i: number): string =>
+    cell + ' '.repeat((widths[i] ?? 3) - [...cell].length);
+  const line = (cells: readonly string[]): string => `| ${cells.map(pad).join(' | ')} |`;
+  return [
+    line(header),
+    `| ${widths.map((w) => '-'.repeat(w)).join(' | ')} |`,
+    ...rows.map(line),
+  ].join('\n');
+}
+
+const README_COLUMNS: readonly (readonly [ConfigName, string])[] = [
+  ['rules', 'Rules only'],
+  ['small', 'Rules + small model'],
+  ['large', 'Rules + large model'],
+];
+
+/** The README's table: one column per configuration, one row per thing worth knowing. */
+export function renderReadmeResults(set: ResultSet): string {
+  const cell = (config: ConfigName, metric: (runs: RunRecord[]) => string): string => {
+    const runs = runsOf(set, config, 'plain');
+    return runs.length === 0 ? NOT_RUN : metric(runs);
+  };
+  const agentOnly =
+    (config: ConfigName, metric: (runs: RunRecord[]) => string) =>
+    (runs: RunRecord[]): string =>
+      config === 'rules' ? 'no agent' : metric(runs);
+
+  const rows = [
+    [
+      'Match rate (groups found exactly)',
+      ...README_COLUMNS.map(([c]) =>
+        cell(c, (runs) =>
+          spread(
+            col(runs, (r) => r.groups.matchRate),
+            pct,
+          ),
+        ),
+      ),
+    ],
+    [
+      'False matches (wrong links accepted)',
+      ...README_COLUMNS.map(([c]) =>
+        cell(c, (runs) =>
+          spread(
+            col(runs, (r) => r.groups.falseMatches),
+            num,
+          ),
+        ),
+      ),
+    ],
+    [
+      'Proposals the verifier refused',
+      ...README_COLUMNS.map(([c]) =>
+        cell(
+          c,
+          agentOnly(
+            c,
+            (runs) =>
+              `${spread(
+                col(runs, (r) => r.verifier.rejected),
+                num,
+              )} of ${spread(
+                col(runs, (r) => r.verifier.proposals),
+                num,
+              )}`,
+          ),
+        ),
+      ),
+    ],
+    [
+      'Ziro gap (₹ still unexplained)',
+      ...README_COLUMNS.map(([c]) =>
+        cell(c, (runs) =>
+          spread(
+            col(runs, (r) => Number(r.gap.strictPaise)),
+            rupees,
+          ),
+        ),
+      ),
+    ],
+    [
+      'Cost per 1,000 orders',
+      ...README_COLUMNS.map(([c]) =>
+        cell(c, (runs) =>
+          c === 'rules'
+            ? '$0'
+            : spread(
+                col(runs, (r) => r.cost.per1kOrdersMicroUsd),
+                usd,
+              ),
+        ),
+      ),
+    ],
+    [
+      'Time',
+      ...README_COLUMNS.map(([c]) =>
+        cell(c, (runs) =>
+          c === 'rules'
+            ? `${spread(
+                col(runs, (r) => r.durationMs),
+                secs,
+              )} for all ${runs[0]?.orders ?? 0} orders`
+            : `${spread(
+                col(runs, (r) => r.latency.p50Ms),
+                secs,
+              )} / ${spread(
+                col(runs, (r) => r.latency.p95Ms),
+                secs,
+              )} per investigation (p50 / p95)`,
+        ),
+      ),
+    ],
+  ];
+
+  const first = [...set.files.values()][0]?.runs[0];
+  const versions = [...set.files.values()][0]?.versions;
+  const about =
+    first === undefined
+      ? `${set.preset} dataset, seed ${set.seed}.`
+      : `${first.orders} synthetic orders (${set.preset} dataset, seed ${set.seed}), ${first.groups.truthGroups} true groups.`;
+  const models =
+    versions === undefined
+      ? ''
+      : ` Configured models: small ${versions.models.small}, large ${versions.models.large}.`;
+
+  return [
+    alignedTable(['', ...README_COLUMNS.map(([, name]) => name)], rows),
+    '',
+    `_${about}${models} Model columns show the mean (min–max) over the repeats. Rebuilt from \`packages/evals/results/\` by \`npm run eval:report\`; the full tables are in [EVALS.md](EVALS.md)._`,
+  ].join('\n');
+}
+
+/**
+ * Puts `content` between the README's result markers and leaves every other character alone. Returns the
+ * README unchanged, with `found: false`, when the markers are missing or out of order.
+ */
+export function replaceReadmeBlock(
+  readme: string,
+  content: string,
+): { readonly text: string; readonly found: boolean } {
+  const start = readme.indexOf(README_START);
+  const end = readme.indexOf(README_END);
+  if (start < 0 || end < start) return { text: readme, found: false };
+  return {
+    text: `${readme.slice(0, start + README_START.length)}\n${content}\n${readme.slice(end)}`,
+    found: true,
+  };
+}

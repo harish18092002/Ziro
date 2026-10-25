@@ -6,7 +6,7 @@
 import { sql } from 'drizzle-orm';
 import { feeContractOf } from '../../common/fee-contract.js';
 import type { Executor } from '../../db/executor.js';
-import { type JsonSchema, toStrictJsonSchema } from '../json-schema.js';
+import { type JsonSchema, toAnthropicJsonSchema } from '../../llm/json-schema.js';
 import { AGENT_TOOLS } from './definitions.js';
 import { runConfigOf } from './repository.js';
 import { type AgentTool, type ToolContext, ToolError, type ToolRun } from './types.js';
@@ -60,7 +60,7 @@ export class Toolbox {
     this.definitions = tools.map((t) => ({
       name: t.name,
       description: t.description,
-      input_schema: toStrictJsonSchema(t.args),
+      input_schema: toAnthropicJsonSchema(t.args),
       strict: true,
     }));
   }

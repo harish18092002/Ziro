@@ -1,7 +1,11 @@
 # Architecture
 
-> Stub. Filled in as each module lands. The product brief and non-negotiables live in
-> [`CLAUDE.md`](../CLAUDE.md); decisions live in [`DECISIONS.md`](./DECISIONS.md).
+> How Ziro is put together. The product brief and non-negotiables are in [`CLAUDE.md`](../CLAUDE.md), the
+> reasons for each choice in [`DECISIONS.md`](./DECISIONS.md), what was built and cut in
+> [`PRIORITIES.md`](./PRIORITIES.md), and how to deploy it in [`DEPLOY.md`](./DEPLOY.md).
+
+Contents: [Pipeline](#pipeline) · [Components](#components) · [Life of one exception](#life-of-one-exception) ·
+[Layout](#layout) · [Data model](#data-model) · [Failure modes](#failure-modes) · [Deployment](#deployment)
 
 ## Pipeline
 
@@ -14,15 +18,98 @@
 7. **Human review:** approve or reject; auto-accept only under strict limits.
 8. **Report:** match rate, open exceptions, ₹ unreconciled, fee leakage, journal entries, audit.
 
+## Components
+
+```mermaid
+flowchart LR
+    subgraph Sources
+        L["Ledger CSV"]
+        R["Razorpay: test mode or synthetic"]
+        B["Bank statement CSV"]
+    end
+    subgraph API["apps/api (NestJS)"]
+        ING["ingest, razorpay"] --> REC["recon: rule matcher"]
+        REC --> EXC["exceptions"]
+        EXC --> AGT["agent: read-only tools"]
+        AGT --> VER["verify"]
+        VER --> REV["review: human gate"]
+        REV --> RPT["report, audit"]
+    end
+    CORE["packages/core: money, normalize, matcher, verifier (pure, no IO)"]
+    DB[("Postgres")]
+    Q[("Redis: BullMQ")]
+    LLM["Anthropic API"]
+    WEB["apps/web: console"]
+    L --> ING
+    R --> ING
+    B --> ING
+    ING -.-> CORE
+    REC -.-> CORE
+    VER -.-> CORE
+    RPT --- DB
+    AGT --- LLM
+    AGT --- Q
+    WEB --> RPT
+```
+
+Solid arrows are the data flow, dotted ones are "uses". Everything that decides a match or a total lives in
+`packages/core` and is pure; the API wraps it with storage, HTTP and the model.
+
+## Life of one exception
+
+What happens to a single record the rules could not match, from the rule that raises it to the audit row
+that closes it. Each step writes its own audit event.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant M as Rule matcher
+    participant DB as Database
+    participant A as Agent harness
+    participant T as Read-only tools
+    participant LLM as Model
+    participant V as Verifier
+    participant P as Policy
+    participant H as Person
+
+    M->>DB: no safe match, so write an exception with a reason code and candidate ids
+    A->>DB: pick up the job for (exception, attempt)
+    A->>T: get_exception (call 0, the brief)
+    loop up to 8 tool calls, 24k output tokens, 60 seconds
+        A->>LLM: the conversation so far
+        LLM-->>A: a tool request, or a final answer
+        A->>T: run the tool (READ ONLY transaction, scoped to this run)
+        T-->>A: result, with free text inside untrusted tags
+    end
+    A->>A: ground the answer, evidence by call number, links must have come from a tool
+    alt the model timed out, was refused, ran out of budget or answered invalidly
+        A->>DB: store NEEDS_HUMAN with a degraded reason
+    else a usable answer
+        A->>DB: store the proposal (unique per exception and attempt)
+    end
+    DB->>V: re-derive the paise, the ids and the date windows from the records
+    V->>DB: verified or rejected, with findings
+    V->>P: a verified proposal
+    P-->>H: wait in the review queue (auto-accept is off in the demo)
+    H->>V: approve, and it is verified again against the data as it is now
+    V->>DB: write the match group and resolve the exception
+    Note over H,DB: a reject, or a stale proposal, sends the exception back to open
+```
+
+The model never writes a match. Everything after its answer is code, and the last step, which creates the match
+group, is the same function the rules use.
+
 ## Layout
 
-| Path               | Package         | Responsibility                                                |
-| ------------------ | --------------- | ------------------------------------------------------------- |
-| `packages/core`    | `@ziro/core`    | Pure TS, no IO: money, domain, normalize, matcher, verifier.  |
-| `packages/datagen` | `@ziro/datagen` | Seeded synthetic data plus ground truth.                      |
-| `packages/evals`   | `@ziro/evals`   | Eval runner, metrics, `EVALS.md` writer.                      |
-| `apps/api`         | `@ziro/api`     | NestJS: config, ingest, recon, agent, verify, review, report. |
-| `apps/web`         | `@ziro/web`     | Minimal review console; built and served by the API in prod.  |
+| Path               | Package         | Responsibility                                                          |
+| ------------------ | --------------- | ----------------------------------------------------------------------- |
+| `packages/core`    | `@ziro/core`    | Pure TS, no IO: money, domain, normalize, matcher, verifier, LLM types. |
+| `packages/datagen` | `@ziro/datagen` | Seeded synthetic data plus ground truth.                                |
+| `packages/evals`   | `@ziro/evals`   | Eval runner, metrics, `EVALS.md` writer.                                |
+| `apps/api`         | `@ziro/api`     | NestJS: config, ingest, recon, agent, llm, verify, review, report.      |
+| `apps/web`         | `@ziro/web`     | Minimal review console; built and served by the API in prod.            |
+| `deploy/`          |                 | `demo.env`: the public demo's non-secret settings.                      |
+| `scripts/`         |                 | Local Docker run, GCP setup, deploy, and the smoke test.                |
 
 Dependency direction: `apps/*` → `evals` → `datagen` → `core`. `core` imports nothing from the
 workspace and nothing with IO (enforced by ESLint, see ADR-001).
@@ -84,6 +171,7 @@ erDiagram
     rzp_settlements |o--o{ match_links : "settlement_id"
     bank_lines |o--o{ match_links : "bank_line_id"
 
+    audit_events ||--o{ audit_event_records : "audit_event_id"
     recon_exceptions ||--o{ agent_proposals : "exception_id"
     recon_exceptions |o--o{ llm_calls : "exception_id"
     llm_calls |o--o{ agent_proposals : "llm_call_id"
@@ -185,7 +273,10 @@ erDiagram
         exception_status status
         record_type subject_type "polymorphic, no FK"
         uuid subject_id "unique per run"
+        jsonb candidates "record ids the rules could not choose between"
         bigint amount_at_stake_paise
+        text cause "why the rules stopped"
+        text note
     }
     llm_calls {
         uuid id PK
@@ -203,8 +294,13 @@ erDiagram
         uuid run_id FK
         uuid exception_id FK
         uuid llm_call_id FK
+        int attempt "unique with exception_id"
+        agent_verdict verdict "match proposed, explained, needs a human"
         reason_code reason_code
-        bigint claimed_residual_paise "a claim, never trusted"
+        jsonb links "records the agent claims belong together"
+        text explanation "untrusted"
+        jsonb evidence "tool, arguments, finding"
+        text degraded "why the system handed it to a person, or null"
         verifier_status verifier_status
     }
     reviews {
@@ -221,7 +317,12 @@ erDiagram
         text action
         text entity_type
         text entity_id
-        jsonb detail
+        jsonb detail "before, after, reason, records"
+    }
+    audit_event_records {
+        bigint audit_event_id FK
+        record_type record_type
+        uuid record_id "which source record the event is about"
     }
 ```
 
@@ -381,7 +482,7 @@ settlement tools run the same `composeLines` as rule tier T2, so "does this add 
 | Link grounding        | A match naming a record no tool returned is downgraded to NEEDS_HUMAN, not trimmed.           |
 | Action rules          | `ACCEPT_MATCH` only for a proposed match at 0.5 or more; journal entries must balance.        |
 | Budgets               | 8 tool calls, 24k output tokens, 60 s (request aborted), prompt ceiling; then NEEDS_HUMAN.    |
-| Verifier (next task)  | Re-checks the paise, ids and windows; a person approves above the thresholds.                 |
+| Verifier              | Re-checks the paise, ids and windows; a person approves above the thresholds (next section).  |
 
 **Execution.** A job is `(exception, attempt)` pairs and carries no record data. The unique index on
 `agent_proposals(exception_id, attempt)` makes a repeated or racing job store one proposal; `process`
@@ -443,8 +544,9 @@ itself. Both tables are append-only. A record's story on the end-to-end test rea
 `record.imported, agent.propose, verifier.verified, policy.human_review, group.create, exception.resolve,
 review.approve`.
 
-**Not yet:** the endpoints are unauthenticated (`reviewer` is a recorded name, not an identity), and
-nothing persists the rules' own groups, so on real data there are no exceptions to propose about until P7.
+**Identity.** There are no accounts: `reviewer` is a name recorded as given, so the audit trail identifies a
+reviewer but does not authenticate one. On the public demo the endpoints a stranger can reach are limited by an
+allowlist (ADR-017); anywhere else they need real authentication first.
 
 ## Console and demo
 
@@ -601,8 +703,9 @@ apps/api/src/demo/demo-mode.guard.ts   the public demo's allowlist
   `common/logging.ts`.
 - **Limits, per client address and overall, are in `deploy/demo.env`** and enforced in `demo/demo.module.ts`.
 
-## TODO
+## Known gaps
 
-- Persist the rule matcher's groups and exceptions (P7) through `writeGroup`.
-- Harness B (the Claude Agent SDK) behind the same `AgentRunner` interface.
-- Deployment topology (Cloud Run, Neon, Upstash).
+Stated in full, with the reasons, in the README's limitations and in the open items of the progress log in
+`CLAUDE.md`. In short: settlements and bank lines are synthetic, the Tally format has not been imported into a
+real Tally, no language model has been measured yet, and the deployment has been rehearsed locally but not run
+on real Google Cloud, Neon or Upstash accounts.

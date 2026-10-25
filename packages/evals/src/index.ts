@@ -15,7 +15,16 @@ export {
   type OverlayType,
   planOverlay,
 } from './injection.js';
-export { extractOpinion, OPINION_END, OPINION_START, renderEvals } from './report.js';
+export {
+  extractOpinion,
+  OPINION_END,
+  OPINION_START,
+  README_END,
+  README_START,
+  renderEvals,
+  renderReadmeResults,
+  replaceReadmeBlock,
+} from './report.js';
 export {
   CONFIG_LABEL,
   CONFIGS,
