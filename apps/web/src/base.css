@@ -494,8 +494,8 @@ textarea {
   box-shadow: var(--shadow-sm);
 }
 
-/* ---------- "how we count" ---------- */
-.how {
+/* ---------- tooltips: "how we count" and glossary terms ---------- */
+.tip-wrap {
   position: relative;
   display: inline-flex;
 }
@@ -524,7 +524,7 @@ textarea {
   box-shadow: none;
   color: var(--link);
 }
-.how-tip {
+.tip-pop {
   position: absolute;
   bottom: calc(100% + var(--sp-2));
   left: 50%;
@@ -545,14 +545,37 @@ textarea {
   transform: translateX(-50%);
   animation: tip-in var(--dur-fast) var(--ease-out) both;
 }
-.how-tip b {
+.tip-pop b {
   font-size: var(--fs-xs);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   opacity: 0.75;
 }
+/* a word of jargon: dotted underline, the meaning on hover, focus or a tap */
+button.term {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--axis);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+button.term:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+  text-decoration-color: var(--link);
+}
 @media (pointer: coarse) {
-  .how-btn {
+  button.term {
     min-height: 0;
   }
 }
@@ -582,11 +605,11 @@ textarea {
   color: var(--link);
 }
 .banner.warn {
-  border-left-color: var(--serious);
-  background: color-mix(in srgb, var(--serious) 7%, var(--card));
+  border-left-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 8%, var(--card));
 }
 .banner.warn > svg {
-  color: var(--serious);
+  color: color-mix(in srgb, var(--warn) 60%, var(--ink));
 }
 .banner.bad {
   border-left-color: var(--critical);
@@ -603,20 +626,41 @@ textarea {
 }
 
 /* ---------- cards & layout ---------- */
+/* ONE card style for every card on every page: background, border, radius, padding, and the same hover (a small
+   lift and a brand-gradient border that fades in: transform and opacity only) */
 .card {
+  position: relative;
   background: var(--card);
   border: 1px solid var(--hair);
   border-radius: var(--r-md);
-  padding: var(--sp-4) var(--sp-4);
+  padding: var(--sp-5);
   box-shadow: var(--shadow-sm);
-  transition:
-    transform var(--dur-base) var(--ease-out),
-    border-color var(--dur-base);
+  transition: transform var(--dur-base) var(--ease-out);
 }
-.card.lift:hover {
+.card::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  padding: 1px;
+  border-radius: inherit;
+  background: var(--grad-brand);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity var(--dur-base) ease;
+  pointer-events: none;
+}
+.card:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--line);
+}
+.card:hover::before {
+  opacity: 1;
 }
 .stack {
   display: grid;
@@ -841,4 +885,20 @@ select:focus {
   outline: none;
   border-color: var(--brand);
   box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+/* the header keeps one height whatever arrives later (no layout shift): one line, nothing wraps */
+.shell-in {
+  min-height: 56px;
+  flex-wrap: nowrap;
+}
+.shell-right {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .brand small,
+  .shell-right .test-link {
+    display: none;
+  }
 }

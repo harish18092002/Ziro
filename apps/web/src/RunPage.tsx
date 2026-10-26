@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ApiError, get, type Overview, type Progress, post } from './api';
 import { AuditTab } from './Audit';
-import { toBig } from './chart-math';
+import { ratio, toBig } from './chart-math';
 import {
   type BarItem,
   BarList,
@@ -20,16 +20,18 @@ import {
   inr,
   linkTo,
   percent,
+  range,
   type Route,
   sentence,
   type Tab,
   words,
 } from './format';
-import { useLoad } from './hooks';
+import { useInView, useLoad } from './hooks';
+import { MOTION } from './motion';
 import { Icon, type IconName } from './Icons';
 import { settledBy } from './metrics';
 import { type MoneyState, STATE } from './states';
-import { Banner, Count, CountPaise, Reveal } from './ui';
+import { Banner, Count, CountDownPaise, CountPaise, Reveal } from './ui';
 
 type RunRoute = Extract<Route, { page: 'run' }>;
 
@@ -61,18 +63,7 @@ export function RunPage({ route }: { route: RunRoute }) {
     <div className="run page">
       {overview.data ? <RunBanners o={overview.data} runId={route.runId} /> : null}
       {overview.data ? <RunHeader o={overview.data} runId={route.runId} /> : null}
-      <nav className="tabs" aria-label="Run sections">
-        {(Object.keys(TAB_NAMES) as Tab[]).map((t) => (
-          <a
-            key={t}
-            href={linkTo(route.runId, t)}
-            className={t === route.tab ? 'on' : ''}
-            aria-current={t === route.tab ? 'page' : undefined}
-          >
-            {TAB_NAMES[t]}
-          </a>
-        ))}
-      </nav>
+      <Tabs runId={route.runId} tab={route.tab} />
       <div className="tab-body" key={route.tab}>
         {route.tab === 'summary' && (
           <Summary runId={route.runId} o={overview.data} error={overview.error} />
@@ -120,12 +111,52 @@ function useProgress(runId: string): Progress | null {
   return p;
 }
 
+/** The tabs, with one underline that slides to the active tab (a transform). */
+function Tabs({ runId, tab }: { runId: string; tab: Tab }) {
+  const nav = useRef<HTMLElement>(null);
+  const [bar, setBar] = useState<{ x: number; w: number } | null>(null);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const on = nav.current?.querySelector<HTMLElement>('a.on');
+      if (on) setBar({ x: on.offsetLeft, w: on.offsetWidth });
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [tab]);
+  return (
+    <nav ref={nav} className="tabs" aria-label="Run sections">
+      {(Object.keys(TAB_NAMES) as Tab[]).map((t) => (
+        <a
+          key={t}
+          href={linkTo(runId, t)}
+          className={t === tab ? 'on' : ''}
+          aria-current={t === tab ? 'page' : undefined}
+        >
+          {TAB_NAMES[t]}
+        </a>
+      ))}
+      <span
+        className="tab-ink"
+        aria-hidden="true"
+        style={bar ? { transform: `translateX(${bar.x}px) scaleX(${bar.w})` } : { opacity: 0 }}
+      />
+    </nav>
+  );
+}
+
+/** The dashboard's shape while it loads, so nothing jumps when the numbers arrive. */
 function RunSkeleton() {
   return (
-    <div className="run">
-      <div className="skel" style={{ height: 36, width: 280, marginBottom: 18 }} />
-      <div className="skel" style={{ height: 140, marginBottom: 16 }} />
-      <div className="skel" style={{ height: 220 }} />
+    <div className="dash" aria-busy="true" aria-label="Loading the run">
+      <div className="hero-row">
+        <div className="skel skel-card tall" />
+        <div className="skel skel-card tall" />
+      </div>
+      <div className="grid-2">
+        <div className="skel skel-card" />
+        <div className="skel skel-card" />
+      </div>
     </div>
   );
 }
@@ -349,36 +380,14 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
     );
   if (o === null) return <RunSkeleton />;
 
-  const { gap, sources: s } = o;
+  const { sources: s } = o;
   const ledger = o.coverage.find((c) => c.type === 'ledger_entry');
   const reasons = o.exceptionsByReason;
   const excTotal = sum(reasons.map((r) => r.total));
   const settled = settledBy(o);
 
-  const gapRow: StackRow = {
-    id: 'gap',
-    label: '',
-    segments: [
-      {
-        key: 'explained',
-        ...inState(settled.state, settled.label),
-        value: toBig(gap.explainedPaise),
-        shown: inr(gap.explainedPaise),
-      },
-      {
-        key: 'waiting',
-        ...inState('wait'),
-        value: toBig(gap.awaitingPaise),
-        shown: inr(gap.awaitingPaise),
-      },
-      {
-        key: 'open',
-        ...inState('open'),
-        value: toBig(gap.openPaise),
-        shown: inr(gap.openPaise),
-      },
-    ],
-  };
+  const needYou = sum(reasons.map((x) => x.open + x.proposed));
+  const has = (pick: (x: (typeof reasons)[number]) => number) => sum(reasons.map(pick)) > 0;
 
   const coverageRows: StackRow[] = o.coverage.map((c) => ({
     id: c.type,
@@ -421,7 +430,7 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
 
   const ageItems: BarItem[] = o.openExceptions.byAge.map((b) => ({
     id: b.bucket,
-    label: b.bucket,
+    label: range(b.bucket),
     value: toBig(b.stakePaise),
     display: `${b.cases} · ${inr(b.stakePaise)}`,
     color: STATE.open.color,
@@ -471,24 +480,11 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
     <div className="dash">
       <Reveal>
         <div className="hero-row">
-          <section className="card gap-card">
-            <span className="kicker">Still unreconciled</span>
-            <div className="gap-figure">
-              <CountPaise paise={gap.gapPaise} />
-            </div>
-            <StackedBars rows={[gapRow]} tall />
-            <Legend
-              items={[
-                legendFor(settled.state, settled.label, inr(gap.explainedPaise)),
-                legendFor('wait', undefined, inr(gap.awaitingPaise)),
-                legendFor('open', undefined, inr(gap.openPaise)),
-              ]}
-            />
-          </section>
+          <GapJourney o={o} runId={runId} needYou={needYou} />
           <section className="card ring-card">
             <RingMeter
               value={ledger?.matchRate ?? 0}
-              label="Orders matched"
+              label="Orders matched, by rules or approved"
               sub={
                 ledger ? `${ledger.matched} of ${ledger.matched + ledger.inException}` : undefined
               }
@@ -515,13 +511,15 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
         <Reveal>
           <ChartCard
             title="Coverage by source"
-            subtitle="Where every record ended up."
+            subtitle="Where every record ended up. Orange is still in an exception."
             legend={
               <Legend
                 items={[
                   legendFor('rules', 'Matched'),
-                  legendFor('open', 'In an exception'),
-                  legendFor('ignored'),
+                  ...(o.coverage.some((c) => c.inException > 0)
+                    ? [legendFor('open', 'In an exception')]
+                    : []),
+                  ...(o.coverage.some((c) => c.ignored > 0) ? [legendFor('ignored')] : []),
                 ]}
               />
             }
@@ -544,13 +542,14 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
         <Reveal i={1}>
           <ChartCard
             title="Exceptions by reason"
-            subtitle="Where the rules stopped."
+            subtitle="Why the rules stopped, and where each exception stands now."
             legend={
               <Legend
                 items={[
-                  legendFor(settled.state, settled.label),
-                  legendFor('wait'),
-                  legendFor('open'),
+                  ...(has((x) => x.resolved) ? [legendFor(settled.state, settled.label)] : []),
+                  ...(has((x) => x.proposed) ? [legendFor('wait')] : []),
+                  ...(has((x) => x.open) ? [legendFor('open')] : []),
+                  ...(has((x) => x.dismissed) ? [legendFor('ignored', 'Dismissed')] : []),
                 ]}
               />
             }
@@ -582,12 +581,12 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
         <Reveal>
           <ChartCard
             title="Unsettled by age"
-            subtitle={`Cases and rupees, as of ${o.openExceptions.asOf}`}
+            subtitle={`How long unsettled money has waited, as of ${o.openExceptions.asOf}. Oldest first is the place to start.`}
             table={{
               columns: ['Age', 'Cases', 'At stake'],
               numeric: [1, 2],
               rows: o.openExceptions.byAge.map((b) => [
-                b.bucket,
+                range(b.bucket),
                 String(b.cases),
                 inr(b.stakePaise),
               ]),
@@ -606,7 +605,9 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
           <section className="card">
             <div className="card-head">
               <h3 className="card-title">Fee leakage</h3>
-              <p className="card-sub">Charged above your fee contract</p>
+              <p className="card-sub">
+                Fees charged above your contract. Worth raising with Razorpay.
+              </p>
             </div>
             <div className="figure">
               <CountPaise paise={o.leakage.excessPaise} />
@@ -621,7 +622,9 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
           <section className="card">
             <div className="card-head">
               <h3 className="card-title">Delayed payouts</h3>
-              <p className="card-sub">Paid out later than the normal lag</p>
+              <p className="card-sub">
+                Payouts later than the usual T+2. Check them with Razorpay.
+              </p>
             </div>
             <div className="figure">
               <Count value={o.delays.delayedCount} />
@@ -773,6 +776,93 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
         </div>
       </Reveal>
     </div>
+  );
+}
+
+/**
+ * The Ziro gap as a journey: what the rules left, minus what is settled (approved, or auto-accepted), leaves what
+ * is waiting for you (AI proposals the checker verified) and what is still open. Every figure is from the report;
+ * the headline counts down from what the rules left to what is still unreconciled.
+ */
+function GapJourney({ o, runId, needYou }: { o: Overview; runId: string; needYou: number }) {
+  const [ref, seen] = useInView<HTMLElement>();
+  const settled = settledBy(o);
+  const done = toBig(o.gap.explainedPaise);
+  const wait = toBig(o.gap.awaitingPaise);
+  const open = toBig(o.gap.openPaise);
+  const left = done + wait + open;
+  const ledger = o.coverage.find((c) => c.type === 'ledger_entry');
+  const share = (n: bigint): number => (left === 0n ? 0 : ratio(n, left));
+  const steps = [
+    { key: 'left', label: 'Left after rules', from: 0n, size: left, color: 'var(--axis)' },
+    {
+      key: 'done',
+      label: settled.label,
+      from: wait + open,
+      size: done,
+      color: STATE[settled.state].color,
+    },
+    {
+      key: 'wait',
+      label: 'AI verified, waiting for you',
+      from: open,
+      size: wait,
+      color: STATE.wait.color,
+    },
+    { key: 'open', label: 'Still open', from: 0n, size: open, color: STATE.open.color },
+  ].filter((step) => step.key === 'left' || step.size > 0n);
+  return (
+    <section ref={ref} className={`card gap-card ${seen ? 'in' : ''}`}>
+      <span className="kicker">Still unreconciled</span>
+      <div className="gap-figure">
+        <CountDownPaise from={left} to={wait + open} />
+      </div>
+      {ledger ? (
+        <p className="gap-orders">
+          Rules proved {ledger.matched} of {ledger.total} orders ({inr(ledger.amountPaise.matched)}{' '}
+          of {inr(ledger.amountPaise.total)}). What they left, counted once per case:
+        </p>
+      ) : null}
+      <ol className="wf" aria-label="The gap, step by step">
+        {steps.map((step, i) => (
+          <li key={step.key}>
+            <span className="wf-label">{step.label}</span>
+            <span className="wf-track">
+              <span
+                className="wf-fill"
+                style={{
+                  left: `${share(step.from) * 100}%`,
+                  width: `${Math.max(share(step.size) * 100, 0.6)}%`,
+                  background: step.color,
+                  transitionDelay: `${i * MOTION.stagger * 2}ms`,
+                }}
+              />
+            </span>
+            <b className="wf-value">
+              {step.key === 'left' ? '' : '−'}
+              {inr(String(step.size))}
+            </b>
+          </li>
+        ))}
+      </ol>
+      {done === 0n && wait > 0n ? (
+        <p className="gap-note">
+          Nothing counts as settled until a person approves it, and auto-accept is off for demo
+          runs.
+        </p>
+      ) : null}
+      <a className="next-action" href={linkTo(runId, 'exceptions')}>
+        {needYou > 0 ? (
+          <>
+            <b>{needYou}</b> exceptions need you <Icon name="arrow" size={14} /> Review
+          </>
+        ) : (
+          <>
+            <Icon name="check" size={14} /> Nothing needs you
+          </>
+        )}
+      </a>
+    </section>
   );
 }
 

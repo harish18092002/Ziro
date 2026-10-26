@@ -15,10 +15,20 @@ export const dollars = (usd: string): string => `$${Number(usd).toFixed(4)}`;
 export const words = (code: string): string => code.toLowerCase().replaceAll('_', ' ');
 
 /** `LEDGER_WITHOUT_PAYMENT` as "Ledger without payment": a label, in sentence case. */
+/** Short words that stay in capitals inside a label. */
+const ACRONYMS = ['utr', 'gst', 'upi', 'neft', 'rtgs', 'imps', 'ist', 'utc', 'emi'];
+
+/** `UTR_MISSING_OR_GARBLED` as "UTR missing or garbled": a label in sentence case, acronyms kept. */
 export const sentence = (code: string): string => {
-  const w = words(code);
+  const w = words(code)
+    .split(' ')
+    .map((word) => (ACRONYMS.includes(word) ? word.toUpperCase() : word))
+    .join(' ');
   return w.charAt(0).toUpperCase() + w.slice(1);
 };
+
+/** An age bucket such as "8-30 days" with a proper en dash: "8–30 days". */
+export const range = (text: string): string => text.replace(/(\d)\s*-\s*(\d)/g, '$1–$2');
 
 export type Route =
   | { page: 'home' }
@@ -50,12 +60,22 @@ export function parseHash(hash: string): Route {
 export const linkTo = (runId: string, tab: Tab = 'summary', itemId?: string): string =>
   `#/runs/${runId}/${tab}${itemId ? `/${itemId}` : ''}`;
 
-/** The header chip: where the data on screen comes from. Only the public key id is ever shown. */
+/**
+ * A Razorpay key id with its middle hidden: "rzp_test_••••4Dfq". The key id is public (Checkout needs it),
+ * but a screenshot does not need all of it, and the last four still tell two accounts apart.
+ */
+export function maskKeyId(keyId: string): string {
+  const prefix = /^rzp_(test|live)_/.exec(keyId)?.[0] ?? '';
+  const rest = keyId.slice(prefix.length);
+  return `${prefix}••••${rest.length > 4 ? rest.slice(-4) : ''}`;
+}
+
+/** The header chip: where the data on screen comes from. Only the masked public key id is ever shown. */
 export function dataChip(razorpay: RazorpayStatus | null): string {
   if (razorpay?.source === 'testmode' && razorpay.ready) {
-    return `Razorpay test account${razorpay.keyId ? ` · ${razorpay.keyId}` : ''}`;
+    return `Razorpay test mode${razorpay.keyId ? ` · ${maskKeyId(razorpay.keyId)}` : ''}`;
   }
-  return 'synthetic data · Razorpay test mode';
+  return 'Razorpay test mode · synthetic data';
 }
 
 /** `07:00 UTC` from an ISO time. */
@@ -94,7 +114,7 @@ export function agentBanner(status: AgentStatus | null): string | null {
   if (status.exhausted) {
     const back = nextReturn(status);
     const who = status.models.map((m) => `${m.id} ${STATE_WORDS[m.state]}`).join('; ');
-    return `AI quota exhausted: no model can answer right now (${who}). Matching and review still work, and new exceptions go to a person with that reason.${back === null ? '' : ` The first model is back after ${utcClock(back)}.`}`;
+    return `AI quota exhausted — rules still ran. No model can answer right now (${who}). Matching and review still work, and new exceptions go to a person with that reason.${back === null ? '' : ` The first model is back after ${utcClock(back)}.`}`;
   }
   const out = status.models.filter((m) => m.state !== 'ok');
   if (out.length > 0) {

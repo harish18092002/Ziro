@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import type { RazorpayStatus } from './api';
 import { CopyBlock } from './CopyBlock';
+import { maskKeyId } from './format';
 import { Icon } from './Icons';
 
 const ENV_LINES = [
@@ -44,9 +45,9 @@ export function SetupGuide({ status }: { status: RazorpayStatus | null }) {
       <div className="card guide">
         <h2 className="card-title">One setting is in the way</h2>
         <p>
-          Your Razorpay keys are connected ({status.keyId}), but <code>DEMO_MODE=true</code>{' '}
-          switches off importing and refunds, the way the public demo does. Change it, restart and
-          reload.
+          Your Razorpay keys are connected ({status.keyId ? maskKeyId(status.keyId) : 'no key id'}),
+          but <code>DEMO_MODE=true</code> switches off importing and refunds, the way the public
+          demo does. Change it, restart and reload.
         </p>
         <Steps>
           <li>

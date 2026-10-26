@@ -208,3 +208,44 @@ export function watchTabVisibility(): void {
   mark();
   document.addEventListener('visibilitychange', mark);
 }
+
+/**
+ * A looping story clock for a JavaScript animation: milliseconds into a loop of `loopMs`, advancing on animation
+ * frames while `running`. Paused, it keeps its place and carries on from there.
+ */
+export function useStoryClock(running: boolean, loopMs: number): number {
+  const [t, setT] = useState(0);
+  const played = useRef(0);
+  useEffect(() => {
+    if (!running) return;
+    let frame = 0;
+    let began: number | null = null;
+    const from = played.current;
+    const step = (now: number) => {
+      began ??= now;
+      const at = (from + now - began) % loopMs;
+      played.current = at;
+      setT(at);
+      frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  }, [running, loopMs]);
+  return t;
+}
+
+/** Whether a media query matches, following changes (for layouts CSS alone cannot switch, such as an SVG's shape). */
+export function useMedia(query: string): boolean {
+  const [match, setMatch] = useState(
+    () => typeof window.matchMedia === 'function' && window.matchMedia(query).matches,
+  );
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const list = window.matchMedia(query);
+    const on = () => setMatch(list.matches);
+    on();
+    list.addEventListener('change', on);
+    return () => list.removeEventListener('change', on);
+  }, [query]);
+  return match;
+}

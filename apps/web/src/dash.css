@@ -39,6 +39,7 @@
   flex: none;
 }
 .tabs {
+  position: relative;
   display: flex;
   gap: 2px;
   margin: var(--sp-3) 0 var(--sp-4);
@@ -58,21 +59,6 @@
 .tabs a:hover,
 .tabs a.on {
   color: var(--ink);
-}
-.tabs a::after {
-  content: '';
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: -1px;
-  height: 2px;
-  border-radius: var(--r-xs) var(--r-xs) 0 0;
-  background: var(--brand);
-  transform: scaleX(0);
-  transition: transform var(--dur-base) var(--ease-out);
-}
-.tabs a.on::after {
-  transform: scaleX(1);
 }
 .tab-body {
   animation: page-in var(--dur-base) var(--ease-out) both;
@@ -1143,4 +1129,118 @@ details.more > summary span {
     grid-column: 2;
     justify-self: start;
   }
+}
+
+/* ---------- one underline that slides between tabs (a transform: 1px wide, scaled to the tab) ---------- */
+.tab-ink {
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 1px;
+  height: 2px;
+  background: var(--brand);
+  transform-origin: left;
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    opacity var(--dur-fast);
+}
+
+/* ---------- the gap as a journey ---------- */
+.gap-orders,
+.gap-note {
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+.gap-note {
+  color: var(--ink-3);
+}
+.wf {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.wf li {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.9fr) minmax(0, 2fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+}
+.wf-label {
+  color: var(--ink-2);
+}
+.wf-track {
+  position: relative;
+  height: 14px;
+  border-radius: var(--r-xs);
+  background: color-mix(in srgb, var(--line) 25%, transparent);
+  overflow: hidden;
+}
+/* each step sits where it falls in the gap and grows in from its left edge */
+.wf-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: var(--r-xs);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--dur-grow) var(--ease-out);
+}
+.gap-card.in .wf-fill {
+  transform: none;
+}
+.wf-value {
+  min-width: 9ch;
+  text-align: right;
+}
+.next-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  width: fit-content;
+  min-height: var(--tap);
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--st-wait) 18%, var(--card));
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.next-action:hover {
+  background: color-mix(in srgb, var(--st-wait) 30%, var(--card));
+}
+.next-action svg {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.next-action:hover svg {
+  transform: translateX(3px);
+}
+
+/* ---------- loading: the dashboard's shape ---------- */
+.skel-card {
+  height: 220px;
+  border-radius: var(--r-md);
+}
+.skel-card.tall {
+  height: 260px;
+}
+@media (max-width: 560px) {
+  .wf li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .wf-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+/* a legend swatch */
+.sw {
+  display: inline-block;
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
 }

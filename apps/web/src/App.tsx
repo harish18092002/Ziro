@@ -66,7 +66,7 @@ function Shell() {
               </span>
             </button>
             {offerTest && route.page !== 'test' ? (
-              <a className="button sm" href="#/test">
+              <a className="button sm test-link" href="#/test">
                 Test account
               </a>
             ) : null}

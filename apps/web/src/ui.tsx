@@ -3,6 +3,7 @@ import { compact, scaleBig, toBig } from './chart-math';
 import { inr } from './format';
 import { useEased, useInView } from './hooks';
 import { Icon } from './Icons';
+import { GLOSSARY, type TermKey } from './glossary';
 import type { Metric } from './metrics';
 
 /** A style object that carries CSS custom properties (`--i`, `--w`): React sets them through the CSSOM. */
@@ -50,6 +51,14 @@ export function CountPaise({ paise }: { paise: string | null | undefined }) {
   return <span ref={ref}>{inr(String(scaleBig(toBig(paise), t)))}</span>;
 }
 
+/** Rupees counting DOWN from one amount to another when seen, in whole paise (the gap closing). */
+export function CountDownPaise({ from, to }: { from: bigint; to: bigint }) {
+  const [ref, seen] = useInView<HTMLSpanElement>();
+  const t = useEased(seen);
+  const now = from - scaleBig(from - to, t);
+  return <span ref={ref}>{inr(String(now))}</span>;
+}
+
 /** A notice above the page content: an icon, a coloured edge and the words. */
 export function Banner({
   tone = 'info',
@@ -69,47 +78,86 @@ export function Banner({
 }
 
 /**
- * "How we count": a small info button that shows what a number counts, out of what, and where it comes from.
- * It opens on hover, on keyboard focus and on a tap, and Escape closes it.
+ * A small tooltip on a button: it opens on hover, keyboard focus and a tap, and closes on leaving, blur or Escape.
+ * A click only ever opens it, so a hover followed by a click does not shut it again.
  */
-export function HowWeCount({ label, how }: { label: string; how: string }) {
+function Tip({
+  className,
+  label,
+  title,
+  text,
+  children,
+}: {
+  className: string;
+  label: string;
+  title: string;
+  text: string;
+  children: ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   const id = useId();
   return (
     <span
-      className="how"
+      className="tip-wrap"
       onPointerEnter={() => setOpen(true)}
       onPointerLeave={() => setOpen(false)}
     >
       <button
         type="button"
-        className="how-btn"
-        aria-label={`How we count: ${label}`}
+        className={className}
+        aria-label={label}
         aria-expanded={open}
         aria-describedby={open ? id : undefined}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(true)}
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
         onKeyDown={(e) => {
           if (e.key === 'Escape') setOpen(false);
         }}
       >
-        <Icon name="info" size={13} />
+        {children}
       </button>
       {open ? (
-        <span role="tooltip" id={id} className="how-tip">
-          <b>How we count</b>
-          {how}
+        <span role="tooltip" id={id} className="tip-pop">
+          <b>{title}</b>
+          {text}
         </span>
       ) : null}
     </span>
   );
 }
 
+/** A small ⓘ with a titled note: for the developer detail that should not sit in the page's own words. */
+export function InfoTip({ label, title, text }: { label: string; title: string; text: string }) {
+  return (
+    <Tip className="how-btn" label={label} title={title} text={text}>
+      <Icon name="info" size={13} />
+    </Tip>
+  );
+}
+
+/** "How we count": a small info button that says what a number counts, out of what, and where it comes from. */
+export function HowWeCount({ label, how }: { label: string; how: string }) {
+  return (
+    <Tip className="how-btn" label={`How we count: ${label}`} title="How we count" text={how}>
+      <Icon name="info" size={13} />
+    </Tip>
+  );
+}
+
+/** A word of jargon, underlined with dots: its plain meaning on hover, focus or a tap. */
+export function Term({ k, children }: { k: TermKey; children: string }) {
+  return (
+    <Tip className="term" label={`${children}: what it means`} title="Means" text={GLOSSARY[k]}>
+      {children}
+    </Tip>
+  );
+}
+
 /** One measured number: the figure counts up when seen, then its label, its denominator and how it is counted. */
 export function Stat({ m }: { m: Metric }) {
   return (
-    <div className="stat">
+    <div className="card stat">
       <b className="stat-figure">
         <Count value={m.n} format={m.format} />
       </b>

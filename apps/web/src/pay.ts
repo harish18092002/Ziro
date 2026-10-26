@@ -5,7 +5,7 @@
 import './tokens.css';
 import './base.css';
 import './pay.css';
-import { inr } from './format';
+import { inr, maskKeyId } from './format';
 import { rupeesToPaise } from './pay-math';
 
 interface Status {
@@ -205,7 +205,10 @@ api<Status>('GET', '/razorpay/status').then(
         'bad',
       );
     } else {
-      say(`Test mode is on. Key ${status.keyId ?? ''}. Nothing here moves real money.`, 'ok');
+      say(
+        `Test mode is on. Key ${status.keyId ? maskKeyId(status.keyId) : ''}. Nothing here moves real money.`,
+        'ok',
+      );
       form.hidden = false;
     }
   },

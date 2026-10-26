@@ -1,6 +1,6 @@
 import evalResult from '../../../packages/evals/results/eval-42/rules-plain.json';
 import type { Overview, Progress } from './api';
-import { percent } from './format';
+import { inr, percent } from './format';
 import type { MoneyState } from './states';
 
 // Every number the home page shows, with what it counts, out of what, and where it comes from. One module, so a
@@ -199,4 +199,14 @@ export function settledBy(o: Overview): { state: MoneyState; label: string } {
   if (auto > 0 && people === 0) return { state: 'ai', label: 'Verified AI explanation' };
   if (auto > 0) return { state: 'you', label: 'Approved or auto-accepted' };
   return { state: 'you', label: 'Approved by you' };
+}
+
+/** The replay run's gap after rules, in paise: what the hero counts down from. */
+export function gapAfterRules(o: Overview): { paise: bigint; value: string; how: string } {
+  const paise = BigInt(o.gap.gapPaise);
+  return {
+    paise,
+    value: inr(o.gap.gapPaise),
+    how: 'What the rules could not prove in the replay run: the cases still open or waiting for a person, each counted once at its largest amount.',
+  };
 }

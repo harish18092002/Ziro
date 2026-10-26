@@ -6,8 +6,10 @@ import {
   failureSentence,
   inr,
   linkTo,
+  maskKeyId,
   parseHash,
   percent,
+  range,
   replayNote,
   sentence,
   words,
@@ -38,7 +40,7 @@ describe('inr', () => {
 describe('sentence', () => {
   it('turns a reason code into a label in sentence case', () => {
     expect(sentence('LEDGER_WITHOUT_PAYMENT')).toBe('Ledger without payment');
-    expect(sentence('UTR_MISSING_OR_GARBLED')).toBe('Utr missing or garbled');
+    expect(sentence('UTR_MISSING_OR_GARBLED')).toBe('UTR missing or garbled');
     expect(sentence('UNKNOWN')).toBe('Unknown');
     expect(sentence('')).toBe('');
   });
@@ -103,17 +105,39 @@ describe('dataChip', () => {
     ...over,
   });
 
-  it('names the test account and its public key id once test mode is ready', () => {
-    expect(dataChip(rz({}))).toBe('Razorpay test account · rzp_test_abc123');
-    expect(dataChip(rz({ keyId: null }))).toBe('Razorpay test account');
+  it('says test mode and the masked key id once the test account is ready', () => {
+    expect(dataChip(rz({}))).toBe('Razorpay test mode · rzp_test_••••c123');
+    expect(dataChip(rz({ keyId: null }))).toBe('Razorpay test mode');
   });
 
   it('says synthetic whenever the data is generated, or the status is unknown', () => {
-    expect(dataChip(null)).toBe('synthetic data · Razorpay test mode');
+    expect(dataChip(null)).toBe('Razorpay test mode · synthetic data');
     expect(dataChip(rz({ source: 'synthetic', keyId: null }))).toBe(
-      'synthetic data · Razorpay test mode',
+      'Razorpay test mode · synthetic data',
     );
-    expect(dataChip(rz({ ready: false }))).toBe('synthetic data · Razorpay test mode');
+    expect(dataChip(rz({ ready: false }))).toBe('Razorpay test mode · synthetic data');
+  });
+});
+
+describe('maskKeyId', () => {
+  it('keeps the mode prefix and the last four, and hides the rest', () => {
+    expect(maskKeyId('rzp_test_TquN26ldTN4Dfq')).toBe('rzp_test_••••4Dfq');
+    expect(maskKeyId('rzp_live_ABCDEFGH1234')).toBe('rzp_live_••••1234');
+  });
+
+  it('never shows a short key whole', () => {
+    expect(maskKeyId('rzp_test_ab12')).toBe('rzp_test_••••');
+    expect(maskKeyId('abcd')).toBe('••••');
+  });
+});
+
+describe('labels', () => {
+  it('keeps acronyms in capitals and uses an en dash in ranges', () => {
+    expect(sentence('UTR_MISSING_OR_GARBLED')).toBe('UTR missing or garbled');
+    expect(sentence('FEE_GST_DEDUCTION')).toBe('Fee GST deduction');
+    expect(sentence('LEDGER_WITHOUT_PAYMENT')).toBe('Ledger without payment');
+    expect(range('8-30 days')).toBe('8–30 days');
+    expect(range('31+ days')).toBe('31+ days');
   });
 });
 

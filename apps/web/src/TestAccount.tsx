@@ -12,7 +12,7 @@ import {
   type TestPaymentList,
   upload,
 } from './api';
-import { linkTo } from './format';
+import { linkTo, maskKeyId } from './format';
 import { useLoad } from './hooks';
 import { HowToPay } from './HowToPay';
 import { Icon } from './Icons';
@@ -45,7 +45,7 @@ export function TestAccount() {
         </div>
         {ready && status.data?.keyId ? (
           <span className="keychip" title="The public half of your test key">
-            <Icon name="shield" size={14} /> Test mode · <code>{status.data.keyId}</code>
+            <Icon name="shield" size={14} /> Test mode · <code>{maskKeyId(status.data.keyId)}</code>
           </span>
         ) : null}
       </header>

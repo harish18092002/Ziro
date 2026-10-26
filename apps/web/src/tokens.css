@@ -8,11 +8,18 @@
  * Money states and actors were chosen with the dataviz validator (scripts/validate_palette.js), not by eye:
  *   - money states, on the sequences that really touch in a chart ([ai, you, wait, open] for the gap,
  *     [you, wait, open, ignored] for reasons, [rules, open, ignored] for coverage): worst adjacent
- *     colour-blind dE 12.3 light / 14.1 dark (target 8), normal vision 16.3 or more (floor 15);
+ *     colour-blind dE 14.5 light / 11.7 dark (target 8), normal vision 16.3 or more (floor 15);
  *     the three done greens are 14.7 light / 16.1 dark apart and always carry an icon and a label.
  *   - actors (code, AI, you), all pairs: pass in both modes.
  *   Fills below 3:1 on the surface (rules and wait in light mode) always show their value as text or in the
  *   table view. --on-st-* is the ink that sits inside each fill (4.5:1 or more).
+ * The colour meanings are fixed, and nothing else gets a hue:
+ *   blue   = brand, primary actions, the "Code" actor
+ *   violet = AI (and Razorpay's fee in the fee picture, the one money kind that is not a state)
+ *   amber  = needs you: the "You" actor and waiting states
+ *   green  = proved / done
+ *   red    = refused / a problem / still open
+ *   grey   = neutral / ignored
  * motion.ts mirrors the --dur-* values for count-ups in JavaScript; a test keeps the two equal.
  */
 :root {
@@ -50,8 +57,8 @@
   --on-st-you: #ffffff;
   --st-wait: #fdc436;
   --on-st-wait: #0b0b0b;
-  --st-open: #db551d;
-  --on-st-open: #0b0b0b;
+  --st-open: #d43f3a;
+  --on-st-open: #ffffff;
   --st-ignored: #b9b8ae;
   --on-st-ignored: #0b0b0b;
 
@@ -98,7 +105,7 @@
   --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
   --mono: ui-monospace, 'Cascadia Mono', 'SF Mono', Menlo, Consolas, monospace;
   --fs-2xs: 0.6875rem; /* 11px: labels inside bars and badges only */
-  --fs-xs: 0.75rem; /* 12px */
+  --fs-xs: 0.8125rem; /* 13px: the smallest caption */
   --fs-sm: 0.8125rem; /* 13px */
   --fs-base: 0.875rem; /* 14px: body */
   --fs-md: 1rem; /* 16px */
@@ -189,7 +196,7 @@
     --on-st-you: #ffffff;
     --st-wait: #ffc73a;
     --on-st-wait: #0b0b0b;
-    --st-open: #e25c26;
+    --st-open: #e85c52;
     --on-st-open: #0b0b0b;
     --st-ignored: #55544f;
     --on-st-ignored: #ffffff;
@@ -240,7 +247,7 @@
   --on-st-you: #ffffff;
   --st-wait: #ffc73a;
   --on-st-wait: #0b0b0b;
-  --st-open: #e25c26;
+  --st-open: #e85c52;
   --on-st-open: #0b0b0b;
   --st-ignored: #55544f;
   --on-st-ignored: #ffffff;
