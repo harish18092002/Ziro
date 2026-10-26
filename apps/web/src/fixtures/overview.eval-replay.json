@@ -1,0 +1,494 @@
+{
+  "run": {
+    "id": "e0c412a5-7abd-4ab6-b30b-0cae8c8a2fee",
+    "status": "complete",
+    "periodStart": "2026-04-01",
+    "periodEnd": "2026-05-30",
+    "asOf": "2026-05-30",
+    "createdAt": "2026-10-22T20:48:59.469Z",
+    "source": "synthetic",
+    "preset": "eval",
+    "featured": "eval",
+    "archived": false,
+    "stage": "ready",
+    "partial": false,
+    "gaps": []
+  },
+  "failures": {
+    "handedToAPerson": 0,
+    "byReason": [],
+    "injected": null,
+    "note": null
+  },
+  "sources": {
+    "ledger": {
+      "records": 500,
+      "amountPaise": "138974052"
+    },
+    "payments": {
+      "records": 530,
+      "captured": 505,
+      "capturedPaise": "134335609",
+      "feesPaise": "2587691"
+    },
+    "refunds": {
+      "records": 38,
+      "amountPaise": "4688448"
+    },
+    "settlements": {
+      "records": 49,
+      "amountPaise": "126257510"
+    },
+    "bank": {
+      "credits": {
+        "records": 119,
+        "amountPaise": "139780929"
+      },
+      "debits": {
+        "records": 82,
+        "amountPaise": "90853500"
+      }
+    }
+  },
+  "coverage": [
+    {
+      "type": "ledger_entry",
+      "total": 500,
+      "matched": 475,
+      "inException": 25,
+      "ignored": 0,
+      "matchRate": 0.95,
+      "amountPaise": {
+        "total": "138974052",
+        "matched": "123093491",
+        "inException": "15880561",
+        "ignored": "0"
+      },
+      "reconciles": true
+    },
+    {
+      "type": "rzp_payment",
+      "total": 530,
+      "matched": 475,
+      "inException": 30,
+      "ignored": 25,
+      "matchRate": 0.9405940594059405,
+      "amountPaise": {
+        "total": "138423344",
+        "matched": "123093491",
+        "inException": "11242118",
+        "ignored": "4087735"
+      },
+      "reconciles": true
+    },
+    {
+      "type": "rzp_refund",
+      "total": 38,
+      "matched": 35,
+      "inException": 0,
+      "ignored": 3,
+      "matchRate": 1,
+      "amountPaise": {
+        "total": "4688448",
+        "matched": "4259048",
+        "inException": "0",
+        "ignored": "429400"
+      },
+      "reconciles": true
+    },
+    {
+      "type": "rzp_settlement",
+      "total": 49,
+      "matched": 48,
+      "inException": 1,
+      "ignored": 0,
+      "matchRate": 0.9795918367346939,
+      "amountPaise": {
+        "total": "126257510",
+        "matched": "126028387",
+        "inException": "229123",
+        "ignored": "0"
+      },
+      "reconciles": true
+    },
+    {
+      "type": "bank_line",
+      "total": 201,
+      "matched": 48,
+      "inException": 48,
+      "ignored": 105,
+      "matchRate": 0.5,
+      "amountPaise": {
+        "total": "230634429",
+        "matched": "126028387",
+        "inException": "8314811",
+        "ignored": "96291231"
+      },
+      "reconciles": true
+    }
+  ],
+  "reconciles": true,
+  "matching": {
+    "matchedRecords": 1081,
+    "byTier": [
+      {
+        "basis": "rule",
+        "tier": "T1",
+        "kind": "order",
+        "label": "Ledger entry to payment: same order reference, same amount",
+        "groups": 475,
+        "records": 985,
+        "share": 0.9111933395004626
+      },
+      {
+        "basis": "rule",
+        "tier": "T3",
+        "kind": "payout",
+        "label": "Settlement to bank credit: same UTR, same amount",
+        "groups": 40,
+        "records": 80,
+        "share": 0.07400555041628122
+      },
+      {
+        "basis": "rule",
+        "tier": "T4",
+        "kind": "payout",
+        "label": "Settlement to bank credit: same amount, inside the window, only one candidate",
+        "groups": 8,
+        "records": 16,
+        "share": 0.014801110083256245
+      }
+    ],
+    "approvedByPerson": 0,
+    "autoAccepted": 0
+  },
+  "gap": {
+    "gapPaise": "20419089",
+    "openPaise": "10868840",
+    "awaitingPaise": "9550249",
+    "explainedPaise": "0",
+    "cases": {
+      "open": 48,
+      "awaiting": 44,
+      "explained": 0
+    }
+  },
+  "exceptionsByReason": [
+    {
+      "reasonCode": "UNKNOWN",
+      "total": 67,
+      "open": 46,
+      "proposed": 21,
+      "resolved": 0,
+      "dismissed": 0
+    },
+    {
+      "reasonCode": "LEDGER_WITHOUT_PAYMENT",
+      "total": 15,
+      "open": 2,
+      "proposed": 13,
+      "resolved": 0,
+      "dismissed": 0
+    },
+    {
+      "reasonCode": "DUPLICATE_PAYMENT",
+      "total": 10,
+      "open": 0,
+      "proposed": 10,
+      "resolved": 0,
+      "dismissed": 0
+    },
+    {
+      "reasonCode": "PAYMENT_WITHOUT_LEDGER",
+      "total": 10,
+      "open": 0,
+      "proposed": 10,
+      "resolved": 0,
+      "dismissed": 0
+    },
+    {
+      "reasonCode": "UTR_MISSING_OR_GARBLED",
+      "total": 2,
+      "open": 0,
+      "proposed": 2,
+      "resolved": 0,
+      "dismissed": 0
+    }
+  ],
+  "resolution": {
+    "ruleGroups": 523,
+    "agentMatchesApprovedByPerson": 0,
+    "agentExplanationsApprovedByPerson": 0,
+    "autoAccepted": 0,
+    "rejectedByPerson": 0,
+    "dismissed": 0,
+    "waiting": 56
+  },
+  "openExceptions": {
+    "asOf": "2026-05-30",
+    "count": 104,
+    "oldestDays": 59,
+    "byAge": [
+      {
+        "bucket": "0-7 days",
+        "cases": 9,
+        "stakePaise": "1269798"
+      },
+      {
+        "bucket": "8-30 days",
+        "cases": 43,
+        "stakePaise": "8674017"
+      },
+      {
+        "bucket": "31+ days",
+        "cases": 40,
+        "stakePaise": "10475274"
+      }
+    ]
+  },
+  "leakage": {
+    "contract": {
+      "source": "run",
+      "gstBps": 1800,
+      "feeBps": {
+        "upi": 100,
+        "card": 200,
+        "netbanking": 190
+      }
+    },
+    "assessed": 505,
+    "notAssessable": 0,
+    "overchargedCount": 15,
+    "excessPaise": "69487",
+    "excessBasePaise": "58889",
+    "excessGstPaise": "10598",
+    "undercharged": {
+      "count": 0,
+      "shortfallPaise": "0"
+    },
+    "gstOnlyDifferences": 0,
+    "byMethod": [
+      {
+        "method": "card",
+        "assessed": 218,
+        "overchargedCount": 7,
+        "excessPaise": "26456"
+      },
+      {
+        "method": "netbanking",
+        "assessed": 90,
+        "overchargedCount": 3,
+        "excessPaise": "13114"
+      },
+      {
+        "method": "upi",
+        "assessed": 197,
+        "overchargedCount": 5,
+        "excessPaise": "29917"
+      }
+    ],
+    "worst": [
+      {
+        "rzpId": "pay_BKS2Gsd9VxFdM3",
+        "method": "upi",
+        "amountPaise": "2223169",
+        "expectedFeePaise": "26234",
+        "actualFeePaise": "51942",
+        "excessPaise": "25708"
+      },
+      {
+        "rzpId": "pay_omFZ8ISoWHFUKO",
+        "method": "card",
+        "amountPaise": "952900",
+        "expectedFeePaise": "22488",
+        "actualFeePaise": "38343",
+        "excessPaise": "15855"
+      },
+      {
+        "rzpId": "pay_bvfLqVL4ONQrkp",
+        "method": "netbanking",
+        "amountPaise": "610800",
+        "expectedFeePaise": "13694",
+        "actualFeePaise": "21334",
+        "excessPaise": "7640"
+      },
+      {
+        "rzpId": "pay_3R83f1awYhWg78",
+        "method": "netbanking",
+        "amountPaise": "290700",
+        "expectedFeePaise": "6517",
+        "actualFeePaise": "10428",
+        "excessPaise": "3911"
+      },
+      {
+        "rzpId": "pay_dQryH2gigKkruN",
+        "method": "card",
+        "amountPaise": "420150",
+        "expectedFeePaise": "9916",
+        "actualFeePaise": "12940",
+        "excessPaise": "3024"
+      },
+      {
+        "rzpId": "pay_lgiWQeF4O35R1A",
+        "method": "card",
+        "amountPaise": "203200",
+        "expectedFeePaise": "4796",
+        "actualFeePaise": "7049",
+        "excessPaise": "2253"
+      },
+      {
+        "rzpId": "pay_J6Q7CsFqMLNlde",
+        "method": "upi",
+        "amountPaise": "274300",
+        "expectedFeePaise": "3237",
+        "actualFeePaise": "5179",
+        "excessPaise": "1942"
+      },
+      {
+        "rzpId": "pay_LT8MS1mPyHhhaG",
+        "method": "card",
+        "amountPaise": "171400",
+        "expectedFeePaise": "4045",
+        "actualFeePaise": "5906",
+        "excessPaise": "1861"
+      },
+      {
+        "rzpId": "pay_bzVyOsmkvFWH70",
+        "method": "card",
+        "amountPaise": "114600",
+        "expectedFeePaise": "2705",
+        "actualFeePaise": "4421",
+        "excessPaise": "1716"
+      },
+      {
+        "rzpId": "pay_9ob7ZcdiICa2hR",
+        "method": "netbanking",
+        "amountPaise": "96600",
+        "expectedFeePaise": "2165",
+        "actualFeePaise": "3728",
+        "excessPaise": "1563"
+      }
+    ]
+  },
+  "delays": {
+    "delayedCount": 4,
+    "delayedPaise": "12429084",
+    "delayed": [
+      {
+        "id": "2a7a0abd-5332-53e6-806d-a9dd0727137e",
+        "rzpId": "setl_4cwqayVGBLIZb2",
+        "amountPaise": "4339703",
+        "dueDate": "2026-04-28",
+        "settlementDate": "2026-05-06",
+        "creditDate": "2026-05-07",
+        "createdLate": true,
+        "creditLate": false,
+        "businessDaysLate": 5
+      },
+      {
+        "id": "ffdd7457-cec2-501a-a45e-35460436aa63",
+        "rzpId": "setl_9LOCjdLQfeSmcJ",
+        "amountPaise": "4185116",
+        "dueDate": "2026-05-07",
+        "settlementDate": "2026-05-14",
+        "creditDate": "2026-05-15",
+        "createdLate": true,
+        "creditLate": false,
+        "businessDaysLate": 5
+      },
+      {
+        "id": "6d2773a2-1c21-501e-9a51-c7ef29503ba7",
+        "rzpId": "setl_AQWCVup32qQt78",
+        "amountPaise": "134414",
+        "dueDate": "2026-04-28",
+        "settlementDate": "2026-05-04",
+        "creditDate": "2026-05-04",
+        "createdLate": true,
+        "creditLate": false,
+        "businessDaysLate": 3
+      },
+      {
+        "id": "3703b205-8582-54e1-b54f-42ee9359be2f",
+        "rzpId": "setl_KUF1nYtPiY1DOg",
+        "amountPaise": "3769851",
+        "dueDate": "2026-04-21",
+        "settlementDate": "2026-04-23",
+        "creditDate": "2026-04-24",
+        "createdLate": true,
+        "creditLate": false,
+        "businessDaysLate": 2
+      }
+    ],
+    "overdueCount": 1,
+    "overduePaise": "229123",
+    "overdue": [
+      {
+        "id": "952865b2-d02e-5f50-84f3-65c36b1912a4",
+        "rzpId": "setl_bq1KyFguxmV15r",
+        "amountPaise": "229123",
+        "settlementDate": "2026-05-11",
+        "expectedBy": "2026-05-28",
+        "daysOverdue": 2
+      }
+    ]
+  },
+  "journal": {
+    "vouchers": 96,
+    "settlementsBooked": 48,
+    "adjustmentsBooked": 0,
+    "settlementsNotBooked": {
+      "count": 1,
+      "paise": "229123"
+    },
+    "skipped": []
+  },
+  "review": {
+    "runId": "e0c412a5-7abd-4ab6-b30b-0cae8c8a2fee",
+    "proposals": {
+      "total": 58,
+      "byVerdict": {
+        "EXPLAINED_NO_MATCH": 53,
+        "NEEDS_HUMAN": 1,
+        "MATCH_PROPOSED": 4
+      }
+    },
+    "matchesProposed": 4,
+    "verifier": {
+      "passed": 2,
+      "rejected": 2,
+      "notApplicable": 54,
+      "pending": 0
+    },
+    "caughtByVerifier": 2,
+    "rejectionReasons": {
+      "AMOUNT_MISMATCH": 1,
+      "ALREADY_MATCHED": 1
+    },
+    "queue": {
+      "waiting": 56,
+      "amountAtStakePaise": "10908195"
+    },
+    "reviews": {
+      "approved": 0,
+      "rejected": 0,
+      "autoAccepted": 0
+    },
+    "exceptions": {
+      "proposed": 56,
+      "open": 48
+    }
+  },
+  "llm": {
+    "agent": "scripted",
+    "calls": 0,
+    "costUsd": "0",
+    "latencyMs": 0,
+    "tokensIn": 0,
+    "tokensOut": 0
+  },
+  "time": {
+    "startedAt": "2026-10-22T20:49:00.244Z",
+    "finishedAt": "2026-10-22T20:49:01.673Z",
+    "seconds": 1.4
+  }
+}

@@ -2,10 +2,11 @@
 // Refunds live in the test-account page, which looks at a payment before asking Razorpay to refund it. This is
 // a plain page (no framework) so that the one script that must talk to Razorpay's Checkout stays small and
 // easy to read. Everything shown from the network is put on the page as text, never as markup.
-import './theme.css';
+import './tokens.css';
 import './base.css';
 import './pay.css';
-import { rupeesToPaise, showPaise } from './pay-math';
+import { inr } from './format';
+import { rupeesToPaise } from './pay-math';
 
 interface Status {
   source: string;
@@ -40,7 +41,7 @@ function element<T extends HTMLElement>(id: string): T {
   return found as T;
 }
 
-// `?theme=dark` for one visit, like the console. Otherwise the system setting applies through theme.css.
+// `?theme=dark` for one visit, like the console. Otherwise the system setting applies through tokens.css.
 const asked = new URLSearchParams(window.location.search).get('theme');
 if (asked === 'light' || asked === 'dark') document.documentElement.dataset['theme'] = asked;
 
@@ -109,7 +110,7 @@ function addMade(entry: { paymentId: string; receipt: string; amountPaise: numbe
   main.className = 'made-main';
   const receipt = document.createElement('b');
   receipt.textContent = entry.receipt;
-  main.append(receipt, ` ${showPaise(entry.amountPaise)}`);
+  main.append(receipt, ` ${inr(String(entry.amountPaise))}`);
 
   const id = document.createElement('code');
   id.textContent = entry.paymentId;
@@ -164,7 +165,7 @@ async function payNow(): Promise<void> {
           amountPaise: order.amountPaise,
         });
         say(
-          `Paid ${showPaise(order.amountPaise)} for ${order.receipt}. It is in your test account now: make another, or go back to see it.`,
+          `Paid ${inr(String(order.amountPaise))} for ${order.receipt}. It is in your test account now: make another, or go back to see it.`,
           'ok',
         );
         payButton.disabled = false;

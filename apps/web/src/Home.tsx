@@ -1,11 +1,28 @@
 import { type ReactNode, useState } from 'react';
-import { ApiError, type Availability, type Overview, post, type RazorpayStatus } from './api';
+import {
+  ApiError,
+  type Availability,
+  type Overview,
+  post,
+  type Progress,
+  type RazorpayStatus,
+} from './api';
 import { HeroArt, Logo } from './Brand';
 import { FlowDiagram } from './FlowDiagram';
-import { linkTo, percent } from './format';
-import { useLoad } from './hooks';
+import { linkTo } from './format';
+import { useLoad, useLoop } from './hooks';
 import { Icon, type IconName } from './Icons';
-import { Count, Reveal } from './ui';
+import {
+  evalFacts,
+  exceptionsLeft,
+  falseMatches,
+  groupsProved,
+  ordersInRun,
+  ordersMatched,
+  proposalsRefused,
+  truthFoundExactly,
+} from './metrics';
+import { Reveal, Stat } from './ui';
 
 /** Starting a run is the same from the hero and from the "try it" section. */
 function useRunStarter() {
@@ -43,6 +60,7 @@ export function Home({ razorpay }: { razorpay: RazorpayStatus | null }) {
   const { data: offer } = useLoad<Availability>('/demo');
   const replay = offer?.featured.eval ?? null;
   const proof = useLoad<Overview>(replay ? `/runs/${replay}/overview` : null);
+  const progress = useLoad<Progress>(replay ? `/runs/${replay}/progress` : null);
   const starter = useRunStarter();
 
   return (
@@ -51,8 +69,8 @@ export function Home({ razorpay }: { razorpay: RazorpayStatus | null }) {
       <StartHere starter={starter} offer={offer} razorpay={razorpay} replay={replay} />
       <StatsBar proof={proof.data} replay={replay} />
       <WhyHard />
-      <HowItWorks proof={proof.data} />
-      <Trust />
+      <HowItWorks proof={proof.data} progress={progress.data} />
+      <Trust progress={progress.data} />
       <Footer />
     </div>
   );
@@ -85,8 +103,9 @@ function ReplayLink({ replay }: { replay: string | null }) {
 }
 
 function Hero({ replay }: { replay: string | null }) {
+  const [ref, running] = useLoop<HTMLElement>();
   return (
-    <section className="hero">
+    <section ref={ref} className="hero" data-loops={running ? 'on' : 'off'}>
       <div className="blob a" />
       <div className="blob b" />
       <div className="wrap hero-grid">
@@ -119,29 +138,14 @@ function Hero({ replay }: { replay: string | null }) {
 
 /** Four live numbers from the 500-order replay, in one quiet bar rather than four cards. */
 function StatsBar({ proof, replay }: { proof: Overview | null; replay: string | null }) {
-  const ledger = proof?.coverage.find((c) => c.type === 'ledger_entry');
-  const exceptions = proof?.exceptionsByReason.reduce((n, r) => n + r.total, 0) ?? 0;
-  const stats: { label: string; value: ReactNode }[] = proof
-    ? [
-        { label: 'orders reconciled', value: <Count value={proof.sources.ledger.records} /> },
-        {
-          label: 'matched by rules alone',
-          value: <Count value={(ledger?.matchRate ?? 0) * 100} format={(n) => percent(n / 100)} />,
-        },
-        { label: 'groups proved by code', value: <Count value={proof.resolution.ruleGroups} /> },
-        { label: 'left to investigate', value: <Count value={exceptions} /> },
-      ]
+  const stats = proof
+    ? [ordersInRun(proof), ordersMatched(proof), groupsProved(proof), exceptionsLeft(proof)]
     : [];
   return (
     <section className="wrap stats-wrap" aria-label="Numbers from the 500-order replay run">
       <div className="stats-bar">
         {proof ? (
-          stats.map((s) => (
-            <div key={s.label} className="stat">
-              <b>{s.value}</b>
-              <span>{s.label}</span>
-            </div>
-          ))
+          stats.map((m) => <Stat key={m.label} m={m} />)
         ) : (
           <div className="skel stats-skel" />
         )}
@@ -214,7 +218,7 @@ function FeeIllustration() {
   );
 }
 
-function HowItWorks({ proof }: { proof: Overview | null }) {
+function HowItWorks({ proof, progress }: { proof: Overview | null; progress: Progress | null }) {
   return (
     <section className="section alt" id="how">
       <div className="wrap">
@@ -222,7 +226,7 @@ function HowItWorks({ proof }: { proof: Overview | null }) {
           What happens behind the scenes
         </Title>
         <Reveal>
-          <FlowDiagram proof={proof} />
+          <FlowDiagram proof={proof} progress={progress} />
         </Reveal>
       </div>
     </section>
@@ -252,23 +256,13 @@ const TRUST: { icon: IconName; title: string; text: string }[] = [
   },
 ];
 
-const RESULTS: { value: ReactNode; label: string }[] = [
-  {
-    value: <Count value={97.4} format={(n) => `${n.toFixed(1)}%`} />,
-    label: 'of 534 true groups matched by rules',
-  },
-  { value: <Count value={0} />, label: 'false matches' },
-  {
-    value: (
-      <>
-        <Count value={44} /> of 44
-      </>
-    ),
-    label: 'wrong proposals refused by the checker',
-  },
-];
-
-function Trust() {
+function Trust({ progress }: { progress: Progress | null }) {
+  const facts = evalFacts();
+  const results = [
+    truthFoundExactly(facts),
+    falseMatches(facts),
+    ...(progress ? [proposalsRefused(progress)] : []),
+  ];
   return (
     <section className="section" id="trust">
       <div className="wrap">
@@ -287,17 +281,15 @@ function Trust() {
           ))}
         </div>
         <Reveal>
-          <div className="results">
-            {RESULTS.map((r) => (
-              <div key={r.label} className="result">
-                <b>{r.value}</b>
-                <span>{r.label}</span>
-              </div>
+          <div className="stats-bar cols-3 results">
+            {results.map((m) => (
+              <Stat key={m.label} m={m} />
             ))}
           </div>
           <p className="fine">
-            Measured on 500 synthetic orders; <code>npm run eval</code> reproduces it. The AI
-            agent’s own accuracy has not been measured yet.
+            The first two are scored against the generator’s answer key by <code>npm run eval</code>{' '}
+            ({facts.run.orders} generated orders, seed {facts.seed}); the refusals are from the
+            replay run. The AI agent’s own accuracy has not been measured yet.
           </p>
         </Reveal>
       </div>
@@ -342,8 +334,9 @@ function StartHere({
   replay: string | null;
 }) {
   const state = pathState(razorpay);
+  const [ref, running] = useLoop<HTMLElement>();
   return (
-    <section className="section start" id="start">
+    <section ref={ref} className="section start" id="start" data-loops={running ? 'on' : 'off'}>
       <div className="wrap">
         <Reveal className="sec-title">
           <h2>Two ways to start</h2>
@@ -351,35 +344,10 @@ function StartHere({
         </Reveal>
         <div className="paths">
           <Reveal>
-            <article className="card path">
-              <span className="path-tag real">Real test data</span>
-              <h3>Your Razorpay test account</h3>
-              <p>
-                Make test payments and refunds in your own Razorpay test account, then reconcile
-                them against your ledger.
-              </p>
-              <ul className="path-list">
-                <li>Payments and refunds read live from Razorpay</li>
-                <li>Bring your own ledger, or start one from your orders</li>
-                <li>Nothing made up: an empty account stays empty</li>
-              </ul>
-              <div className="path-foot">
-                {state === 'loading' ? (
-                  <div className="skel path-skel" />
-                ) : state === 'public' ? (
-                  <span className="button lg disabled">Not on the public demo</span>
-                ) : (
-                  <a className={`button lg${state === 'ready' ? ' primary' : ''}`} href="#/test">
-                    {REAL_BUTTON[state]} <Icon name="arrow" size={16} />
-                  </a>
-                )}
-                <p className="path-note">{REAL_NOTE[state]}</p>
-              </div>
-            </article>
-          </Reveal>
-
-          <Reveal i={1}>
-            <article className="card path">
+            <article className="card path path-rec">
+              <span className="rec-badge">
+                <Icon name="sparkle" size={13} /> Recommended
+              </span>
               <span className="path-tag demo">Demo data</span>
               <h3>Built-in demo</h3>
               <p>
@@ -446,6 +414,34 @@ function StartHere({
               </div>
             </article>
           </Reveal>
+
+          <Reveal i={1}>
+            <article className="card path">
+              <span className="path-tag real">Real test data</span>
+              <h3>Your Razorpay test account</h3>
+              <p>
+                Make test payments and refunds in your own Razorpay test account, then reconcile
+                them against your ledger.
+              </p>
+              <ul className="path-list">
+                <li>Payments and refunds read live from Razorpay</li>
+                <li>Bring your own ledger, or start one from your orders</li>
+                <li>Nothing made up: an empty account stays empty</li>
+              </ul>
+              <div className="path-foot">
+                {state === 'loading' ? (
+                  <div className="skel path-skel" />
+                ) : state === 'public' ? (
+                  <span className="button lg disabled">Not on the public demo</span>
+                ) : (
+                  <a className={`button lg${state === 'ready' ? ' primary' : ''}`} href="#/test">
+                    {REAL_BUTTON[state]} <Icon name="arrow" size={16} />
+                  </a>
+                )}
+                <p className="path-note">{REAL_NOTE[state]}</p>
+              </div>
+            </article>
+          </Reveal>
         </div>
       </div>
     </section>
@@ -467,6 +463,12 @@ function Footer() {
           <a href="#start">Start</a>
         </nav>
       </div>
+      {/* the watermark: the word fills the whole width, whatever the screen */}
+      <svg className="watermark" viewBox="0 0 1000 250" aria-hidden="true" focusable="false">
+        <text x="0" y="232" textLength="1000" lengthAdjust="spacingAndGlyphs">
+          Ziro
+        </text>
+      </svg>
     </footer>
   );
 }

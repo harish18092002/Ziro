@@ -53,7 +53,7 @@ const env = () =>
 
 interface Overview {
   run: { asOf: string; periodEnd: string };
-  sources: { settlements: { records: number } };
+  sources: { ledger: { records: number }; settlements: { records: number } };
   reconciles: boolean;
   coverage: {
     type: string;
@@ -133,6 +133,41 @@ beforeAll(async () => {
 afterAll(async () => {
   await app.close();
   await client.close();
+});
+
+// The home page shows this run's numbers (the featured replay is built exactly like this) next to figures from the
+// stored eval result. They must be the same run: same orders, groups, exceptions and gap (apps/web metrics.test.ts
+// then checks the page shows exactly these). It runs first: later tests approve a proposal, which moves the gap.
+describe('the numbers the home page shows', () => {
+  it('equal the stored eval result for this preset and seed', async () => {
+    const stored = JSON.parse(
+      readFileSync(
+        new URL('../../../../packages/evals/results/eval-42/rules-plain.json', import.meta.url),
+        'utf8',
+      ),
+    ) as {
+      seed: number;
+      preset: string;
+      runs: {
+        orders: number;
+        exceptions: { total: number; handled: number };
+        groups: { accepted: { rule: number } };
+        gap: { strictPaise: string };
+      }[];
+    };
+    expect([stored.preset, stored.seed]).toEqual(['eval', 42]);
+    const o = await overview();
+    const progress = (await request(server).get(`/runs/${runId}/progress`)).body as {
+      expected: number;
+    };
+    for (const run of stored.runs) {
+      expect(o.sources.ledger.records).toBe(run.orders);
+      expect(o.resolution.ruleGroups).toBe(run.groups.accepted.rule);
+      expect(o.exceptionsByReason.reduce((n, r) => n + r.total, 0)).toBe(run.exceptions.total);
+      expect(progress.expected).toBe(run.exceptions.handled);
+      expect(o.gap.gapPaise).toBe(run.gap.strictPaise);
+    }
+  });
 });
 
 describe('the totals reconcile to the paise', () => {

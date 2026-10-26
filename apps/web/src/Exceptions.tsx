@@ -12,6 +12,7 @@ import { Meter } from './Charts';
 import { inr, linkTo, sentence, words } from './format';
 import { useLoad } from './hooks';
 import { Icon, type IconName } from './Icons';
+import { type MoneyState, STATE } from './states';
 import { Banner } from './ui';
 
 const FILTERS = [
@@ -155,32 +156,50 @@ export function ExceptionsTab({
   );
 }
 
+/** A money-state badge: the palette's colour as a dot, an icon, and the words. */
+function StateBadge({
+  state,
+  icon,
+  children,
+}: {
+  state: MoneyState;
+  icon?: IconName;
+  children: string;
+}) {
+  return (
+    <span className={`pill st ${STATE[state].className}`}>
+      <Icon name={icon ?? STATE[state].icon} size={13} /> {children}
+    </span>
+  );
+}
+
+/** The reviewer name the API records when the auto-accept policy, not a person, accepted a proposal. */
+const AUTO_REVIEWER = 'auto-accept policy';
+
 function Status({ e }: { e: ExceptionRow }) {
   if (e.status === 'resolved')
-    return (
-      <span className="pill ok">
-        <Icon name="check" size={13} /> resolved{e.review ? ` · ${e.review.decision}` : ''}
-      </span>
+    return e.review?.reviewer === AUTO_REVIEWER ? (
+      <StateBadge state="ai">auto-accepted</StateBadge>
+    ) : (
+      <StateBadge state="you">
+        {e.review ? `${e.review.decision} by ${e.review.reviewer}` : 'resolved'}
+      </StateBadge>
     );
-  if (e.status === 'proposed')
-    return (
-      <span className="pill wait">
-        <Icon name="clock" size={13} /> waiting for a person
-      </span>
-    );
+  if (e.status === 'proposed') return <StateBadge state="wait">waiting for you</StateBadge>;
   if (e.proposal?.verifier === 'rejected')
     return (
-      <span className="pill bad">
-        <Icon name="x" size={13} /> proposal refused
-      </span>
+      <StateBadge state="open" icon="x">
+        open · proposal refused
+      </StateBadge>
     );
   if (e.listedForAPerson)
     return (
-      <span className="pill">
-        <Icon name="user" size={13} /> for a person
-      </span>
+      <StateBadge state="open" icon="user">
+        open · for you to look at
+      </StateBadge>
     );
-  return <span className="pill">{e.status}</span>;
+  if (e.status === 'dismissed') return <StateBadge state="ignored">dismissed</StateBadge>;
+  return <StateBadge state="open">open</StateBadge>;
 }
 
 function Verdict({ v }: { v: string }) {

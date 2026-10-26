@@ -1,4 +1,4 @@
-/* Base: reset, app shell, buttons, form controls, pills, banners, cards, motion. Tokens live in theme.css. */
+/* Base: reset, app shell, buttons, form controls, pills, banners, cards, motion. Tokens live in tokens.css. */
 *,
 *::before,
 *::after {
@@ -14,7 +14,9 @@ body {
   min-height: 100vh;
   background: var(--page);
   color: var(--ink);
-  font: 14px/1.5 var(--font);
+  font: var(--fs-base) / 1.5 var(--font);
+  /* every figure on every page lines up and does not jitter while it counts */
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -47,7 +49,7 @@ a:hover {
 :focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: var(--r-xs);
 }
 code {
   font-family: var(--mono);
@@ -78,7 +80,7 @@ code {
 .shell-top {
   position: sticky;
   top: 0;
-  z-index: 40;
+  z-index: var(--z-sticky);
   border-bottom: 1px solid var(--hair);
   background: color-mix(in srgb, var(--card) 80%, transparent);
   backdrop-filter: saturate(1.5) blur(14px);
@@ -86,51 +88,51 @@ code {
 .shell-in {
   max-width: 1120px;
   margin: 0 auto;
-  padding: 8px 20px;
+  padding: var(--sp-2) var(--sp-4);
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--sp-4);
 }
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-2);
   color: var(--ink);
   text-decoration: none;
   font-weight: 750;
-  font-size: 1.05rem;
+  font-size: var(--fs-md);
   letter-spacing: -0.02em;
 }
 .brand small {
   display: block;
   margin-top: -2px;
-  font-size: 0.66rem;
+  font-size: var(--fs-2xs);
   font-weight: 500;
   letter-spacing: 0;
   color: var(--ink-3);
 }
 .logo {
   flex: none;
-  transition: transform var(--dur-2) var(--ease);
+  transition: transform var(--dur-base) var(--ease-out);
 }
 .brand:hover .logo {
   transform: rotate(-12deg) scale(1.06);
 }
 .nav {
   display: flex;
-  gap: 4px;
-  margin-left: 12px;
+  gap: var(--sp-1);
+  margin-left: var(--sp-3);
 }
 .nav a {
-  padding: 5px 10px;
-  border-radius: 8px;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
   color: var(--ink-2);
   text-decoration: none;
   font-weight: 550;
-  font-size: 0.88rem;
+  font-size: var(--fs-base);
   transition:
-    background var(--dur-1),
-    color var(--dur-1);
+    background var(--dur-fast),
+    color var(--dur-fast);
 }
 .nav a:hover {
   background: var(--card-3);
@@ -140,23 +142,31 @@ code {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-2);
 }
 .env-chip {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--sp-2);
   color: var(--ink-3);
-  font-size: 0.76rem;
+  font-size: var(--fs-xs);
   white-space: nowrap;
 }
 .live-dot {
+  position: relative;
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--good);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 55%, transparent);
-  animation: pulse-dot 2.2s ease-out infinite;
+}
+/* the pulse is a ring that grows and fades: transform and opacity only */
+.live-dot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--good);
+  animation: pulse-ring var(--loop-pulse) ease-out infinite;
 }
 .icon-btn {
   display: inline-grid;
@@ -165,14 +175,14 @@ code {
   height: 32px;
   padding: 0;
   border: 1px solid var(--hair);
-  border-radius: 9px;
+  border-radius: var(--r-sm);
   background: var(--card);
   color: var(--ink-2);
   cursor: pointer;
   transition:
-    background var(--dur-1),
-    color var(--dur-1),
-    transform var(--dur-1) var(--ease);
+    background var(--dur-fast),
+    color var(--dur-fast),
+    transform var(--dur-fast) var(--ease-out);
 }
 .icon-btn:hover {
   background: var(--card-3);
@@ -182,19 +192,19 @@ code {
   transform: scale(0.92);
 }
 .theme-icon {
-  animation: spin-in var(--dur-2) var(--ease);
+  animation: spin-in var(--dur-base) var(--ease-out);
 }
 main {
   max-width: 1120px;
   margin: 0 auto;
-  padding: 18px 20px 56px;
+  padding: var(--sp-4) var(--sp-4) var(--sp-8);
 }
 main.bleed {
   max-width: none;
   padding: 0 0 0;
 }
 .page {
-  animation: page-in var(--dur-2) var(--ease) both;
+  animation: page-in var(--dur-base) var(--ease-out) both;
 }
 
 /* ---------- buttons ---------- */
@@ -203,24 +213,24 @@ button,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  padding: 7px 14px;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--hair);
-  border-radius: 9px;
+  border-radius: var(--r-sm);
   background: var(--card);
   color: var(--ink);
   font: inherit;
-  font-size: 0.93rem;
+  font-size: var(--fs-base);
   font-weight: 600;
   line-height: 1.2;
   text-decoration: none;
   cursor: pointer;
   box-shadow: var(--shadow-sm);
+  /* only the lift moves; the shadow and colours change at once */
   transition:
-    transform var(--dur-1) var(--ease),
-    box-shadow var(--dur-1) var(--ease),
-    background var(--dur-1),
-    border-color var(--dur-1);
+    transform var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast),
+    border-color var(--dur-fast);
 }
 button:hover:not(:disabled),
 .button:hover {
@@ -230,16 +240,22 @@ button:hover:not(:disabled),
 }
 button:active:not(:disabled),
 .button:active {
-  transform: translateY(0) scale(0.98);
+  transform: translateY(0) scale(0.97);
+  transition-duration: var(--dur-instant);
+}
+/* an arrow inside a button nudges forward on hover */
+button > .icon-arrow,
+.button > .icon-arrow {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+button:hover:not(:disabled) > .icon-arrow,
+.button:hover > .icon-arrow {
+  transform: translateX(3px);
 }
 button.primary,
 .button.primary {
   border-color: transparent;
-  background: linear-gradient(
-    135deg,
-    var(--brand),
-    color-mix(in srgb, var(--brand) 65%, var(--violet))
-  );
+  background: var(--grad-brand-diag);
   color: var(--on-brand);
 }
 button.primary:hover:not(:disabled),
@@ -248,20 +264,21 @@ button.primary:hover:not(:disabled),
   background: linear-gradient(
     135deg,
     var(--brand-hover),
-    color-mix(in srgb, var(--brand-hover) 60%, var(--violet))
+    color-mix(in srgb, var(--brand-hover) 60%, var(--brand-violet))
   );
 }
 button.lg,
 .button.lg {
-  padding: 10px 20px;
-  font-size: 1rem;
-  border-radius: 10px;
+  min-height: var(--tap);
+  padding: var(--sp-3) var(--sp-5);
+  font-size: var(--fs-md);
+  border-radius: var(--r-sm);
 }
 button.sm,
 .button.sm {
-  padding: 4px 10px;
-  font-size: 0.82rem;
-  border-radius: 8px;
+  padding: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-sm);
+  border-radius: var(--r-sm);
 }
 button.ghost,
 .button.ghost {
@@ -286,7 +303,7 @@ button:disabled,
   border-radius: 50%;
   border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
   border-top-color: currentColor;
-  animation: spin 0.7s linear infinite;
+  animation: spin var(--loop-spin) linear infinite;
 }
 
 /* ---------- form controls ---------- */
@@ -295,15 +312,15 @@ input:not([type]),
 input[type='search'],
 textarea {
   width: 100%;
-  padding: 9px 12px;
+  padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--r-sm);
   background: var(--card);
   color: var(--ink);
   font: inherit;
   transition:
-    border-color var(--dur-1),
-    box-shadow var(--dur-1);
+    border-color var(--dur-fast),
+    box-shadow var(--dur-fast);
 }
 input::placeholder,
 textarea::placeholder {
@@ -323,7 +340,7 @@ textarea {
 .switch {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--sp-3);
   cursor: pointer;
 }
 .switch input {
@@ -337,9 +354,9 @@ textarea {
   width: 40px;
   height: 24px;
   margin-top: 1px;
-  border-radius: 99px;
+  border-radius: var(--r-pill);
   background: var(--line);
-  transition: background var(--dur-1);
+  transition: background var(--dur-fast);
 }
 .switch .track::after {
   content: '';
@@ -351,7 +368,7 @@ textarea {
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  transition: transform var(--dur-2) var(--ease);
+  transition: transform var(--dur-base) var(--ease-out);
 }
 .switch input:checked + .track {
   background: var(--brand);
@@ -372,20 +389,20 @@ textarea {
 }
 .switch .words span {
   color: var(--ink-3);
-  font-size: 0.86rem;
+  font-size: var(--fs-base);
 }
 
 /* ---------- pills, chips ---------- */
 .pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 10px 2px 8px;
-  border-radius: 99px;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-2) 2px var(--sp-2);
+  border-radius: var(--r-pill);
   border: 1px solid var(--hair);
   background: var(--card-2);
   color: var(--ink);
-  font-size: 0.74rem;
+  font-size: var(--fs-xs);
   font-weight: 600;
   line-height: 1.5;
   white-space: nowrap;
@@ -421,15 +438,49 @@ textarea {
 .pill.info svg {
   color: var(--link);
 }
+/* a money-state badge: the state's colour as a dot and a tint, the words and icon stay in ink */
+.pill.st {
+  background: color-mix(in srgb, var(--st) 12%, var(--card));
+  border-color: color-mix(in srgb, var(--st) 50%, transparent);
+}
+.pill.st::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--st);
+}
+.pill.st svg {
+  color: var(--ink-2);
+}
+.st-rules {
+  --st: var(--st-rules);
+}
+.st-ai {
+  --st: var(--st-ai);
+}
+.st-you {
+  --st: var(--st-you);
+}
+.st-wait {
+  --st: var(--st-wait);
+}
+.st-open {
+  --st: var(--st-open);
+}
+.st-ignored {
+  --st: var(--st-ignored);
+}
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 .chip {
-  padding: 6px 13px;
-  border-radius: 99px;
-  font-size: 0.86rem;
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-base);
   font-weight: 600;
   box-shadow: none;
   color: var(--ink-2);
@@ -443,24 +494,87 @@ textarea {
   box-shadow: var(--shadow-sm);
 }
 
+/* ---------- "how we count" ---------- */
+.how {
+  position: relative;
+  display: inline-flex;
+}
+.how-btn {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink-3);
+}
+/* a finger-sized hit area around the small icon */
+.how-btn::before {
+  content: '';
+  position: absolute;
+  inset: -13px;
+}
+.how-btn:hover:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+  color: var(--link);
+}
+.how-tip {
+  position: absolute;
+  bottom: calc(100% + var(--sp-2));
+  left: 50%;
+  z-index: var(--z-tooltip);
+  display: grid;
+  gap: 2px;
+  width: max-content;
+  max-width: min(300px, 80vw);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--ink);
+  color: var(--page);
+  box-shadow: var(--shadow-md);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  transform: translateX(-50%);
+  animation: tip-in var(--dur-fast) var(--ease-out) both;
+}
+.how-tip b {
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+@media (pointer: coarse) {
+  .how-btn {
+    min-height: 0;
+  }
+}
+
 /* ---------- banners ---------- */
 .banners {
   max-width: 1120px;
   margin: 0 auto;
-  padding: 0 20px;
+  padding: 0 var(--sp-4);
 }
 .banner {
   display: flex;
-  gap: 12px;
-  margin-top: 10px;
-  padding: 9px 14px;
-  font-size: 0.9rem;
+  gap: var(--sp-3);
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-base);
   border: 1px solid var(--hair);
   border-left: 4px solid var(--brand);
-  border-radius: var(--radius-sm);
+  border-radius: var(--r-sm);
   background: var(--card);
   box-shadow: var(--shadow-sm);
-  animation: slide-down var(--dur-2) var(--ease) both;
+  animation: slide-down var(--dur-base) var(--ease-out) both;
 }
 .banner > svg {
   flex: none;
@@ -484,21 +598,20 @@ textarea {
   min-width: 0;
 }
 .banner ul {
-  margin: 6px 0;
-  padding-left: 20px;
+  margin: var(--sp-1) 0;
+  padding-left: var(--sp-4);
 }
 
 /* ---------- cards & layout ---------- */
 .card {
   background: var(--card);
   border: 1px solid var(--hair);
-  border-radius: var(--radius);
-  padding: 16px 18px;
+  border-radius: var(--r-md);
+  padding: var(--sp-4) var(--sp-4);
   box-shadow: var(--shadow-sm);
   transition:
-    box-shadow var(--dur-2) var(--ease),
-    transform var(--dur-2) var(--ease),
-    border-color var(--dur-2);
+    transform var(--dur-base) var(--ease-out),
+    border-color var(--dur-base);
 }
 .card.lift:hover {
   transform: translateY(-2px);
@@ -507,24 +620,24 @@ textarea {
 }
 .stack {
   display: grid;
-  gap: 16px;
+  gap: var(--sp-4);
 }
 .grid {
   display: grid;
-  gap: 20px;
+  gap: var(--sp-4);
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
   align-items: start;
 }
 .eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 3px 12px;
+  gap: var(--sp-2);
+  padding: 3px var(--sp-3);
   border: 1px solid color-mix(in srgb, var(--brand) 30%, transparent);
-  border-radius: 99px;
+  border-radius: var(--r-pill);
   background: var(--brand-soft);
   color: var(--ink);
-  font-size: 0.78rem;
+  font-size: var(--fs-xs);
   font-weight: 650;
 }
 .eyebrow svg {
@@ -533,20 +646,42 @@ textarea {
 
 /* ---------- loading ---------- */
 .skel {
-  border-radius: 10px;
-  background: linear-gradient(90deg, var(--card-2) 25%, var(--card-3) 50%, var(--card-2) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s linear infinite;
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-sm);
+  background: var(--card-2);
+}
+/* the shine is a band that slides across: a transform, not a moving background */
+.skel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--card-3), transparent);
+  transform: translateX(-100%);
+  animation: shimmer var(--loop-shimmer) linear infinite;
 }
 
-/* ---------- motion ---------- */
+/* ---------- motion ----------
+ * One system, in CSS (no animation library): tokens in tokens.css, IntersectionObserver in hooks.ts to start
+ * things the first time they are seen. Only transform and opacity move; SVG strokes may draw. Deliberate loops
+ * pause when off screen (data-loops="off", set by useLoop) or when the tab is hidden (data-tab="hidden").
+ */
 .reveal {
   opacity: 0;
-  transform: translateY(10px);
+  transform: translateY(var(--sp-3));
   transition:
-    opacity var(--dur-3) var(--ease),
-    transform var(--dur-3) var(--ease);
-  transition-delay: calc(var(--i, 0) * 70ms);
+    opacity var(--dur-reveal) var(--ease-out),
+    transform var(--dur-reveal) var(--ease-out);
+  transition-delay: calc(var(--i, 0) * var(--stagger));
+}
+[data-loops='off'],
+[data-loops='off'] *,
+[data-loops='off'] *::before,
+[data-loops='off'] *::after,
+:root[data-tab='hidden'] *,
+:root[data-tab='hidden'] *::before,
+:root[data-tab='hidden'] *::after {
+  animation-play-state: paused !important;
 }
 .reveal.in {
   opacity: 1;
@@ -566,7 +701,7 @@ textarea {
 }
 @keyframes shimmer {
   to {
-    background-position: -200% 0;
+    transform: translateX(100%);
   }
 }
 @keyframes spin {
@@ -580,12 +715,15 @@ textarea {
     transform: rotate(-90deg) scale(0.6);
   }
 }
-@keyframes pulse-dot {
-  70% {
-    box-shadow: 0 0 0 8px color-mix(in srgb, var(--good) 0%, transparent);
+@keyframes pulse-ring {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
   }
+  70%,
   100% {
-    box-shadow: 0 0 0 0 transparent;
+    opacity: 0;
+    transform: scale(2.6);
   }
 }
 @keyframes float {
@@ -634,9 +772,10 @@ textarea {
     display: none;
   }
   main {
-    padding: 16px 14px 56px;
+    padding: var(--sp-4) var(--sp-3) var(--sp-8);
   }
 }
+/* reduced motion: the same content, standing still. One-shot animations jump to their last frame; loops stop. */
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -646,6 +785,7 @@ textarea {
   *::after {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
     transition-duration: 0.001ms !important;
     transition-delay: 0ms !important;
   }
@@ -653,13 +793,36 @@ textarea {
     opacity: 1;
     transform: none;
   }
+  .skel::after,
+  .live-dot::after {
+    display: none;
+  }
+}
+
+/* fingers: everything you can press is at least 44px tall on a touch screen */
+@media (pointer: coarse) {
+  button,
+  .button,
+  select,
+  .nav a,
+  .tabs a,
+  summary {
+    min-height: var(--tap);
+  }
+  .icon-btn {
+    width: var(--tap);
+    height: var(--tap);
+  }
+  .linkbtn {
+    min-height: var(--tap);
+  }
 }
 
 select {
   appearance: none;
-  padding: 6px 30px 6px 11px;
+  padding: var(--sp-2) var(--sp-6) var(--sp-2) var(--sp-3);
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--r-sm);
   background: var(--card)
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23898781' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 9l7 7 7-7'/%3E%3C/svg%3E")
     no-repeat right 10px center;
@@ -668,8 +831,8 @@ select {
   font-weight: 600;
   cursor: pointer;
   transition:
-    border-color var(--dur-1),
-    box-shadow var(--dur-1);
+    border-color var(--dur-fast),
+    box-shadow var(--dur-fast);
 }
 select:hover {
   border-color: var(--axis);

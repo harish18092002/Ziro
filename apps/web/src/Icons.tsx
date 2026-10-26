@@ -122,6 +122,7 @@ const PATHS = {
   home: <path d="M4 11l8-7 8 7M6 10v10h12V10" />,
   play: <path d="M8 5l11 7-11 7z" />,
   pause: <path d="M8 5v14M16 5v14" />,
+  minus: <path d="M6 12h12" />,
   db: (
     <>
       <ellipse cx="12" cy="6" rx="7" ry="3" />
@@ -143,7 +144,7 @@ export function Icon({
 }) {
   return (
     <svg
-      className={className}
+      className={name === 'arrow' ? `icon-arrow ${className ?? ''}`.trim() : className}
       width={size}
       height={size}
       viewBox="0 0 24 24"

@@ -1,6 +1,7 @@
 import { type RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { get } from './api';
 import { easeOutCubic } from './chart-math';
+import { MOTION } from './motion';
 
 export interface Loaded<T> {
   data: T | null;
@@ -95,12 +96,12 @@ export function useTheme(): [ThemeMode, () => void] {
 
 // ---------- motion ----------
 
+const prefersReducedMotion = (): boolean =>
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 export function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(
-    () =>
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-  );
+  const [reduced, setReduced] = useState(prefersReducedMotion);
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return;
     const query = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -113,11 +114,14 @@ export function usePrefersReducedMotion(): boolean {
 
 /**
  * Becomes true once the element is on screen, and stays true: the cue to grow a bar or count a number up.
- * It never leaves content hidden: with no IntersectionObserver, or if one never fires, it turns true anyway.
+ * It never leaves content hidden: with no IntersectionObserver, or if one never fires, it turns true anyway,
+ * and for reduced motion it is true from the start, so every figure and bar is simply there, final.
  */
 export function useInView<T extends Element>(): [RefObject<T | null>, boolean] {
   const ref = useRef<T>(null);
-  const [seen, setSeen] = useState(() => typeof IntersectionObserver === 'undefined');
+  const [seen, setSeen] = useState(
+    () => typeof IntersectionObserver === 'undefined' || prefersReducedMotion(),
+  );
   useEffect(() => {
     const node = ref.current;
     if (seen || node === null) return;
@@ -141,7 +145,7 @@ export function useInView<T extends Element>(): [RefObject<T | null>, boolean] {
 }
 
 /** Eased progress from 0 to 1 over `ms`, starting when `active` turns true. Reduced motion jumps straight to 1. */
-export function useEased(active: boolean, ms = 1100): number {
+export function useEased(active: boolean, ms: number = MOTION.count): number {
   const reduced = usePrefersReducedMotion();
   const [t, setT] = useState(0);
   useEffect(() => {
@@ -163,4 +167,44 @@ export function useEased(active: boolean, ms = 1100): number {
     return () => cancelAnimationFrame(frame);
   }, [active, reduced, ms]);
   return t;
+}
+
+/**
+ * For a deliberate loop: the ref for its root, and whether it may run right now, which is only while the element
+ * is on screen and the tab is visible. Put `data-loops={active ? 'on' : 'off'}` on the same root and every CSS
+ * animation inside pauses with it (base.css). Reduced motion is separate: CSS already stands still for it, and a
+ * JavaScript loop must also check usePrefersReducedMotion.
+ */
+export function useLoop<T extends Element>(): [RefObject<T | null>, boolean] {
+  const ref = useRef<T>(null);
+  const [onScreen, setOnScreen] = useState(false);
+  const [tabVisible, setTabVisible] = useState(() => document.visibilityState !== 'hidden');
+  useEffect(() => {
+    const node = ref.current;
+    if (node === null || typeof IntersectionObserver === 'undefined') {
+      setOnScreen(true);
+      return;
+    }
+    const watcher = new IntersectionObserver((entries) =>
+      setOnScreen(entries.some((e) => e.isIntersecting)),
+    );
+    watcher.observe(node);
+    return () => watcher.disconnect();
+  }, []);
+  useEffect(() => {
+    const on = () => setTabVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', on);
+    return () => document.removeEventListener('visibilitychange', on);
+  }, []);
+  return [ref, onScreen && tabVisible];
+}
+
+/** Marks the page while its tab is hidden, so every CSS loop pauses (base.css). Called once at start-up. */
+export function watchTabVisibility(): void {
+  const mark = () => {
+    document.documentElement.dataset['tab'] =
+      document.visibilityState === 'hidden' ? 'hidden' : 'visible';
+  };
+  mark();
+  document.addEventListener('visibilitychange', mark);
 }

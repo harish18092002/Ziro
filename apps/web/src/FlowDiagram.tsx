@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import type { Overview } from './api';
-import { usePrefersReducedMotion } from './hooks';
+import type { Overview, Progress } from './api';
+import { useLoop, usePrefersReducedMotion } from './hooks';
 import { Icon, type IconName } from './Icons';
+import { exceptionsLeft, groupsProved, proposalsMade, waitingForYou } from './metrics';
 import { cssVars } from './ui';
 
 // The backend, as one batch moves through it. Seven stages on one track; a token travels along it and the
@@ -14,13 +15,11 @@ interface Stage {
   tag: string;
   what: string;
   behind: string[];
-  figure: (o: Overview) => string | null;
+  figure: (o: Overview, p: Progress | null) => string | null;
 }
 
 const bankLines = (o: Overview): number =>
   o.sources.bank.credits.records + o.sources.bank.debits.records;
-const exceptionCount = (o: Overview): number =>
-  o.exceptionsByReason.reduce((n, r) => n + r.total, 0);
 
 const STAGES: Stage[] = [
   {
@@ -38,7 +37,7 @@ const STAGES: Stage[] = [
     tag: 'no AI',
     what: 'Four strict tiers pair what they can prove: order reference and amount, a payout rebuilt from its payments, the UTR, a unique amount in a date window. Anything doubtful is left alone. Proved groups skip the AI and go straight to the books.',
     behind: ['pure code', 'same result every run', 'zero tolerance on amounts'],
-    figure: (o) => `${o.resolution.ruleGroups} groups proved`,
+    figure: (o) => `${groupsProved(o).value} groups proved`,
   },
   {
     icon: 'search',
@@ -46,7 +45,7 @@ const STAGES: Stage[] = [
     tag: 'the leftovers',
     what: 'Whatever the rules would not guess about is kept, with the records that could fit and one of 14 reason codes.',
     behind: ['Postgres', '14 reason codes'],
-    figure: (o) => `${exceptionCount(o)} exceptions kept open`,
+    figure: (o) => `${exceptionsLeft(o).value} exceptions kept open`,
   },
   {
     icon: 'bot',
@@ -54,7 +53,7 @@ const STAGES: Stage[] = [
     tag: 'proposes',
     what: 'Each exception is queued. The agent reads records through read-only tools and proposes a match or an explanation, citing its evidence. It cannot write anything.',
     behind: ['Redis queue', 'model router: Gemini first, Claude as fallback', 'read-only tools'],
-    figure: (o) => `${o.resolution.waiting} proposals so far`,
+    figure: (_o, p) => (p ? `${proposalsMade(p).value} proposals made` : null),
   },
   {
     icon: 'shield',
@@ -62,7 +61,7 @@ const STAGES: Stage[] = [
     tag: 'can refuse',
     what: 'Plain code recomputes every id, amount and date. A proposal that is off by even one paisa is refused, and its exception stays open.',
     behind: ['pure code', 'same arithmetic as the rules'],
-    figure: () => '44 of 44 wrong proposals refused',
+    figure: (_o, p) => (p ? `${p.counts.refused} wrong proposals refused` : null),
   },
   {
     icon: 'user',
@@ -70,7 +69,7 @@ const STAGES: Stage[] = [
     tag: 'approve',
     what: 'You approve, or reject with a note. Approving checks the records again, then writes the match. Nothing is final without you.',
     behind: ['review queue', 'append-only audit trail'],
-    figure: (o) => `${o.resolution.waiting} waiting for review`,
+    figure: (o) => `${waitingForYou(o).value} waiting for review`,
   },
   {
     icon: 'book',
@@ -84,12 +83,20 @@ const STAGES: Stage[] = [
 
 const TICK_MS = 4400;
 
-export function FlowDiagram({ proof }: { proof: Overview | null }) {
+export function FlowDiagram({
+  proof,
+  progress,
+}: {
+  proof: Overview | null;
+  progress: Progress | null;
+}) {
   const reduced = usePrefersReducedMotion();
   const [active, setActive] = useState(0);
   const [playing, setPlaying] = useState(!reduced);
   const [hover, setHover] = useState(false);
-  const running = playing && !hover && !reduced;
+  // off screen or in a hidden tab the tour waits where it is
+  const [ref, onScreen] = useLoop<HTMLDivElement>();
+  const running = playing && !hover && onScreen && !reduced;
 
   useEffect(() => {
     if (!running) return;
@@ -101,11 +108,13 @@ export function FlowDiagram({ proof }: { proof: Overview | null }) {
   const pct = ledger?.matchRate == null ? null : Math.round(ledger.matchRate * 100);
   const stage = STAGES[active] ?? STAGES[0];
   if (stage === undefined) return null;
-  const figure = proof ? stage.figure(proof) : null;
+  const figure = proof ? stage.figure(proof, progress) : null;
 
   return (
     <div
+      ref={ref}
       className="flow"
+      data-loops={onScreen ? 'on' : 'off'}
       style={cssVars({ '--i': active, '--n': STAGES.length })}
       onPointerEnter={() => setHover(true)}
       onPointerLeave={() => setHover(false)}

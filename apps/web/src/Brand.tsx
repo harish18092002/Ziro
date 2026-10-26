@@ -4,8 +4,8 @@ export function Logo({ size = 32 }: { size?: number }) {
     <svg className="logo" width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
       <defs>
         <linearGradient id="logo-g" x1="3" y1="3" x2="29" y2="29" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="var(--c-matched)" />
-          <stop offset="1" stopColor="var(--violet)" />
+          <stop offset="0" stopColor="var(--brand-blue)" />
+          <stop offset="1" stopColor="var(--brand-violet)" />
         </linearGradient>
       </defs>
       <rect width="32" height="32" rx="9" fill="url(#logo-g)" />
@@ -39,12 +39,12 @@ export function HeroArt() {
           y2="270"
           gradientUnits="userSpaceOnUse"
         >
-          <stop offset="0" stopColor="var(--c-matched)" />
-          <stop offset="1" stopColor="var(--violet)" />
+          <stop offset="0" stopColor="var(--brand-blue)" />
+          <stop offset="1" stopColor="var(--brand-violet)" />
         </linearGradient>
         <radialGradient id="ring-glow">
-          <stop offset="0" stopColor="var(--c-matched)" stopOpacity="0.2" />
-          <stop offset="1" stopColor="var(--c-matched)" stopOpacity="0" />
+          <stop offset="0" stopColor="var(--brand-blue)" stopOpacity="0.2" />
+          <stop offset="1" stopColor="var(--brand-blue)" stopOpacity="0" />
         </radialGradient>
       </defs>
 
@@ -109,7 +109,7 @@ export function HeroArt() {
           fill="var(--card)"
           stroke="var(--hair)"
         />
-        <circle cx="334" cy="60" r="4" fill="var(--c-matched)" />
+        <circle cx="334" cy="60" r="4" fill="var(--st-rules)" />
         <text x="346" y="64.5" fontSize="12" fontWeight="600" fill="var(--ink)">
           fee + GST ✓
         </text>
@@ -124,7 +124,7 @@ export function HeroArt() {
           fill="var(--card)"
           stroke="var(--hair)"
         />
-        <circle cx="408" cy="326" r="4" fill="var(--c-waiting)" />
+        <circle cx="408" cy="326" r="4" fill="var(--st-rules)" />
         <text x="420" y="330.5" fontSize="12" fontWeight="600" fill="var(--ink)">
           T+2 batch ✓
         </text>

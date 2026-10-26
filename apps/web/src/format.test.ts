@@ -22,6 +22,10 @@ describe('inr', () => {
     ['5', '₹0.05'],
     ['12345650', '₹1,23,456.50'],
     ['-47300', '-₹473.00'],
+    // what the payment page shows back (it uses this same formatter)
+    ['52730', '₹527.30'],
+    ['100', '₹1.00'],
+    ['1000000', '₹10,000.00'],
   ])('%s paise is %s', (paise, shown) => {
     expect(inr(paise)).toBe(shown);
   });

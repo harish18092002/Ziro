@@ -27,6 +27,8 @@ import {
 } from './format';
 import { useLoad } from './hooks';
 import { Icon, type IconName } from './Icons';
+import { settledBy } from './metrics';
+import { type MoneyState, STATE } from './states';
 import { Banner, Count, CountPaise, Reveal } from './ui';
 
 type RunRoute = Extract<Route, { page: 'run' }>;
@@ -323,6 +325,21 @@ const methodName = (m: string): string => METHOD_NAME[m] ?? words(m);
 
 const sum = (ns: readonly number[]): number => ns.reduce((a, b) => a + b, 0);
 
+/** A segment or bar in a money state: the palette's colour and ink, and its label unless one is given. */
+const inState = (state: MoneyState, label: string = STATE[state].label) => ({
+  label,
+  color: STATE[state].color,
+  ink: STATE[state].ink,
+});
+/** A legend entry for a money state: colour, icon and words, so colour never carries the meaning alone. */
+const legendFor = (state: MoneyState, label: string = STATE[state].label, value?: string) => ({
+  key: state,
+  label,
+  color: STATE[state].color,
+  icon: STATE[state].icon,
+  ...(value === undefined ? {} : { value }),
+});
+
 function Summary({ runId, o, error }: { runId: string; o: Overview | null; error: string | null }) {
   if (error)
     return (
@@ -336,6 +353,7 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
   const ledger = o.coverage.find((c) => c.type === 'ledger_entry');
   const reasons = o.exceptionsByReason;
   const excTotal = sum(reasons.map((r) => r.total));
+  const settled = settledBy(o);
 
   const gapRow: StackRow = {
     id: 'gap',
@@ -343,23 +361,20 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
     segments: [
       {
         key: 'explained',
-        label: 'Explained',
+        ...inState(settled.state, settled.label),
         value: toBig(gap.explainedPaise),
-        color: 'var(--c-matched)',
         shown: inr(gap.explainedPaise),
       },
       {
         key: 'waiting',
-        label: 'Waiting for a person',
+        ...inState('wait'),
         value: toBig(gap.awaitingPaise),
-        color: 'var(--c-waiting)',
         shown: inr(gap.awaitingPaise),
       },
       {
         key: 'open',
-        label: 'Not yet looked at',
+        ...inState('open'),
         value: toBig(gap.openPaise),
-        color: 'var(--c-open)',
         shown: inr(gap.openPaise),
       },
     ],
@@ -372,23 +387,20 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
     segments: [
       {
         key: 'matched',
-        label: 'Matched',
+        ...inState('rules', 'Matched'),
         value: BigInt(c.matched),
-        color: 'var(--c-matched)',
         detail: inr(c.amountPaise.matched),
       },
       {
         key: 'exception',
-        label: 'In an exception',
+        ...inState('open', 'In an exception'),
         value: BigInt(c.inException),
-        color: 'var(--c-open)',
         detail: inr(c.amountPaise.inException),
       },
       {
         key: 'ignored',
-        label: 'Ignored',
+        ...inState('ignored'),
         value: BigInt(c.ignored),
-        color: 'var(--c-other)',
         detail: inr(c.amountPaise.ignored),
       },
     ],
@@ -400,15 +412,10 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
     href: linkTo(runId, 'exceptions'),
     totalLabel: `${r.total}`,
     segments: [
-      { key: 'resolved', label: 'Resolved', value: BigInt(r.resolved), color: 'var(--c-matched)' },
-      {
-        key: 'waiting',
-        label: 'Waiting for a person',
-        value: BigInt(r.proposed),
-        color: 'var(--c-waiting)',
-      },
-      { key: 'open', label: 'Open', value: BigInt(r.open), color: 'var(--c-open)' },
-      { key: 'dismissed', label: 'Dismissed', value: BigInt(r.dismissed), color: 'var(--c-other)' },
+      { key: 'resolved', ...inState(settled.state, settled.label), value: BigInt(r.resolved) },
+      { key: 'waiting', ...inState('wait'), value: BigInt(r.proposed) },
+      { key: 'open', ...inState('open'), value: BigInt(r.open) },
+      { key: 'dismissed', ...inState('ignored', 'Dismissed'), value: BigInt(r.dismissed) },
     ],
   }));
 
@@ -417,7 +424,7 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
     label: b.bucket,
     value: toBig(b.stakePaise),
     display: `${b.cases} · ${inr(b.stakePaise)}`,
-    color: 'var(--c-open)',
+    color: STATE.open.color,
   }));
 
   const methodItems: BarItem[] = o.leakage.byMethod.map((m) => ({
@@ -425,7 +432,7 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
     label: methodName(m.method),
     value: toBig(m.excessPaise),
     display: inr(m.excessPaise),
-    color: 'var(--c-fee)',
+    color: 'var(--kind-fee)',
   }));
 
   const tierItems: BarItem[] = o.matching.byTier.map((t, i) => ({
@@ -438,29 +445,26 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
   }));
 
   const r = o.resolution;
-  const settledItems: BarItem[] = [
-    ['rules', 'Rule groups, proved by code', r.ruleGroups, 'var(--c-matched)'],
+  const settledItems: BarItem[] = (
     [
-      'agent-match',
-      'Agent match, approved by a person',
-      r.agentMatchesApprovedByPerson,
-      'var(--c-matched)',
-    ],
-    [
-      'agent-explain',
-      'Agent explanation, approved by a person',
-      r.agentExplanationsApprovedByPerson,
-      'var(--c-matched)',
-    ],
-    ['auto', 'Agent proposal, auto-accepted', r.autoAccepted, 'var(--c-matched)'],
-    ['rejected', 'Proposal rejected by a person', r.rejectedByPerson, 'var(--c-other)'],
-    ['waiting', 'Waiting for a person', r.waiting, 'var(--c-waiting)'],
-  ].map(([id, label, n, color]) => ({
-    id: String(id),
-    label: String(label),
-    value: BigInt(n as number),
+      ['rules', 'Rule groups, proved by code', r.ruleGroups, 'rules'],
+      ['agent-match', 'Agent match, approved by you', r.agentMatchesApprovedByPerson, 'you'],
+      [
+        'agent-explain',
+        'Agent explanation, approved by you',
+        r.agentExplanationsApprovedByPerson,
+        'you',
+      ],
+      ['auto', 'Verified AI proposal, auto-accepted', r.autoAccepted, 'ai'],
+      ['rejected', 'Proposal rejected by you (open again)', r.rejectedByPerson, 'open'],
+      ['waiting', 'Waiting for you', r.waiting, 'wait'],
+    ] as const
+  ).map(([id, label, n, state]) => ({
+    id,
+    label,
+    value: BigInt(n),
     display: String(n),
-    color: String(color),
+    color: STATE[state].color,
   }));
 
   return (
@@ -475,24 +479,9 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
             <StackedBars rows={[gapRow]} tall />
             <Legend
               items={[
-                {
-                  key: 'e',
-                  label: 'Explained',
-                  color: 'var(--c-matched)',
-                  value: inr(gap.explainedPaise),
-                },
-                {
-                  key: 'w',
-                  label: 'Waiting for a person',
-                  color: 'var(--c-waiting)',
-                  value: inr(gap.awaitingPaise),
-                },
-                {
-                  key: 'o',
-                  label: 'Not yet looked at',
-                  color: 'var(--c-open)',
-                  value: inr(gap.openPaise),
-                },
+                legendFor(settled.state, settled.label, inr(gap.explainedPaise)),
+                legendFor('wait', undefined, inr(gap.awaitingPaise)),
+                legendFor('open', undefined, inr(gap.openPaise)),
               ]}
             />
           </section>
@@ -530,9 +519,9 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
             legend={
               <Legend
                 items={[
-                  { key: 'm', label: 'Matched', color: 'var(--c-matched)' },
-                  { key: 'e', label: 'In an exception', color: 'var(--c-open)' },
-                  { key: 'i', label: 'Ignored', color: 'var(--c-other)' },
+                  legendFor('rules', 'Matched'),
+                  legendFor('open', 'In an exception'),
+                  legendFor('ignored'),
                 ]}
               />
             }
@@ -559,9 +548,9 @@ function Summary({ runId, o, error }: { runId: string; o: Overview | null; error
             legend={
               <Legend
                 items={[
-                  { key: 'r', label: 'Resolved', color: 'var(--c-matched)' },
-                  { key: 'w', label: 'Waiting for a person', color: 'var(--c-waiting)' },
-                  { key: 'o', label: 'Open', color: 'var(--c-open)' },
+                  legendFor(settled.state, settled.label),
+                  legendFor('wait'),
+                  legendFor('open'),
                 ]}
               />
             }

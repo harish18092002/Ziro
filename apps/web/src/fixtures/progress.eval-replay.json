@@ -1,0 +1,20 @@
+{
+  "runId": "e0c412a5-7abd-4ab6-b30b-0cae8c8a2fee",
+  "stage": "ready",
+  "agent": "scripted",
+  "preset": "eval",
+  "startedAt": "2026-10-22T20:49:00.244Z",
+  "finishedAt": "2026-10-22T20:49:01.673Z",
+  "error": null,
+  "expected": 58,
+  "note": null,
+  "chaos": null,
+  "counts": {
+    "groups": 523,
+    "exceptions": 104,
+    "proposals": 58,
+    "verified": 2,
+    "refused": 2,
+    "waiting": 56
+  }
+}

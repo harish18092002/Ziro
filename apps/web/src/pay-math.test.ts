@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rupeesToPaise, showPaise } from './pay-math';
+import { rupeesToPaise } from './pay-math';
 
 describe('rupeesToPaise', () => {
   it.each([
@@ -39,16 +39,5 @@ describe('rupeesToPaise', () => {
     expect(rupeesToPaise('1.15')).toBe(115);
     expect(rupeesToPaise('2.07')).toBe(207);
     expect(rupeesToPaise('19.99')).toBe(1_999);
-  });
-});
-
-describe('showPaise', () => {
-  it.each([
-    [52_730, '₹527.30'],
-    [100, '₹1.00'],
-    [1_000_000, '₹10,000.00'],
-    [5, '₹0.05'],
-  ])('%s shows as %s', (paise, shown) => {
-    expect(showPaise(paise)).toBe(shown);
   });
 });

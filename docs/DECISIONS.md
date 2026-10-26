@@ -26,6 +26,7 @@ one's status says so and names the later one.
 | [018][adr018] | The model layer                             | A provider port, Gemini's free tier first, Claude optional; no mixed history.                     | accepted          |
 | [019][adr019] | Test mode is real                           | No generated fallback; a starter ledger; test payments from the console; an admin gate.           | accepted, amended |
 | [020][adr020] | Two paths and a refund that looks first     | The home page asks which data; a live account view; refunds are checked before Razorpay is asked. | accepted          |
+| [021][adr021] | The console's design system                 | One token file, a money-state palette where green means done, CSS-only motion, counted numbers.   | accepted          |
 
 [adr001]: #adr-001-monorepo-with-a-framework-free-core-package
 [adr002]: #adr-002-esm-everywhere-vitest-everywhere
@@ -47,6 +48,7 @@ one's status says so and names the later one.
 [adr018]: #adr-018-the-model-layer--a-provider-port-geminis-free-tier-first-claude-optional
 [adr019]: #adr-019-test-mode-is-real--no-generated-fallback-a-starter-ledger-and-an-optional-admin-gate
 [adr020]: #adr-020-two-paths-a-live-account-view-and-a-refund-that-looks-first
+[adr021]: #adr-021-the-consoles-design-system-tokens-a-money-state-palette-motion-and-counted-numbers
 
 ---
 
@@ -1173,3 +1175,69 @@ button (not needed while Razorpay captures by default, and the page says where t
   a return to the tab refreshes it, not more often than every 1.5 seconds.
 - The CSV templates are made in the browser and offered as downloads; a click raised no policy violation, but a
   file landing on disk was not seen (headless browser).
+
+## ADR-021: The console's design system: tokens, a money-state palette, motion and counted numbers
+
+**Status:** accepted. A UI/UX pass the author approved as an exception to CLAUDE.md §4.10 for this task: polish is in
+scope; reconciliation logic, numbers and API behaviour are not. Later phases of the pass extend this ADR.
+
+**Context.** The audit before the pass (screenshots in `docs/ui/before/`) found:
+
+- green meant "waiting for a person", and one blue meant matched, resolved and explained;
+- 11 raw corner radii and 8 raw z-index values across five stylesheets;
+- two rupee formatters;
+- bars that animated `width` and `flex-grow`, pulses that animated `box-shadow`, and loops that kept running off
+  screen;
+- a home page showing 95.0% next to 97.4%, and 523 next to 534, without saying what each counted, plus a
+  hand-typed "44 of 44".
+
+**Decision.**
+
+- **One token file.** `apps/web/src/tokens.css` holds colour, the brand gradient, type scale, 8-point spacing, radius,
+  shadow, z-index and motion. The dark theme is written twice (OS setting and toggle). `tokens.test.ts` checks:
+  - the two dark copies are identical;
+  - text reaches 4.5:1 on every surface in both themes;
+  - the ink inside every money-state fill reaches 4.5:1;
+  - every colour the code names exists;
+  - `motion.ts` mirrors the CSS durations.
+- **Money states: green means done.**
+  - Six states: proved by rules, verified AI explanation, approved by you, waiting for you, open, and ignored.
+  - The three "done" states are greens. Waiting is amber, open is orange, ignored is grey.
+  - They were chosen with the dataviz validator, on the sequences that actually touch in a chart. Worst adjacent
+    colour-blind ΔE is 12.3 light and 14.1 dark (target 8); normal vision is 16.3 or more.
+  - `states.ts` is the palette as code: label, colour, ink, icon and meaning. Every legend item and badge carries the
+    icon, so colour never works alone.
+- **Actors in the flow:** code is blue and AI is violet (the brand gradient), you are amber. Validated on all pairs.
+- **Money:** `inr()` is the only rupee formatter (the payment page's own one is gone), and figures are tabular on
+  `<body>`.
+- **Motion is CSS plus IntersectionObserver**, with no library: 0 KB, and nothing outside `style-src 'self'`.
+  - Only transform and opacity move. SVG strokes may draw, and colour may fade.
+  - Bars keep their real widths and slide in.
+  - Loops pause off screen (`useLoop`, `data-loops`) and in a hidden tab (`data-tab`).
+  - Reduced motion shows the same content standing still: in-view triggers are true from the start, so every
+    figure is final at once.
+- **Counted numbers.**
+  - `metrics.ts` gives every home-page number a "how we count" definition and a named denominator.
+  - Run figures come from the replay run's report; answer-key figures come from the stored `npm run eval` result.
+  - "44 of 44" is gone: the checker's test file holds 37 crafted cases today, and 44 could not be traced. The replay
+    run's own refusal count replaces it.
+  - `report.books.test.ts` (API) checks that a freshly built replay run reports the stored result.
+    `metrics.test.ts` (web) checks the page shows exactly those numbers.
+- **Touch:** on a coarse pointer, everything pressable is at least 44 px tall.
+
+**Alternatives.**
+
+- The `motion` React library: a runtime dependency for what CSS and one observer already do.
+- Generating the tokens from a JSON map: one more build step. The test keeps the copies equal instead.
+- The fixed status scale (good, warning, serious) for money states: it cannot tell rules, AI and a person apart among
+  the done states.
+- Three greens with no icon: in light mode they sit 14.7 apart, below the floor of 15 for pairs that only meet in a
+  legend.
+
+**Consequences.**
+
+- In light mode the rules green (2.1:1) and the waiting amber (1.6:1) are below 3:1 against the surface, so they
+  always show their value as text or in the table view.
+- Spacing was snapped to the grid by script (ties go to the smaller step), so some paddings moved by 2 to 4 px.
+- The old flow diagram still moves with `left` and `width` until it is replaced.
+- The remaining mobile layout shift comes from the header growing when the Razorpay status arrives.

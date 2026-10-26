@@ -2,6 +2,8 @@ import { type FocusEvent, type PointerEvent, type ReactNode, useState } from 're
 import { labelFits, ratio, segmentWeights } from './chart-math';
 import { percent } from './format';
 import { useEased, useInView } from './hooks';
+import { Icon, type IconName } from './Icons';
+import { MOTION } from './motion';
 import { cssVars } from './ui';
 
 // Charts built from plain HTML and SVG, to the charting method: thin marks, a 2px surface gap between
@@ -155,6 +157,8 @@ export interface LegendItem {
   color: string;
   /** What this series adds up to, shown after its name. */
   value?: string;
+  /** An icon beside the swatch: a money state always has one, so colour never carries the meaning alone. */
+  icon?: IconName;
 }
 
 export function Legend({ items }: { items: LegendItem[] }) {
@@ -163,6 +167,7 @@ export function Legend({ items }: { items: LegendItem[] }) {
       {items.map((i) => (
         <li key={i.key}>
           <i className="sw" style={{ background: i.color }} />
+          {i.icon ? <Icon name={i.icon} size={13} className="legend-ico" /> : null}
           <span>{i.label}</span>
           {i.value ? <b>{i.value}</b> : null}
         </li>
@@ -179,6 +184,8 @@ export interface Segment {
   value: bigint;
   /** A CSS colour (a theme token). */
   color: string;
+  /** The ink for the value written inside the segment; defaults to white. */
+  ink?: string;
   /** Written beside the count in the tooltip, e.g. the rupees these records add up to. */
   detail?: string;
   /** Written instead of the count, inside the segment and in the tooltip: for a value that is not a count. */
@@ -195,7 +202,8 @@ export interface StackRow {
 
 /**
  * Part-to-whole bars: each row is 100%, shared out between its segments with a 2px gap. A value is written
- * inside its segment only when it fits; every value is also in the tooltip and in the table twin.
+ * inside its segment only when it fits; every value is also in the tooltip and in the table twin. The segments
+ * always have their real widths; the bar slides in from the left the first time it is seen (a transform).
  */
 export function StackedBars({ rows, tall = false }: { rows: StackRow[]; tall?: boolean }) {
   const [ref, seen] = useInView<HTMLDivElement>();
@@ -218,38 +226,36 @@ export function StackedBars({ rows, tall = false }: { rows: StackRow[]; tall?: b
               role="img"
               aria-label={`${row.label}: ${row.segments.map((s) => `${s.label} ${s.value}`).join(', ')}`}
             >
-              {row.segments.map((s, i) => {
-                const weight = weights[i] ?? 0;
-                if (weight === 0) return null;
-                const share = ratio(s.value, total);
-                const shown = s.shown ?? s.value.toLocaleString('en-IN');
-                return (
-                  <span
-                    key={s.key}
-                    className="sbar-seg"
-                    style={{
-                      flexGrow: seen ? weight : 0,
-                      background: s.color,
-                      transitionDelay: `${r * 70 + i * 110}ms`,
-                    }}
-                    {...bind({
-                      title: row.label || s.label,
-                      rows: [
-                        {
-                          label: s.label,
-                          value: `${shown} · ${percent(share)}`,
-                          color: s.color,
-                        },
-                        ...(s.detail ? [{ label: 'adds up to', value: s.detail }] : []),
-                      ],
-                    })}
-                  >
-                    {labelFits(share, shown.length) ? (
-                      <span className="sbar-in">{shown}</span>
-                    ) : null}
-                  </span>
-                );
-              })}
+              <div className="sbar-track" style={{ transitionDelay: `${r * MOTION.stagger}ms` }}>
+                {row.segments.map((s, i) => {
+                  const weight = weights[i] ?? 0;
+                  if (weight === 0) return null;
+                  const share = ratio(s.value, total);
+                  const shown = s.shown ?? s.value.toLocaleString('en-IN');
+                  return (
+                    <span
+                      key={s.key}
+                      className="sbar-seg"
+                      style={{ flexGrow: weight, background: s.color, color: s.ink }}
+                      {...bind({
+                        title: row.label || s.label,
+                        rows: [
+                          {
+                            label: s.label,
+                            value: `${shown} · ${percent(share)}`,
+                            color: s.color,
+                          },
+                          ...(s.detail ? [{ label: 'adds up to', value: s.detail }] : []),
+                        ],
+                      })}
+                    >
+                      {labelFits(share, shown.length) ? (
+                        <span className="sbar-in">{shown}</span>
+                      ) : null}
+                    </span>
+                  );
+                })}
+              </div>
             </div>
           </div>
         );
@@ -301,14 +307,12 @@ export function BarList({ items }: { items: BarItem[] }) {
                 },
               )}
             >
-              <span
-                className="bar-fill"
-                style={{
-                  width: seen ? `${fill * 100}%` : '0%',
-                  background: it.color,
-                  transitionDelay: `${i * 90}ms`,
-                }}
-              />
+              <span className="bar-clip" style={{ width: `${fill * 100}%` }}>
+                <span
+                  className="bar-fill"
+                  style={{ background: it.color, transitionDelay: `${i * MOTION.stagger}ms` }}
+                />
+              </span>
             </div>
           </div>
         );
@@ -328,7 +332,7 @@ export function RingMeter({
   value,
   label,
   sub,
-  color = 'var(--c-matched)',
+  color = 'var(--st-rules)',
 }: {
   value: number;
   label: string;
@@ -336,7 +340,7 @@ export function RingMeter({
   color?: string;
 }) {
   const [ref, seen] = useInView<HTMLDivElement>();
-  const t = useEased(seen, 1500);
+  const t = useEased(seen);
   const v = Math.min(1, Math.max(0, value));
   return (
     <div ref={ref} className="ring-meter">
@@ -377,7 +381,7 @@ export function RingMeter({
 /** A thin meter: the fill carries the ratio, the track is a lighter step of the same colour. */
 export function Meter({
   value,
-  color = 'var(--c-matched)',
+  color = 'var(--brand-blue)',
   label,
 }: {
   value: number;
@@ -397,7 +401,7 @@ export function Meter({
       aria-valuenow={Math.round(v * 100)}
       style={cssVars({ '--meter': color })}
     >
-      <span style={{ width: seen ? `${v * 100}%` : '0%' }} />
+      <span style={{ transform: `translateX(${seen ? (v - 1) * 100 : -100}%)` }} />
     </div>
   );
 }

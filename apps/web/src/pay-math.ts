@@ -13,8 +13,3 @@ export function rupeesToPaise(text: string): number | null {
   const paise = rupees * 100 + fraction;
   return paise >= 100 && paise <= 1_000_000 ? paise : null;
 }
-
-/** 52730 as "₹527.30": only for showing back what was just made. */
-export function showPaise(paise: number): string {
-  return `₹${Math.floor(paise / 100).toLocaleString('en-IN')}.${String(paise % 100).padStart(2, '0')}`;
-}
