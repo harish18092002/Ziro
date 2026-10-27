@@ -7,12 +7,14 @@
 
 DRY_RUN="${DRY_RUN:-0}"
 
-# Git Bash on Windows rewrites an argument like httpGet.path=/health into a Windows path before gcloud sees it.
+# Git Bash and MSYS2 on Windows rewrite an argument like httpGet.path=/health into a Windows path before gcloud
+# sees it. Leave only those arguments alone. Do NOT set MSYS_NO_PATHCONV=1 here: gcloud's own bash wrapper needs
+# the translation to find gcloud.py, and with it off every gcloud command fails ("D:\c\Users\...\gcloud.py").
 # Harmless everywhere else.
-export MSYS_NO_PATHCONV=1
+export MSYS2_ARG_CONV_EXCL="httpGet."
 
-# A path a native program (gcloud) can open. Under Git Bash /tmp/x is not one, and the line above also stops
-# Git Bash translating it, so file arguments go through here. Elsewhere it returns the path unchanged.
+# A path a native program (gcloud) can open: the same file in the form Windows understands. Elsewhere it
+# returns the path unchanged.
 native_path() {
   if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
 }

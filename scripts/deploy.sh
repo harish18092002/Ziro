@@ -21,6 +21,10 @@
 #                       on the live model option. Without it the demo, the replay and Reset all still work.
 #   --with-claude       also give it the Anthropic key (secret ziro-anthropic-api-key) as a fallback model.
 #                       Needs an account with credit AND a price in LLM_PRICES, or Claude is left out.
+#   --razorpay-test     serve YOUR Razorpay TEST account instead of generated data: the service gets
+#                       DEMO_MODE=false, RAZORPAY_SOURCE=testmode and the secrets ziro-razorpay-key-id and
+#                       ziro-razorpay-key-secret (store them with scripts/setup-gcp.sh first). Anyone with the
+#                       link can then create test orders and refunds, upload CSVs and run matching.
 #   --skip-build        deploy an image already pushed under --version
 #   --skip-prepare      do not run the migration job (only if you are sure nothing changed in the database)
 #   --no-smoke          do not run scripts/smoke.mjs against the new revision
@@ -40,6 +44,7 @@ VERSION=""
 MIN_INSTANCES=0
 WITH_KEY=0
 WITH_CLAUDE=0
+RAZORPAY_TEST=0
 APP_ROLE="ziro_app"
 SKIP_BUILD=0
 SKIP_PREPARE=0
@@ -56,6 +61,7 @@ while [[ $# -gt 0 ]]; do
     --no-app-role) APP_ROLE=""; shift ;;
     --with-key) WITH_KEY=1; shift ;;
     --with-claude) WITH_CLAUDE=1; shift ;;
+    --razorpay-test) RAZORPAY_TEST=1; shift ;;
     --skip-build) SKIP_BUILD=1; shift ;;
     --skip-prepare) SKIP_PREPARE=1; shift ;;
     --no-smoke) SMOKE=0; shift ;;
@@ -98,6 +104,7 @@ echo "service  $SERVICE   (min instances $MIN_INSTANCES, max 1)"
 echo "image    $IMAGE"
 echo "app role $([[ -n $APP_ROLE ]] && echo "$APP_ROLE (granted by the job)" || echo 'none: the URL decides')"
 echo "key      $([[ $WITH_KEY == 1 ]] && echo 'live model ENABLED (--with-key)' || echo 'none: replay and scripted runs only')"
+echo "razorpay $([[ $RAZORPAY_TEST == 1 ]] && echo 'YOUR TEST ACCOUNT (--razorpay-test): DEMO_MODE=false, anyone with the link can use it' || echo 'generated data only (the public demo)')"
 [[ "$DRY_RUN" == "1" ]] && echo "mode     DRY RUN: nothing below is executed"
 
 # The non-secret settings as a YAML file for --env-vars-file (no quoting problems, nothing on a command line).
@@ -113,9 +120,20 @@ trap 'rm -f "$ENV_YAML"' EXIT
 } >"$ENV_YAML"
 # The job alone also knows which role to grant; the service has no use for it.
 JOB_YAML="$(mktemp)"
-trap 'rm -f "$ENV_YAML" "$JOB_YAML"' EXIT
+SERVICE_YAML="$(mktemp)"
+trap 'rm -f "$ENV_YAML" "$JOB_YAML" "$SERVICE_YAML"' EXIT
 cp "$ENV_YAML" "$JOB_YAML"
 [[ -z "$APP_ROLE" ]] || printf 'APP_DB_ROLE: "%s"\n' "$APP_ROLE" >>"$JOB_YAML"
+# The service's settings are the same, except with --razorpay-test. The job keeps the generated-data settings
+# above: it builds the featured runs and needs no Razorpay keys.
+if [[ "$RAZORPAY_TEST" == "1" ]]; then
+  {
+    grep -v -e '^DEMO_MODE:' -e '^RAZORPAY_SOURCE:' "$ENV_YAML" || true
+    printf 'DEMO_MODE: "false"\nRAZORPAY_SOURCE: "testmode"\n'
+  } >"$SERVICE_YAML"
+else
+  cp "$ENV_YAML" "$SERVICE_YAML"
+fi
 
 if [[ "$SKIP_BUILD" != "1" ]]; then
   say "1. Build and push the image"
@@ -154,6 +172,10 @@ fi
 if [[ "$WITH_CLAUDE" == "1" ]]; then
   secrets="${secrets},ANTHROPIC_API_KEY=ziro-anthropic-api-key:$(secret_version ziro-anthropic-api-key)"
 fi
+if [[ "$RAZORPAY_TEST" == "1" ]]; then
+  secrets="${secrets},RAZORPAY_KEY_ID=ziro-razorpay-key-id:$(secret_version ziro-razorpay-key-id)"
+  secrets="${secrets},RAZORPAY_KEY_SECRET=ziro-razorpay-key-secret:$(secret_version ziro-razorpay-key-secret)"
+fi
 # --no-cpu-throttling: the demo's pipeline runs in the background after the request that started it returns,
 # and Cloud Run only gives CPU to an instance while it is handling a request unless told otherwise.
 # --max-instances 1: the rate limits, the circuit breaker and the featured-run check live in this process.
@@ -163,7 +185,7 @@ run gcloud run deploy "$SERVICE" \
   --allow-unauthenticated --port 8080 \
   --cpu 1 --memory 512Mi --no-cpu-throttling --cpu-boost \
   --min-instances "$MIN_INSTANCES" --max-instances 1 --concurrency 80 --timeout 300 \
-  --env-vars-file "$(native_path "$ENV_YAML")" \
+  --env-vars-file "$(native_path "$SERVICE_YAML")" \
   --set-secrets "$secrets" \
   --startup-probe "httpGet.path=/health,httpGet.port=8080,initialDelaySeconds=0,timeoutSeconds=5,periodSeconds=10,failureThreshold=24" \
   --liveness-probe "httpGet.path=/health/live,httpGet.port=8080,periodSeconds=30,timeoutSeconds=3,failureThreshold=3"
@@ -179,6 +201,7 @@ if [[ "$SMOKE" == "1" ]]; then
   say "4. Smoke test: the stranger's path"
   smoke_flags=()
   [[ "$WITH_KEY" == "1" ]] || smoke_flags+=(--no-key)
+  [[ "$RAZORPAY_TEST" != "1" ]] || smoke_flags+=(--testmode)
   run node scripts/smoke.mjs "$URL" "${smoke_flags[@]}"
 fi
 
