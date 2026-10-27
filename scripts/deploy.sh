@@ -134,7 +134,7 @@ if [[ "$SKIP_PREPARE" != "1" ]]; then
     --image "$IMAGE" --region "$REGION" --project "$PROJECT"
     --service-account "$MIGRATE_SA"
     --set-secrets "DATABASE_URL=${DB_DIRECT},REDIS_URL=${REDIS}"
-    --env-vars-file "$JOB_YAML"
+    --env-vars-file "$(native_path "$JOB_YAML")"
     --command node --args apps/api/dist/scripts/prepare.js
     --cpu 1 --memory 1Gi --task-timeout 900s --max-retries 0
   )
@@ -163,7 +163,7 @@ run gcloud run deploy "$SERVICE" \
   --allow-unauthenticated --port 8080 \
   --cpu 1 --memory 512Mi --no-cpu-throttling --cpu-boost \
   --min-instances "$MIN_INSTANCES" --max-instances 1 --concurrency 80 --timeout 300 \
-  --env-vars-file "$ENV_YAML" \
+  --env-vars-file "$(native_path "$ENV_YAML")" \
   --set-secrets "$secrets" \
   --startup-probe "httpGet.path=/health,httpGet.port=8080,initialDelaySeconds=0,timeoutSeconds=5,periodSeconds=10,failureThreshold=24" \
   --liveness-probe "httpGet.path=/health/live,httpGet.port=8080,periodSeconds=30,timeoutSeconds=3,failureThreshold=3"

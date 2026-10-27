@@ -17,5 +17,7 @@ docs
 .claude
 .git
 EVALS.md
-packages/evals/results
+# Eval result files stay out, except the one the console imports at build time (apps/web/src/metrics.ts).
+packages/evals/results/**
+!packages/evals/results/eval-42/rules-plain.json
 *.log

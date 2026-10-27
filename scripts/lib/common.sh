@@ -7,6 +7,16 @@
 
 DRY_RUN="${DRY_RUN:-0}"
 
+# Git Bash on Windows rewrites an argument like httpGet.path=/health into a Windows path before gcloud sees it.
+# Harmless everywhere else.
+export MSYS_NO_PATHCONV=1
+
+# A path a native program (gcloud) can open. Under Git Bash /tmp/x is not one, and the line above also stops
+# Git Bash translating it, so file arguments go through here. Elsewhere it returns the path unchanged.
+native_path() {
+  if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s' "$1"; fi
+}
+
 say() { printf '\n== %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
