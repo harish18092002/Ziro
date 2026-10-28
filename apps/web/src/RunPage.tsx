@@ -23,7 +23,6 @@ import {
   percent,
   range,
   type Route,
-  sentence,
   type Tab,
   words,
 } from './format';
@@ -31,6 +30,7 @@ import { useInView, useLoad } from './hooks';
 import { Icon, type IconName } from './Icons';
 import { settledBy } from './metrics';
 import { MOTION } from './motion';
+import { reasonLabel } from './reasons';
 import { Reports } from './Reports';
 import { ACTOR, type Actor, type MoneyState, STATE } from './states';
 import { Banner, Count, CountDownPaise, CountPaise, Reveal } from './ui';
@@ -432,7 +432,7 @@ function Summary({
 
   const reasonRows: StackRow[] = reasons.map((r) => ({
     id: r.reasonCode,
-    label: sentence(r.reasonCode),
+    label: reasonLabel(r.reasonCode),
     href: exceptionsLink(runId, { reason: r.reasonCode }),
     totalLabel: `${r.total}`,
     segments: [
@@ -510,7 +510,7 @@ function Summary({
               columns: ['Reason', 'Total', 'Open', 'Waiting', 'Resolved'],
               numeric: [1, 2, 3, 4],
               rows: reasons.map((x) => [
-                sentence(x.reasonCode),
+                reasonLabel(x.reasonCode),
                 String(x.total),
                 String(x.open),
                 String(x.proposed),

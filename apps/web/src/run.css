@@ -2,7 +2,7 @@
    audit trail, reports, the working screen, and the test-account rail. Loaded after wizard.css. */
 
 /* ---------- shell additions ---------- */
-.skip {
+.skip-link {
   position: absolute;
   left: var(--sp-3);
   top: -60px;
@@ -12,13 +12,23 @@
   background: var(--brand);
   color: var(--on-brand);
 }
-.skip:focus {
+.skip-link:focus {
   top: var(--sp-2);
 }
 .crumb {
   padding: var(--sp-1) var(--sp-2);
   color: var(--ink);
   font-weight: 550;
+}
+/* on a phone the section links hide, but the way home stays */
+@media (max-width: 760px) {
+  .nav.crumbs {
+    display: flex;
+    margin-left: 0;
+  }
+  .nav.crumbs .crumb {
+    display: none;
+  }
 }
 .nav .crumb::before {
   content: '/';
@@ -776,7 +786,7 @@ a.fs-step:hover {
   border-color: var(--hair);
 }
 .xrow.sel {
-  background: var(--card);
+  background: color-mix(in srgb, var(--brand) 9%, var(--card));
   border-color: var(--brand);
 }
 .xbar {
@@ -787,6 +797,20 @@ a.fs-step:hover {
   width: 3px;
   border-radius: var(--r-pill);
   background: var(--st);
+}
+.xico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  background: var(--card-2);
+  color: var(--ink-2);
+}
+.xrow.sel .xico {
+  background: var(--brand-soft);
+  color: var(--link);
 }
 .xmain {
   display: grid;
@@ -803,7 +827,7 @@ a.fs-step:hover {
 }
 .xwhy {
   overflow: hidden;
-  color: var(--ink-3);
+  color: var(--ink-2);
   font-size: var(--fs-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -820,7 +844,7 @@ a.fs-step:hover {
   align-items: center;
   gap: 3px;
   color: var(--ink-2);
-  font-size: var(--fs-2xs);
+  font-size: var(--fs-xs);
   white-space: nowrap;
 }
 .xstate svg {
@@ -886,25 +910,59 @@ a.fs-step:hover {
 .skel-block.tall {
   height: 220px;
 }
+.cf-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin: calc(-1 * var(--sp-2)) 0 calc(-1 * var(--sp-2));
+}
+.cf-nav {
+  display: flex;
+  gap: var(--sp-1);
+}
+.cf-nav .disabled {
+  pointer-events: none;
+}
 .cf-head {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--sp-3) var(--sp-5);
   align-items: start;
 }
+.cf-reason {
+  display: inline-block;
+  color: var(--link);
+  font-size: var(--fs-sm);
+  font-weight: 650;
+}
 .cf-title h2 {
-  margin: var(--sp-1) 0 var(--sp-2);
-  overflow-wrap: anywhere;
-  font-family: var(--mono);
+  margin: var(--sp-1) 0 0;
   font-size: var(--fs-2xl);
   font-weight: 600;
   letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+.cf-noun {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.cf-title h2 code {
+  font-size: 0.92em;
+  font-weight: 650;
+}
+.cf-sub {
+  margin-top: var(--sp-1);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
 }
 .cf-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--sp-2);
+  margin-top: var(--sp-2);
 }
 .cf-stake {
   display: grid;
@@ -918,14 +976,9 @@ a.fs-step:hover {
   line-height: 1;
   letter-spacing: -0.03em;
 }
-.cf-nav {
-  grid-column: 1 / -1;
-  display: flex;
-  gap: var(--sp-2);
-}
-.cf-nav:empty {
-  display: none;
-}
+
+/* the trail: seven equal columns; each step draws the line to its left inside its own box, so nothing is
+   positioned outside its column and nothing can overlap a neighbour at any width or zoom */
 .cf-trail {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -935,93 +988,188 @@ a.fs-step:hover {
   border-bottom: 1px solid var(--hair);
   list-style: none;
 }
-.cf-trail li {
+.cf-step {
   position: relative;
+  min-width: 0;
 }
-.cf-trail li + li::before {
+.cf-step::before {
   content: '';
   position: absolute;
-  top: 11px;
-  left: calc(-50% + 14px);
-  right: calc(50% + 14px);
+  top: 12px;
+  left: 0;
+  right: 50%;
   height: 2px;
   background: var(--line);
 }
-.cf-trail li.done + li::before,
-.cf-trail li.done + li.done::before {
+.cf-step::after {
+  content: '';
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  right: 0;
+  height: 2px;
+  background: var(--line);
+}
+.cf-step:first-child::before,
+.cf-step:last-child::after {
+  display: none;
+}
+.cf-step.is-done::before,
+.cf-step.is-done::after {
   background: var(--st-rules);
 }
-.cf-trail a {
+.cf-step.is-skip::before,
+.cf-step.is-skip::after {
+  background: repeating-linear-gradient(90deg, var(--line) 0 4px, transparent 4px 8px);
+}
+.cf-step a {
+  position: relative;
+  z-index: var(--z-raised);
   display: grid;
   justify-items: center;
   gap: var(--sp-1);
+  padding: 0 2px;
   color: var(--ink-3);
   font-size: var(--fs-xs);
   text-align: center;
   text-decoration: none;
 }
-.cf-trail a:hover {
+.cf-step a:hover .cf-label {
   color: var(--ink);
+  text-decoration: underline;
 }
 .cf-dot {
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border: 2px solid var(--line);
   border-radius: 50%;
   background: var(--card);
+  color: var(--ink-3);
 }
-.cf-trail .done .cf-dot {
+.cf-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cf-short {
+  display: none;
+}
+.cf-step.is-done .cf-dot {
   border-color: var(--st-rules);
   background: var(--st-rules);
   color: var(--on-st-rules);
 }
-.cf-trail .done a,
-.cf-trail .now a,
-.cf-trail .bad a {
-  color: var(--ink);
-}
-.cf-trail .now .cf-dot {
+.cf-step.is-now .cf-dot {
   border-color: var(--st-wait);
   background: var(--st-wait);
   color: var(--on-st-wait);
-  animation: pulse-wait var(--loop-pulse) ease-out infinite;
 }
-@keyframes pulse-wait {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--st-wait) 50%, transparent);
-  }
-  70%,
-  100% {
-    box-shadow: 0 0 0 10px transparent;
-  }
-}
-.cf-trail .bad .cf-dot {
+.cf-step.is-bad .cf-dot {
   border-color: var(--st-open);
   background: var(--st-open);
   color: var(--on-st-open);
 }
-.cf-trail .skip .cf-dot {
+.cf-step.is-skip .cf-dot {
   border-style: dashed;
+  background: var(--card);
+}
+.cf-step.is-todo .cf-dot {
+  background: var(--card);
+}
+.cf-step.is-done a,
+.cf-step.is-now a,
+.cf-step.is-bad a {
+  color: var(--ink);
+}
+.cf-step.is-now .cf-label {
+  font-weight: 650;
+}
+/* the one step waiting for you breathes, a ring that fades; still for reduced motion */
+.cf-step.is-now .cf-dot {
+  animation: pulse-wait var(--loop-pulse) ease-out infinite;
+}
+@keyframes pulse-wait {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--st-wait) 45%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+
+/* the four questions, answered */
+.cf-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3) var(--sp-5);
+  padding: var(--sp-4);
+  border: 1px solid var(--hair);
+  border-radius: var(--r-md);
+  background: var(--card-2);
+}
+.cf-summary p {
+  margin-top: 2px;
+  color: var(--ink);
+}
+.cf-next {
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--st-wait);
 }
 .cf-guard {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3);
-  border-radius: var(--r-sm);
-  background: var(--brand-soft);
   color: var(--ink-2);
   font-size: var(--fs-sm);
 }
 .cf-guard svg {
   flex: none;
-  margin-top: 2px;
   color: var(--link);
 }
-.cf-guard b {
-  color: var(--ink);
+.cf-tech {
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--hair);
+}
+.cf-tech > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.cf-tech > summary::-webkit-details-marker {
+  display: none;
+}
+.cf-tech > summary svg {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.cf-tech[open] > summary svg {
+  transform: rotate(90deg);
+}
+.cf-tech dl {
+  display: grid;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0 0;
+}
+.cf-tech dl > div {
+  display: grid;
+  grid-template-columns: minmax(140px, 200px) minmax(0, 1fr);
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+}
+.cf-tech dt {
+  color: var(--ink-3);
+}
+.cf-tech dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 .cf-block {
   position: relative;
@@ -1740,8 +1888,19 @@ table.compare tr.subject td {
     justify-items: start;
     text-align: left;
   }
-  .cf-trail span:not(.cf-dot) {
+  .cf-label {
     display: none;
+  }
+  .cf-short {
+    display: block;
+    font-size: var(--fs-2xs);
+  }
+  .cf-summary,
+  .cf-tech dl > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cf-meta {
+    justify-content: flex-start;
   }
   .decide-fields,
   .ta-rail {

@@ -1289,3 +1289,24 @@ in CSS); a separate marketing site (one URL is a requirement).
 - The serif looks different per OS (Palatino on Windows, Iowan on macOS, Georgia elsewhere).
 - On a phone the hero shows the narration without the drawing.
 - `HeroStory.tsx`, `story.ts` and `FlowDiagram.tsx` are gone; `dash.css` was split into `charts.css` and `run.css`.
+
+**Amended (2026-10-28, same day, after review):**
+
+- The hero no longer carries the big pipeline. It shows the two ways in as two short lifecycles (`HeroModes.tsx`):
+  Razorpay test mode (test payment on Checkout → captured → optional refund → read-only import → reconcile →
+  review) and the sample demo, labelled as an illustration, with the server's own account status and the real routes
+  (`#/test`, `POST /demo/runs`). Nothing in it creates a payment, a refund or a run.
+- The architecture section is one diagram with every stage visible (`Architecture.tsx`): sources → ingest →
+  normalize → rules T1–T4 → accepted groups → reports, and exceptions → AI agent → checker → you → reports, with the
+  refused loop. Dots ride it in the recorded run's proportions; clicking a stage opens its detail. Phones get the
+  same stages as a list marked by path.
+- Exception reasons are shown by a readable label (`reasons.ts`, `UNKNOWN` → "Unclassified discrepancy"); the raw
+  code, the rules' cause and the ids sit in a "Technical details" fold. A case file answers "what went wrong, what
+  Ziro did, what it found, what to do next" from recorded fields only, and never says the AI looked at a case it did
+  not.
+- The case trail's overlap came from a class collision (the trail's `skip` state against the skip-to-content
+  link's `.skip`); the link is now `.skip-link` and trail states are `is-*`.
+- Footer: product links only; the GitHub, demo-video and EVALS.md placeholders and the "₹0.00" mark are gone.
+- Footer, at the author's request: the brand and a short description, two mono-headed link columns and a mono
+  base line sit on top of a huge, faint "Ziro" wordmark (5% ink on the page colour) that the footer's bottom edge
+  crops. It rises into place once, with transform and opacity only.

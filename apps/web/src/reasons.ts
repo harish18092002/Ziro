@@ -20,4 +20,37 @@ export const REASONS: Record<string, string> = {
   UNKNOWN: 'Nothing the rules know explains it yet.',
 };
 
+/**
+ * The label a person reads for each code. UNKNOWN is a real code the rules give when no known pattern fits; it is
+ * shown as what it means ("Unclassified discrepancy"), and the raw code stays in the technical details.
+ */
+export const REASON_LABELS: Record<string, string> = {
+  FEE_GST_DEDUCTION: 'Fee and GST deducted',
+  BATCHED_SETTLEMENT: 'Batched settlement',
+  PARTIAL_REFUND_NETTED: 'Partial refund netted',
+  FULL_REFUND: 'Full refund',
+  CHARGEBACK_ADJUSTMENT: 'Chargeback adjustment',
+  DUPLICATE_PAYMENT: 'Duplicate payment',
+  LEDGER_WITHOUT_PAYMENT: 'Order with no payment',
+  PAYMENT_WITHOUT_LEDGER: 'Payment with no order',
+  UTR_MISSING_OR_GARBLED: 'UTR missing or garbled',
+  LEDGER_AMOUNT_EDITED: 'Order amount edited',
+  TIMEZONE_DATE_SHIFT: 'IST/UTC date shift',
+  SETTLEMENT_DELAYED: 'Settlement delayed',
+  FEE_OVERCHARGE: 'Fee overcharged',
+  UNKNOWN: 'Unclassified discrepancy',
+};
+
+export const reasonLabel = (code: string): string => REASON_LABELS[code] ?? code;
+
+/** What a record is, in a word, for a title: "Bank line row-15", "Order ORD-100023". */
+const RECORD_NOUN: Record<string, string> = {
+  ledger_entry: 'Order',
+  rzp_payment: 'Payment',
+  rzp_refund: 'Refund',
+  rzp_settlement: 'Settlement',
+  bank_line: 'Bank line',
+};
+export const recordNoun = (type: string): string => RECORD_NOUN[type] ?? 'Record';
+
 export const reasonMeaning = (code: string): string => REASONS[code] ?? 'No description yet.';

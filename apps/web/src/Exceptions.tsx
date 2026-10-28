@@ -10,10 +10,10 @@ import {
   post,
 } from './api';
 import { Meter } from './Charts';
-import { inr, type ListQuery, linkTo, sentence, words } from './format';
+import { inr, type ListQuery, linkTo, words } from './format';
 import { useLoad } from './hooks';
 import { Icon, type IconName } from './Icons';
-import { reasonMeaning } from './reasons';
+import { reasonLabel, reasonMeaning, recordNoun } from './reasons';
 import { type MoneyState, STATE } from './states';
 import { Banner } from './ui';
 
@@ -107,7 +107,8 @@ export function ExceptionsTab({
   // A new link (a reason picked on the overview) replaces the view.
   useEffect(() => {
     if (initial === null) return;
-    if (isFilter(initial.filter)) setFilter(initial.filter);
+    // the link states the whole view: a link with only a reason means every status
+    setFilter(isFilter(initial.filter) ? initial.filter : 'all');
     setReason(initial.reason ?? '');
     setPage(0);
   }, [initial?.filter, initial?.reason]);
@@ -173,7 +174,7 @@ export function ExceptionsTab({
               <option value="">Every reason</option>
               {reasons.map((r) => (
                 <option key={r.reasonCode} value={r.reasonCode}>
-                  {sentence(r.reasonCode)} ({r.total})
+                  {reasonLabel(r.reasonCode)} ({r.total})
                 </option>
               ))}
             </select>
@@ -207,10 +208,18 @@ export function ExceptionsTab({
                   aria-current={e.id === shown ? 'true' : undefined}
                 >
                   <span className="xbar" aria-hidden="true" />
+                  <span className="xico" title={e.subject ? recordNoun(e.subject.type) : undefined}>
+                    <Icon name={RECORD_ICON[e.subject?.type ?? ''] ?? 'file'} size={14} />
+                  </span>
                   <span className="xmain">
-                    <b className="xkey">{e.subject?.key ?? e.id.slice(0, 8)}</b>
+                    <b className="xkey">
+                      <span className="sr-only">
+                        {e.subject ? recordNoun(e.subject.type) : 'Record'}{' '}
+                      </span>
+                      {e.subject?.key ?? e.id.slice(0, 8)}
+                    </b>
                     <span className="xwhy">
-                      {sentence(e.reasonCode)}
+                      {reasonLabel(e.reasonCode)}
                       {e.ageDays === null ? '' : ` · ${e.ageDays}d`}
                     </span>
                   </span>
@@ -294,6 +303,16 @@ interface TrailStep {
   label: string;
   state: StepState;
 }
+/** The words under each step on a phone, where seven full labels do not fit. */
+const SHORT: Record<string, string> = {
+  Discrepancy: 'Issue',
+  Records: 'Records',
+  Rules: 'Rules',
+  'AI evidence': 'AI',
+  Proposal: 'Proposal',
+  Checker: 'Check',
+  Decision: 'You',
+};
 
 /** Where the case is along the chain, from the server's record of it. */
 function trail(d: ExceptionDetail): TrailStep[] {
@@ -333,8 +352,13 @@ function trail(d: ExceptionDetail): TrailStep[] {
     { id: 'c-records', label: 'Records', state: 'done' },
     { id: 'c-rules', label: 'Rules', state: 'done' },
     { id: 'c-evidence', label: 'AI evidence', state: evidence },
-    { id: 'c-proposal', label: 'Proposal', state: p ? (p.degraded ? 'bad' : 'done') : evidence },
-    { id: 'c-checker', label: 'Checker', state: checker },
+    // with no proposal there is no proposal or checker section: those steps point at the AI section
+    {
+      id: p ? 'c-proposal' : 'c-evidence',
+      label: 'Proposal',
+      state: p ? (p.degraded ? 'bad' : 'done') : evidence,
+    },
+    { id: p ? 'c-checker' : 'c-evidence', label: 'Checker', state: checker },
     { id: 'c-decision', label: 'Decision', state: decision },
   ];
 }
@@ -346,6 +370,73 @@ const STEP_ICON: Record<StepState, IconName> = {
   skip: 'minus',
   todo: 'clock',
 };
+const STEP_WORDS: Record<StepState, string> = {
+  done: 'done',
+  now: 'your turn',
+  bad: 'refused or failed',
+  skip: 'not applicable',
+  todo: 'not yet',
+};
+
+/**
+ * The questions a reviewer asks, answered only from what the server recorded: what Ziro did and what it found. It
+ * never says the AI looked at a case it did not look at, or that the checker verified what it did not check.
+ */
+function whatHappened(d: ExceptionDetail): { did: string; found: string } {
+  const e = d.exception;
+  const p = d.proposals.at(-1);
+  const n = d.candidates.length;
+  const fits =
+    n === 0
+      ? 'the rules found no record it could match'
+      : n === 1
+        ? 'one record could fit, but not exactly enough to prove'
+        : `${n} records could fit, and the rules never pick between candidates`;
+  if (!p) {
+    return e.listedForAPerson
+      ? {
+          did: `The rules stopped: ${fits}. This kind of case is listed for a person and is not sent to the AI.`,
+          found:
+            'The AI did not look at it, so there is no proposal and nothing for the checker to verify.',
+        }
+      : { did: `The rules stopped: ${fits}.`, found: 'The AI has not investigated it yet.' };
+  }
+  const who =
+    p.author === 'model'
+      ? 'The AI agent'
+      : p.author === 'harness'
+        ? 'The AI'
+        : 'The scripted stand-in for the agent';
+  if (p.degraded)
+    return {
+      did: `The rules stopped: ${fits}. ${who} was asked to investigate.`,
+      found: `No conclusion: ${p.degradedLabel ?? 'the investigation did not finish'}. It went to a person with that reason.`,
+    };
+  if (p.author === 'planted')
+    return {
+      did: `The rules stopped: ${fits}. The demo then planted a deliberately wrong proposal (not model output) to show the checker at work.`,
+      found:
+        p.verifier.status === 'rejected'
+          ? 'The checker re-computed it from the records and refused it, so the case stays open.'
+          : 'The checker did not refuse it.',
+    };
+  const looked = `${who} investigated with ${p.evidence.length} read-only lookup${p.evidence.length === 1 ? '' : 's'}`;
+  if (p.verifier.status === 'rejected')
+    return {
+      did: `The rules stopped: ${fits}. ${looked} and proposed an answer.`,
+      found: 'The checker re-computed it from the records and refused it, so the case stays open.',
+    };
+  if (p.verifier.status === 'passed')
+    return {
+      did: `The rules stopped: ${fits}. ${looked} and proposed a match.`,
+      found: 'The checker re-computed every id, amount and date and agrees.',
+    };
+  return {
+    did: `The rules stopped: ${fits}. ${looked}.`,
+    found:
+      'It claimed no match (an explanation or a hand-over), so the checker had nothing to re-compute.',
+  };
+}
 
 function CaseFile({
   runId,
@@ -380,6 +471,7 @@ function CaseFile({
   const { exception: e, subject, candidates, proposals } = d.data;
   const latest = proposals.at(-1);
   const steps = trail(d.data);
+  const story = whatHappened(d.data);
   const decidable =
     !readOnly &&
     latest !== undefined &&
@@ -389,62 +481,94 @@ function CaseFile({
 
   return (
     <article className="card casefile slide-in">
+      <div className="cf-bar">
+        <span className="kicker">Case file</span>
+        <nav className="cf-nav" aria-label="Other cases on this page">
+          <a
+            className={`button sm ghost ${prev ? '' : 'disabled'}`}
+            href={prev ? linkTo(runId, 'exceptions', prev) : undefined}
+            aria-disabled={prev ? undefined : true}
+          >
+            ← Prev
+          </a>
+          <a
+            className={`button sm ghost ${next ? '' : 'disabled'}`}
+            href={next ? linkTo(runId, 'exceptions', next) : undefined}
+            aria-disabled={next ? undefined : true}
+          >
+            Next →
+          </a>
+        </nav>
+      </div>
       <header className="cf-head">
         <div className="cf-title">
-          <span className="kicker">{sentence(e.reasonCode)}</span>
-          <h2>{subject?.key ?? 'Exception'}</h2>
+          <span className="cf-reason">{reasonLabel(e.reasonCode)}</span>
+          <h2>
+            <span className="cf-noun">{subject ? recordNoun(subject.type) : 'Exception'}</span>{' '}
+            <code>{subject?.key ?? e.id.slice(0, 8)}</code>
+          </h2>
+          {subject?.detail ? <p className="cf-sub free">{subject.detail}</p> : null}
+        </div>
+        <div className="cf-stake">
+          <span className="kicker">At stake</span>
+          <b>{inr(e.amountAtStakePaise)}</b>
           <div className="cf-meta">
             <StateBadge e={e} />
             {e.ageDays === null ? null : <span className="muted">{e.ageDays} days old</span>}
           </div>
         </div>
-        <div className="cf-stake">
-          <span className="kicker">At stake</span>
-          <b>{inr(e.amountAtStakePaise)}</b>
-        </div>
-        <nav className="cf-nav" aria-label="Other cases on this page">
-          {prev ? (
-            <a className="button sm ghost" href={linkTo(runId, 'exceptions', prev)}>
-              ← Prev
-            </a>
-          ) : null}
-          {next ? (
-            <a className="button sm ghost" href={linkTo(runId, 'exceptions', next)}>
-              Next →
-            </a>
-          ) : null}
-        </nav>
       </header>
 
       <ol className="cf-trail" aria-label="Where this case stands">
-        {steps.map((s) => (
-          <li key={s.id} className={s.state}>
-            <a href={`#${s.id}`} onClick={(ev) => jump(ev, s.id)}>
-              <span className="cf-dot">
-                <Icon name={STEP_ICON[s.state]} size={12} />
+        {steps.map((st) => (
+          <li key={st.label} className={`cf-step is-${st.state}`}>
+            <a
+              href={`#${st.id}`}
+              onClick={(ev) => jump(ev, st.id)}
+              title={`${st.label}: ${STEP_WORDS[st.state]}`}
+            >
+              <span className="cf-dot" aria-hidden="true">
+                <Icon name={STEP_ICON[st.state]} size={12} />
               </span>
-              <span>{s.label}</span>
+              <span className="cf-label">{st.label}</span>
+              <span className="cf-short" aria-hidden="true">
+                {SHORT[st.label] ?? st.label}
+              </span>
+              <span className="sr-only">: {STEP_WORDS[st.state]}</span>
             </a>
           </li>
         ))}
       </ol>
 
-      <div className="cf-guard">
-        <Icon name="shield" size={15} />
-        <span>
-          The AI only <b>proposes</b>. The checker re-computes it from the records and can refuse
-          it. Only a <b>person</b> can approve a match.
-        </span>
-      </div>
+      <section className="cf-summary" aria-label="What happened">
+        <div>
+          <span className="kicker">What went wrong</span>
+          <p className="free">
+            {e.note
+              ? `${e.note.charAt(0).toUpperCase()}${e.note.slice(1)}.`
+              : reasonMeaning(e.reasonCode)}
+          </p>
+          {e.note ? <p className="muted small">{reasonMeaning(e.reasonCode)}</p> : null}
+        </div>
+        <div>
+          <span className="kicker">What Ziro did</span>
+          <p>{story.did}</p>
+        </div>
+        <div>
+          <span className="kicker">What it found</span>
+          <p>{story.found}</p>
+        </div>
+        <div className="cf-next">
+          <span className="kicker">What to do next</span>
+          <p className="free">{e.nextStep}</p>
+        </div>
+      </section>
 
       <Block id="c-discrepancy" n={1} title="The discrepancy">
-        <p className="cf-lead">{e.nextStep}</p>
-        {e.note ? <p className="free muted">{e.note}</p> : null}
-        {e.cause ? (
-          <p className="free muted">
-            <b>Cause recorded:</b> {e.cause}
-          </p>
-        ) : null}
+        <p className="cf-lead">
+          {subject ? `${recordNoun(subject.type)} ${subject.key}` : 'This record'} carries{' '}
+          <b>{inr(e.amountAtStakePaise)}</b> that no accepted match explains.
+        </p>
       </Block>
 
       <Block
@@ -459,7 +583,7 @@ function CaseFile({
       <Block id="c-rules" n={3} title="What the rules found">
         <div className="cf-rule">
           <span className="pill">
-            <Icon name="code" size={13} /> {e.reasonCode}
+            <Icon name="code" size={13} /> {reasonLabel(e.reasonCode)}
           </span>
           <p>{reasonMeaning(e.reasonCode)}</p>
         </div>
@@ -483,6 +607,10 @@ function CaseFile({
             title="The AI’s evidence"
             aside={`${latest.evidence.length} lookup${latest.evidence.length === 1 ? '' : 's'}`}
           >
+            <p className="cf-guard">
+              <Icon name="shield" size={14} /> The AI only proposes. The checker re-computes it, and
+              only a person can approve a match.
+            </p>
             <Author p={latest} attempts={proposals.length} />
             {latest.degradedLabel ? (
               <Banner tone="warn">
@@ -553,6 +681,63 @@ function CaseFile({
           </p>
         )}
       </Block>
+      <details className="cf-tech">
+        <summary>
+          Technical details <Icon name="arrow" size={13} />
+        </summary>
+        <dl>
+          <div>
+            <dt>Reason code</dt>
+            <dd>
+              <code>{e.reasonCode}</code>
+            </dd>
+          </div>
+          {e.cause ? (
+            <div>
+              <dt>Cause the rules recorded</dt>
+              <dd>
+                <code>{e.cause}</code>
+              </dd>
+            </div>
+          ) : null}
+          <div>
+            <dt>Status</dt>
+            <dd>
+              <code>
+                {e.status}
+                {e.listedForAPerson ? ' · listed for a person' : ''}
+              </code>
+            </dd>
+          </div>
+          {latest ? (
+            <div>
+              <dt>Latest proposal</dt>
+              <dd>
+                <code>
+                  {latest.verdict} · verifier {latest.verifier.status} · author {latest.author}
+                  {latest.degraded ? ` · degraded ${latest.degraded}` : ''}
+                </code>
+              </dd>
+            </div>
+          ) : null}
+          <div>
+            <dt>Exception id</dt>
+            <dd>
+              <code>{e.id}</code>
+            </dd>
+          </div>
+          {subject ? (
+            <div>
+              <dt>Subject record</dt>
+              <dd>
+                <code>
+                  {subject.type} · {subject.id}
+                </code>
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+      </details>
     </article>
   );
 }
@@ -693,7 +878,7 @@ function ProposalBody({ runId, p }: { runId: string; p: ProposalDetail }) {
           <Icon name="sparkle" size={13} /> {words(p.verdict)}
         </span>
         <span className="pill">suggested: {words(p.suggestedAction)}</span>
-        <span className="pill">{sentence(p.reasonCode)}</span>
+        <span className="pill">{reasonLabel(p.reasonCode)}</span>
       </div>
       <div className="confidence">
         <span>Agent confidence</span>

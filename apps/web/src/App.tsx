@@ -35,7 +35,7 @@ function Shell() {
   const offerTest = razorpay !== null && (razorpay.source === 'testmode' || razorpay.importsOpen);
   return (
     <>
-      <a className="skip" href="#main">
+      <a className="skip-link" href="#main">
         Skip to content
       </a>
       <header className="shell-top">
@@ -49,12 +49,13 @@ function Shell() {
           </a>
           {home ? (
             <nav className="nav" aria-label="Sections">
+              <a href="#architecture">How it works</a>
               <a href="#problem">Problem</a>
-              <a href="#architecture">Architecture</a>
               <a href="#proof">Proof</a>
+              <a href="#start">Try it</a>
             </nav>
           ) : (
-            <nav className="nav" aria-label="Where you are">
+            <nav className="nav crumbs" aria-label="Where you are">
               <a href="#/">Home</a>
               <span className="crumb" aria-current="page">
                 {route.page === 'test' ? 'Test account' : 'Reconciliation run'}
@@ -62,9 +63,12 @@ function Shell() {
             </nav>
           )}
           <div className="shell-right">
-            <span className="env-chip" title="Where the data on screen comes from">
-              <span className="live-dot" /> {dataChip(razorpay)}
-            </span>
+            {/* A run says its own data source in its header; elsewhere this is the server's Razorpay link. */}
+            {route.page === 'run' ? null : (
+              <span className="env-chip" title="The Razorpay source this server is connected to">
+                <span className="live-dot" /> {dataChip(razorpay)}
+              </span>
+            )}
             <button
               className="icon-btn"
               onClick={stepTheme}
@@ -84,11 +88,7 @@ function Shell() {
               <a className="button primary sm" href="#start">
                 Try Ziro
               </a>
-            ) : (
-              <a className="button sm" href="#/">
-                <Icon name="home" size={15} /> Home
-              </a>
-            )}
+            ) : null}
           </div>
         </div>
       </header>

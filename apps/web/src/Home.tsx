@@ -22,8 +22,8 @@ import {
   proposalsRefused,
   truthFoundExactly,
 } from './metrics';
+import { type AccountState, accountState, HeroModes } from './HeroModes';
 import { MoneyStory } from './MoneyStory';
-import { Pipeline } from './Pipeline';
 import { InfoTip, Reveal, Stat, Term } from './ui';
 
 // The landing page, in the order a judge needs it: what Ziro is and how it works (the hero picture), why the
@@ -71,30 +71,33 @@ export function Home({ razorpay }: { razorpay: RazorpayStatus | null }) {
     <div className="landing page">
       <Hero
         replay={replay}
-        proof={proof}
-        progress={progress}
+        razorpay={razorpay}
         busy={starter.busy}
         problem={starter.problem}
         onRun={() => void starter.start('scripted', false)}
       />
-      <Problem />
       <section className="section" id="architecture">
         <div className="wrap">
           <SectionTitle
-            n="02"
-            label="Architecture"
+            n="01"
+            label="How it works"
             title={
               <>
                 Code proves. AI investigates. <em>You decide.</em>
               </>
             }
-            sub="Eight stages, each with one owner. Pick a stage for what it does, the detail behind it, and a real example."
+            sub="The whole system on one page. Most records take the top path and never meet the AI; only the leftovers go through investigation, the checker and you. Pick any stage for its detail."
           />
           <Reveal>
-            <Architecture demoRun={offer?.featured.demo ?? null} />
+            <Architecture
+              demoRun={offer?.featured.demo ?? null}
+              proof={proof}
+              progress={progress}
+            />
           </Reveal>
         </div>
       </section>
+      <Problem />
       <Proof proof={proof} progress={progress} replay={replay} />
       <StartHere
         offer={offer}
@@ -103,7 +106,7 @@ export function Home({ razorpay }: { razorpay: RazorpayStatus | null }) {
         replay={replay}
         starter={starter}
       />
-      <Footer />
+      <Footer replay={replay} />
     </div>
   );
 }
@@ -132,23 +135,22 @@ function SectionTitle({
 
 function Hero({
   replay,
-  proof,
-  progress,
+  razorpay,
   busy,
   problem,
   onRun,
 }: {
   replay: string | null;
-  proof: Overview | null;
-  progress: Progress | null;
+  razorpay: RazorpayStatus | null;
   busy: boolean;
   problem: string | null;
   onRun: () => void;
 }) {
+  const account = accountState(razorpay);
   return (
     <section className="hero">
       <div className="hero-glow" aria-hidden="true" />
-      <div className="wrap">
+      <div className="wrap hero-grid">
         <div className="hero-copy">
           <span className="slash">AI finance controller for Razorpay merchants</span>
           <h1 className="serif">
@@ -159,20 +161,27 @@ function Hero({
             bulk to the paisa, an AI agent investigates what is left, a checker re-computes its
             every claim, and you approve.
           </p>
+          <p className="hero-rzp">
+            <Icon name="shield" size={15} />
+            <span>
+              Works with a real <b>Razorpay test account</b>: make test payments and refunds, import
+              them, and reconcile.
+            </span>
+          </p>
           <div className="cta-row">
             <button className="primary lg" onClick={onRun} disabled={busy}>
               {busy ? (
                 <>
-                  <span className="spinner" /> Starting the demo…
+                  <span className="spinner" /> Starting…
                 </>
               ) : (
                 <>
-                  Run the 50-order demo <Icon name="arrow" size={16} />
+                  Run sample demo <Icon name="arrow" size={16} />
                 </>
               )}
             </button>
-            <a className="button lg" href="#architecture">
-              Explore the architecture
+            <a className="button lg" href={account === 'public' ? '#start' : '#/test'}>
+              Try with Razorpay test payments
             </a>
           </div>
           {problem ? (
@@ -181,12 +190,18 @@ function Hero({
             </p>
           ) : (
             <p className="micro">
-              Synthetic data, about two seconds, no sign-up.{' '}
-              {replay ? <a href={linkTo(replay)}>Or open the recorded 500-order run →</a> : null}
+              Sample demo: 50 synthetic orders, about two seconds.{' '}
+              <a href="#architecture">How it works ↓</a>
+              {replay ? (
+                <>
+                  {' · '}
+                  <a href={linkTo(replay)}>Recorded 500-order run →</a>
+                </>
+              ) : null}
             </p>
           )}
         </div>
-        <Pipeline facts={{ overview: proof, progress }} />
+        <HeroModes razorpay={razorpay} onRunDemo={onRun} busy={busy} />
       </div>
     </section>
   );
@@ -229,7 +244,7 @@ function Problem() {
       <div className="wrap problem-grid">
         <div>
           <SectionTitle
-            n="01"
+            n="02"
             label="The problem"
             title={
               <>
@@ -328,15 +343,8 @@ function Proof({
   );
 }
 
-type PathState = 'loading' | 'ready' | 'setup' | 'demo-mode' | 'public';
-
-/** What the test-account card can honestly offer on this server. */
-function pathState(razorpay: RazorpayStatus | null): PathState {
-  if (razorpay === null) return 'loading';
-  if (razorpay.ready && razorpay.importsOpen) return 'ready';
-  if (razorpay.ready) return 'demo-mode';
-  return razorpay.importsOpen ? 'setup' : 'public';
-}
+type PathState = AccountState;
+const pathState = accountState;
 
 const REAL_BUTTON: Record<Exclude<PathState, 'loading' | 'public'>, string> = {
   ready: 'Open the test account',
@@ -536,38 +544,49 @@ function StartHere({
   );
 }
 
-/** Placeholders until the repository and the video are public: swap the hrefs for the real addresses. */
-const LINKS = { github: '#', video: '#', evals: '#' };
-
-function Footer() {
-  const [ref, seen] = useInView<HTMLDivElement>();
+/**
+ * The footer, layered: the wordmark is drawn huge and faint BEHIND the footer's content and cropped by its bottom
+ * edge, so it reads as texture, not as a figure. Product links only.
+ */
+function Footer({ replay }: { replay: string | null }) {
+  const [ref, seen] = useInView<HTMLElement>();
   return (
-    <footer className="footer">
+    <footer ref={ref} className={`footer ${seen ? 'in' : ''}`}>
+      <div className="watermark" aria-hidden="true">
+        Ziro
+      </div>
       <div className="wrap footer-in">
         <div className="footer-brand">
           <a href="#/" className="brand">
             <Logo size={22} />
             <span>Ziro</span>
           </a>
-          <span>Every paisa, accounted for.</span>
+          <p>
+            Reconciliation for Razorpay merchants. Rules prove the bulk, an AI agent investigates
+            the rest, a checker re-computes, and you approve.
+          </p>
         </div>
-        <nav aria-label="Footer">
-          <a href="#architecture">Architecture</a>
-          <a href="#proof">Proof</a>
-          <a href="#start">Try it</a>
-          <a href={LINKS.github}>GitHub</a>
-          <a href={LINKS.video}>Demo video</a>
-          <a href={LINKS.evals}>EVALS.md</a>
+        <nav className="footer-cols" aria-label="Footer">
+          <div>
+            <span className="footer-head">Product</span>
+            <a href="#architecture">How it works</a>
+            <a href="#problem">The problem</a>
+            <a href="#proof">Proof</a>
+          </div>
+          <div>
+            <span className="footer-head">Try it</span>
+            <a href="#start">Sample demo</a>
+            <a href="#/test">Test account</a>
+            {replay ? <a href={linkTo(replay)}>500-order replay</a> : null}
+          </div>
         </nav>
       </div>
-      <div ref={ref} className={`watermark ${seen ? 'in' : ''}`} aria-hidden="true">
-        <span className="serif">
-          Ziro <em>₹0.00</em>
+      <div className="wrap footer-base">
+        <span>© 2026 Ziro</span>
+        <span>
+          Razorpay test mode only <i aria-hidden="true">◆</i> no real money moves
         </span>
       </div>
-      <p className="wrap footer-fine">
-        Razorpay test mode only · synthetic data · built for the Razorpay AI Builders application
-      </p>
     </footer>
   );
 }
