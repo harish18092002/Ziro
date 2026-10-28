@@ -382,6 +382,13 @@ function Workspace({ aiReady, onStartOver }: { aiReady: boolean; onStartOver: ()
             ? `${matched.result.groups} matched, ${matched.result.exceptions} to look at`
             : null
         }
+        action={
+          matched !== null && runId !== null ? (
+            <a className="button primary sm" href={linkTo(runId)}>
+              Open the results <Icon name="arrow" size={14} />
+            </a>
+          ) : null
+        }
       >
         <p>
           Ziro matches your ledger to Razorpay, to the paisa. Anything it cannot prove becomes an
@@ -415,6 +422,8 @@ function Workspace({ aiReady, onStartOver }: { aiReady: boolean; onStartOver: ()
                   }
                 }
                 setMatched({ result, note });
+                // Straight to the results, unless there is a note to read here first.
+                if (note === null) window.location.hash = linkTo(runId);
               })
             }
           >
@@ -439,12 +448,15 @@ function Step({
   title,
   state,
   summary,
+  action = null,
   children,
 }: {
   n: number;
   title: string;
   state: 'wait' | 'now' | 'done';
   summary: string | null;
+  /** Shown on the folded line of a finished step, beside Change. */
+  action?: ReactNode;
   children: ReactNode;
 }) {
   // A finished step folds to one line; it can be opened again (to import again, or change a file).
@@ -463,15 +475,18 @@ function Step({
             {summary ? <span className="wsum"> · {summary}</span> : null}
           </h2>
           {state === 'done' ? (
-            <button
-              type="button"
-              className="ghost sm"
-              aria-expanded={open}
-              aria-controls={bodyId}
-              onClick={() => setOpen((v) => !v)}
-            >
-              {open ? 'Hide' : 'Change'}
-            </button>
+            <span className="wactions">
+              {open ? null : action}
+              <button
+                type="button"
+                className="ghost sm"
+                aria-expanded={open}
+                aria-controls={bodyId}
+                onClick={() => setOpen((v) => !v)}
+              >
+                {open ? 'Hide' : 'Change'}
+              </button>
+            </span>
           ) : null}
         </div>
         {state === 'wait' ? (

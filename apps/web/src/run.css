@@ -1803,6 +1803,13 @@ table.compare tr.subject td {
   gap: var(--sp-3);
   min-height: 30px;
 }
+.wactions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+}
 .wcontent {
   display: grid;
   gap: var(--sp-3);
