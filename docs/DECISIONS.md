@@ -27,6 +27,7 @@ one's status says so and names the later one.
 | [019][adr019] | Test mode is real                           | No generated fallback; a starter ledger; test payments from the console; an admin gate.           | accepted, amended |
 | [020][adr020] | Two paths and a refund that looks first     | The home page asks which data; a live account view; refunds are checked before Razorpay is asked. | accepted          |
 | [021][adr021] | The console's design system                 | One token file, a money-state palette where green means done, CSS-only motion, counted numbers.   | accepted          |
+| [022][adr022] | The product's visual identity and journey   | Dark-first, one electric-blue accent, serif display; hero pipeline, case file, triage list.       | accepted          |
 
 [adr001]: #adr-001-monorepo-with-a-framework-free-core-package
 [adr002]: #adr-002-esm-everywhere-vitest-everywhere
@@ -49,6 +50,7 @@ one's status says so and names the later one.
 [adr019]: #adr-019-test-mode-is-real--no-generated-fallback-a-starter-ledger-and-an-optional-admin-gate
 [adr020]: #adr-020-two-paths-a-live-account-view-and-a-refund-that-looks-first
 [adr021]: #adr-021-the-consoles-design-system-tokens-a-money-state-palette-motion-and-counted-numbers
+[adr022]: #adr-022-the-products-visual-identity-and-journey
 
 ---
 
@@ -1241,3 +1243,49 @@ scope; reconciliation logic, numbers and API behaviour are not. Later phases of 
 - Spacing was snapped to the grid by script (ties go to the smaller step), so some paddings moved by 2 to 4 px.
 - The old flow diagram still moves with `left` and `width` until it is replaced.
 - The remaining mobile layout shift comes from the header growing when the Razorpay status arrives.
+
+## ADR-022: The product's visual identity and journey
+
+**Status:** accepted. A redesign the author asked for, for the Razorpay AI Builders judges, as an exception to
+CLAUDE.md §4.10. It amends ADR-021's colours and type, not its rules: the money-state palette, the token tests, the
+motion rules and the counted numbers all stand. No API, matching, verification or review behaviour changed.
+
+**Context.** The console worked but read as an internal admin tool: one generic dark card style, weak type
+hierarchy, a dashboard where every figure competed, a 100-row exception list with the case detail as an afterthought,
+a long instruction page for the test account, and nothing that showed how a number was reached.
+
+**Decision.**
+
+- **Identity.** Dark first (a stored choice still wins; the toggle is dark, light, system). Near-black surfaces, one
+  electric-blue accent (`--brand`) on solid primary buttons, no gradient fills. Headlines in a serif from the fonts
+  every OS ships (`--serif`), italic for the emphasis; mono "slash" labels; the sans for every figure so numbers stay
+  tabular. No webfont: the CSP stays `style-src 'self'` and no dependency was added.
+- **Hero = the system.** `Pipeline.tsx` draws the real pipeline: three sources, the rules engine (T1–T4), the fast
+  lane "proved by code, no AI", and the investigation lane (exception, AI agent, checker, you) with the refused loop.
+  Dots ride the lanes in the recorded 500-order run's own proportions (`flow.ts`); seven beats narrate it, each with a
+  figure read live from that run and labelled as such. Pause, keyboard, off-screen and reduced-motion handling as in
+  ADR-021.
+- **Architecture, one stage at a time.** `Architecture.tsx`: eight stages, plain words first, a small picture, the
+  detail behind a fold, and a real example from the 50-order demo run. The tool list is the agent's nine real tools.
+- **The run is a journey:** Overview, Exceptions (with a "needs you" badge), Audit trail, Reports.
+  - Overview: the gap and the match ring first; then "How this run flowed" (records in → proved by rules →
+    exceptions → proposals → verified → waiting for you, every count the server's); reasons that open the filtered
+    list; money issues; the remaining detail behind one segmented control instead of one long fold.
+  - Exceptions: a triage list (status views, a reason, largest at stake first, 25 to a page, all from the existing
+    `filter`, `reason`, `limit` and `offset` parameters) and a case file read as its chain: discrepancy, records with
+    each amount compared to the subject in paise, what the rules found, the AI's evidence, the proposal, the checker's
+    verdict, the human decision. A trail at the top shows where the case stands; a guard line says the AI only
+    proposes.
+  - Links can open the list on a view: `#/runs/<id>/exceptions?reason=CODE&filter=word` (validated in `parseHash`).
+- **Test account:** a four-step rail; a finished step folds to one line and can be opened again.
+
+**Alternatives.** A webfont (blocked by the CSP and a new dependency); an animation library (ADR-021 already does it
+in CSS); a separate marketing site (one URL is a requirement).
+
+**Consequences.**
+
+- The checker's "verified" count is match claims it re-computed; proposals that claim no match are counted apart
+  and said so, never folded into "verified".
+- The serif looks different per OS (Palatino on Windows, Iowan on macOS, Georgia elsewhere).
+- On a phone the hero shows the narration without the drawing.
+- `HeroStory.tsx`, `story.ts` and `FlowDiagram.tsx` are gone; `dash.css` was split into `charts.css` and `run.css`.

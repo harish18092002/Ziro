@@ -5,8 +5,9 @@ import { initTheme, watchTabVisibility } from './hooks';
 import './tokens.css';
 import './base.css';
 import './home.css';
-import './dash.css';
+import './charts.css';
 import './wizard.css';
+import './run.css';
 
 // The theme is set before the first render so the page does not flash the wrong colours.
 initTheme();

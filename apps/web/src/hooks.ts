@@ -50,14 +50,15 @@ export function useHash(): string {
 
 export type ThemeMode = 'system' | 'light' | 'dark';
 const THEME_KEY = 'ziro-theme';
-const NEXT_THEME: Record<ThemeMode, ThemeMode> = { system: 'light', light: 'dark', dark: 'system' };
+const NEXT_THEME: Record<ThemeMode, ThemeMode> = { dark: 'light', light: 'system', system: 'dark' };
 
 function storedTheme(): ThemeMode {
   try {
     const v = window.localStorage.getItem(THEME_KEY);
-    return v === 'light' || v === 'dark' ? v : 'system';
+    // Dark is the product's own look; a viewer who chose light or "follow the system" keeps that choice.
+    return v === 'light' || v === 'dark' || v === 'system' ? v : 'dark';
   } catch {
-    return 'system'; // private window, blocked storage: the page works without it
+    return 'dark'; // private window, blocked storage: the page works without it
   }
 }
 
@@ -83,8 +84,7 @@ export function useTheme(): [ThemeMode, () => void] {
       const next = NEXT_THEME[current];
       applyTheme(next);
       try {
-        if (next === 'system') window.localStorage.removeItem(THEME_KEY);
-        else window.localStorage.setItem(THEME_KEY, next);
+        window.localStorage.setItem(THEME_KEY, next);
       } catch {
         /* storage blocked: the choice lasts for this visit */
       }

@@ -3,6 +3,7 @@ import type { AgentStatus, ModelStatus, RazorpayStatus } from './api';
 import {
   agentBanner,
   dataChip,
+  exceptionsLink,
   failureSentence,
   inr,
   linkTo,
@@ -43,6 +44,30 @@ describe('sentence', () => {
     expect(sentence('UTR_MISSING_OR_GARBLED')).toBe('UTR missing or garbled');
     expect(sentence('UNKNOWN')).toBe('Unknown');
     expect(sentence('')).toBe('');
+  });
+});
+
+describe('exception list links', () => {
+  it('carries a reason and a filter, and reads them back', () => {
+    const link = exceptionsLink(RUN, { reason: 'FULL_REFUND', filter: 'waiting' });
+    expect(link).toBe(`#/runs/${RUN}/exceptions?reason=FULL_REFUND&filter=waiting`);
+    expect(parseHash(link)).toEqual({
+      page: 'run',
+      runId: RUN,
+      tab: 'exceptions',
+      itemId: null,
+      query: { reason: 'FULL_REFUND', filter: 'waiting' },
+    });
+  });
+
+  it('drops a malformed reason or filter, and adds no query when there is none', () => {
+    expect(parseHash(`#/runs/${RUN}/exceptions?reason=<script>&filter=WAIT`)).toEqual({
+      page: 'run',
+      runId: RUN,
+      tab: 'exceptions',
+      itemId: null,
+    });
+    expect(exceptionsLink(RUN, {})).toBe(`#/runs/${RUN}/exceptions`);
   });
 });
 

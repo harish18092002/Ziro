@@ -37,10 +37,14 @@ export function TestAccount() {
     <div className="ta page">
       <header className="ta-head">
         <div>
-          <h1>Your Razorpay test account</h1>
+          <span className="slash">Razorpay test mode · your data, nothing generated</span>
+          <h1 className="serif">
+            Reconcile your <em>test account.</em>
+          </h1>
           <p className="muted">
             Make test payments, refund some, then reconcile them against your ledger. Real Razorpay
-            test data: no real money moves.
+            test data: no real money moves. Want generated data instead?{' '}
+            <a href="#/">Run the built-in demo</a>.
           </p>
         </div>
         {ready && status.data?.keyId ? (
@@ -117,8 +121,36 @@ function Workspace({ aiReady, onStartOver }: { aiReady: boolean; onStartOver: ()
   const ledgerRows = ledger ? ledger.rows.inserted + ledger.rows.unchanged : 0;
   const bankRows = bank ? bank.rows.inserted + bank.rows.unchanged : 0;
 
+  const states: Record<StepId, 'wait' | 'now' | 'done'> = {
+    payments: imported ? 'done' : 'now',
+    ledger: ledger ? 'done' : imported ? 'now' : 'wait',
+    bank: bank || bankSkipped ? 'done' : ledger ? 'now' : 'wait',
+    match: matched ? 'done' : ledger && (bank || bankSkipped) ? 'now' : 'wait',
+  };
+
   return (
     <>
+      <ol className="ta-rail" aria-label="Progress">
+        {(
+          [
+            ['payments', 'Payments'],
+            ['ledger', 'Ledger'],
+            ['bank', 'Bank (optional)'],
+            ['match', 'Reconcile'],
+          ] as const
+        ).map(([id, label], i) => (
+          <li
+            key={id}
+            className={states[id]}
+            aria-current={states[id] === 'now' ? 'step' : undefined}
+          >
+            <span className="rail-dot">
+              {states[id] === 'done' ? <Icon name="check" size={13} /> : i + 1}
+            </span>
+            <span>{label}</span>
+          </li>
+        ))}
+      </ol>
       {runId !== null ? (
         <p className="ta-restart">
           <button type="button" className="ghost sm" onClick={onStartOver}>
@@ -130,16 +162,16 @@ function Workspace({ aiReady, onStartOver }: { aiReady: boolean; onStartOver: ()
       <Step
         n={1}
         title="Get payments into your test account"
-        state={imported ? 'done' : 'now'}
+        state={states.payments}
         summary={
           imported
             ? `${importedPayments} ${importedPayments === 1 ? 'payment' : 'payments'}${importedRefunds > 0 ? `, ${importedRefunds} ${importedRefunds === 1 ? 'refund' : 'refunds'}` : ''} imported`
             : null
         }
       >
-        {imported ? (
+        {imported || count > 0 ? (
           <details className="fold">
-            <summary>Make more test payments</summary>
+            <summary>How to make {count > 0 ? 'more ' : ''}test payments</summary>
             <HowToPay />
           </details>
         ) : (
@@ -192,7 +224,7 @@ function Workspace({ aiReady, onStartOver }: { aiReady: boolean; onStartOver: ()
       <Step
         n={2}
         title="Add your ledger"
-        state={ledger ? 'done' : imported ? 'now' : 'wait'}
+        state={states.ledger}
         summary={ledger ? `${ledgerRows} ${ledgerRows === 1 ? 'order' : 'orders'}` : null}
       >
         <p>
@@ -272,7 +304,7 @@ function Workspace({ aiReady, onStartOver }: { aiReady: boolean; onStartOver: ()
       <Step
         n={3}
         title="Add a bank statement (optional)"
-        state={bank || bankSkipped ? 'done' : ledger ? 'now' : 'wait'}
+        state={states.bank}
         summary={bank ? `${bankRows} lines` : bankSkipped ? 'skipped' : null}
       >
         <p>
@@ -344,7 +376,7 @@ function Workspace({ aiReady, onStartOver }: { aiReady: boolean; onStartOver: ()
       <Step
         n={4}
         title="Reconcile"
-        state={matched ? 'done' : ledger && (bank || bankSkipped) ? 'now' : 'wait'}
+        state={states.match}
         summary={
           matched
             ? `${matched.result.groups} matched, ${matched.result.exceptions} to look at`
@@ -415,17 +447,40 @@ function Step({
   summary: string | null;
   children: ReactNode;
 }) {
+  // A finished step folds to one line; it can be opened again (to import again, or change a file).
+  const [open, setOpen] = useState(false);
+  const shown = state === 'now' || (state === 'done' && open);
+  const bodyId = `wstep-${n}`;
   return (
-    <section className={`wstep ${state}`}>
+    <section className={`wstep ${state} ${shown ? 'open' : ''}`}>
       <span className="wnum" aria-hidden="true">
         {state === 'done' ? <Icon name="check" size={15} /> : n}
       </span>
       <div className="wbody">
-        <h2>
-          {title}
-          {summary ? <span className="wsum"> · {summary}</span> : null}
-        </h2>
-        {state === 'wait' ? <p className="muted">Waiting for the step above.</p> : children}
+        <div className="whead">
+          <h2>
+            {title}
+            {summary ? <span className="wsum"> · {summary}</span> : null}
+          </h2>
+          {state === 'done' ? (
+            <button
+              type="button"
+              className="ghost sm"
+              aria-expanded={open}
+              aria-controls={bodyId}
+              onClick={() => setOpen((v) => !v)}
+            >
+              {open ? 'Hide' : 'Change'}
+            </button>
+          ) : null}
+        </div>
+        {state === 'wait' ? (
+          <p className="muted">Unlocks after step {n - 1}.</p>
+        ) : shown ? (
+          <div id={bodyId} className="wcontent">
+            {children}
+          </div>
+        ) : null}
       </div>
     </section>
   );

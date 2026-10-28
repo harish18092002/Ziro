@@ -8,24 +8,26 @@ import {
   type Progress,
   type RazorpayStatus,
 } from './api';
+import { Architecture } from './Architecture';
 import { Logo } from './Brand';
-import { FlowDiagram } from './FlowDiagram';
 import { linkTo, maskKeyId } from './format';
-import { HeroStory } from './HeroStory';
-import { useInView, useLoad, useLoop } from './hooks';
+import { useInView, useLoad } from './hooks';
 import { Icon, type IconName } from './Icons';
 import {
   evalFacts,
   exceptionsLeft,
   falseMatches,
-  gapAfterRules,
   groupsProved,
   ordersMatched,
   proposalsRefused,
   truthFoundExactly,
 } from './metrics';
 import { MoneyStory } from './MoneyStory';
+import { Pipeline } from './Pipeline';
 import { InfoTip, Reveal, Stat, Term } from './ui';
+
+// The landing page, in the order a judge needs it: what Ziro is and how it works (the hero picture), why the
+// problem is hard, the architecture one stage at a time, the measured numbers, then the two ways to start.
 
 /** Which agent a demo run uses. "replay" is a live run on a server that answers from recorded model replies. */
 type AgentChoice = 'scripted' | 'live' | 'replay';
@@ -63,92 +65,195 @@ export function Home({ razorpay }: { razorpay: RazorpayStatus | null }) {
   const replay = offer?.featured.eval ?? null;
   const proof = useLoad<Overview>(replay ? `/runs/${replay}/overview` : null).data;
   const progress = useLoad<Progress>(replay ? `/runs/${replay}/progress` : null).data;
+  const starter = useRunStarter();
 
   return (
     <div className="landing page">
-      <Hero replay={replay} proof={proof} />
-      <WhyHard />
-      <HowItWorks proof={proof} progress={progress} demoRun={offer?.featured.demo ?? null} />
-      <Trust proof={proof} progress={progress} replay={replay} />
-      <StartHere offer={offer} agent={agent} razorpay={razorpay} replay={replay} />
+      <Hero
+        replay={replay}
+        proof={proof}
+        progress={progress}
+        busy={starter.busy}
+        problem={starter.problem}
+        onRun={() => void starter.start('scripted', false)}
+      />
+      <Problem />
+      <section className="section" id="architecture">
+        <div className="wrap">
+          <SectionTitle
+            n="02"
+            label="Architecture"
+            title={
+              <>
+                Code proves. AI investigates. <em>You decide.</em>
+              </>
+            }
+            sub="Eight stages, each with one owner. Pick a stage for what it does, the detail behind it, and a real example."
+          />
+          <Reveal>
+            <Architecture demoRun={offer?.featured.demo ?? null} />
+          </Reveal>
+        </div>
+      </section>
+      <Proof proof={proof} progress={progress} replay={replay} />
+      <StartHere
+        offer={offer}
+        agent={agent}
+        razorpay={razorpay}
+        replay={replay}
+        starter={starter}
+      />
       <Footer />
     </div>
   );
 }
 
-function ReplayLink({ replay }: { replay: string | null }) {
-  return replay ? (
-    <a className="button lg" href={linkTo(replay)}>
-      See a 500-order run
-    </a>
-  ) : (
-    <span className="button lg disabled">500-order run loading…</span>
-  );
-}
-
-function Hero({ replay, proof }: { replay: string | null; proof: Overview | null }) {
-  const [ref, running] = useLoop<HTMLElement>();
-  const gap = proof ? gapAfterRules(proof) : null;
-  return (
-    <section ref={ref} className="hero" data-loops={running ? 'on' : 'off'}>
-      <div className="aurora" aria-hidden="true">
-        <span className="a" />
-        <span className="b" />
-      </div>
-      <div className="wrap hero-grid">
-        <div className="hero-copy">
-          <span className="eyebrow">Reconciliation for Razorpay merchants</span>
-          <h1>
-            Every paisa, <span className="grad sweep">accounted for.</span>
-          </h1>
-          <p className="hero-sub">
-            Ziro matches your orders, Razorpay and your bank statement. Rules prove what they can,
-            AI explains the rest, and you approve.
-          </p>
-          <div className="cta-row">
-            <a className="button primary lg" href="#start">
-              Choose how to start <Icon name="arrow" size={16} />
-            </a>
-            <ReplayLink replay={replay} />
-          </div>
-          <p className="micro">Use a Razorpay test account, or built-in demo data. No sign-up.</p>
-        </div>
-        <figure className="hero-visual">
-          <HeroStory gapPaise={gap?.paise ?? null} />
-          <figcaption className="hero-caption">
-            {gap
-              ? `Gap after rules in the 500-order replay (${gap.value}). Goal: ₹0.00 once you review.`
-              : 'Goal: ₹0.00 unexplained once you review.'}
-          </figcaption>
-        </figure>
-      </div>
-    </section>
-  );
-}
-
-function Title({ children, sub }: { children: ReactNode; sub?: ReactNode }) {
+function SectionTitle({
+  n,
+  label,
+  title,
+  sub,
+}: {
+  n: string;
+  label: string;
+  title: ReactNode;
+  sub?: string;
+}) {
   return (
     <Reveal className="sec-title">
-      <h2>{children}</h2>
+      <span className="slash">
+        {n} {label}
+      </span>
+      <h2 className="serif">{title}</h2>
       {sub ? <p>{sub}</p> : null}
     </Reveal>
   );
 }
 
-function WhyHard() {
+function Hero({
+  replay,
+  proof,
+  progress,
+  busy,
+  problem,
+  onRun,
+}: {
+  replay: string | null;
+  proof: Overview | null;
+  progress: Progress | null;
+  busy: boolean;
+  problem: string | null;
+  onRun: () => void;
+}) {
   return (
-    <section className="section" id="why">
-      <div className="wrap why">
-        <Reveal>
-          <h2>The bank never shows what you sold.</h2>
-          <p className="why-text">
-            Razorpay keeps its <Term k="fee">fee</Term> and the <Term k="gstOnFee">GST on fee</Term>
-            , then pays many orders out together, <Term k="t2">T+2</Term>, as one{' '}
-            <Term k="settlement">settlement</Term>. The bank line shows one amount and a{' '}
-            <Term k="utr">UTR</Term>, not your orders. Matching that by hand is what makes month-end
-            slow.
+    <section className="hero">
+      <div className="hero-glow" aria-hidden="true" />
+      <div className="wrap">
+        <div className="hero-copy">
+          <span className="slash">AI finance controller for Razorpay merchants</span>
+          <h1 className="serif">
+            Every paisa, <em>accounted for.</em>
+          </h1>
+          <p className="hero-sub">
+            Ziro reconciles your order ledger, Razorpay and your bank statement. Code proves the
+            bulk to the paisa, an AI agent investigates what is left, a checker re-computes its
+            every claim, and you approve.
           </p>
-        </Reveal>
+          <div className="cta-row">
+            <button className="primary lg" onClick={onRun} disabled={busy}>
+              {busy ? (
+                <>
+                  <span className="spinner" /> Starting the demo…
+                </>
+              ) : (
+                <>
+                  Run the 50-order demo <Icon name="arrow" size={16} />
+                </>
+              )}
+            </button>
+            <a className="button lg" href="#architecture">
+              Explore the architecture
+            </a>
+          </div>
+          {problem ? (
+            <p className="problem" role="alert">
+              <Icon name="alert" size={15} /> {problem}
+            </p>
+          ) : (
+            <p className="micro">
+              Synthetic data, about two seconds, no sign-up.{' '}
+              {replay ? <a href={linkTo(replay)}>Or open the recorded 500-order run →</a> : null}
+            </p>
+          )}
+        </div>
+        <Pipeline facts={{ overview: proof, progress }} />
+      </div>
+    </section>
+  );
+}
+
+const PAINS: { icon: IconName; title: string; text: ReactNode }[] = [
+  {
+    icon: 'rupee',
+    title: 'Fees come off first',
+    text: (
+      <>
+        Razorpay keeps its <Term k="fee">fee</Term> and the <Term k="gstOnFee">GST on fee</Term>{' '}
+        before paying out.
+      </>
+    ),
+  },
+  {
+    icon: 'layers',
+    title: 'Payouts are batched',
+    text: (
+      <>
+        Many orders arrive <Term k="t2">T+2</Term> as one <Term k="settlement">settlement</Term>.
+      </>
+    ),
+  },
+  {
+    icon: 'bank',
+    title: 'The bank shows a UTR',
+    text: (
+      <>
+        One amount and a <Term k="utr">UTR</Term>, often garbled. Never your order numbers.
+      </>
+    ),
+  },
+];
+
+function Problem() {
+  return (
+    <section className="section" id="problem">
+      <div className="wrap problem-grid">
+        <div>
+          <SectionTitle
+            n="01"
+            label="The problem"
+            title={
+              <>
+                The bank never shows <em>what you sold.</em>
+              </>
+            }
+            sub="So finance teams match it by hand in Excel at month-end, and fee overcharges, missing payouts and double refunds slip through."
+          />
+          <ul className="pains">
+            {PAINS.map((p, i) => (
+              <Reveal key={p.title} i={i}>
+                <li>
+                  <span className="pain-ico">
+                    <Icon name={p.icon} size={16} />
+                  </span>
+                  <div>
+                    <b>{p.title}</b>
+                    <span>{p.text}</span>
+                  </div>
+                </li>
+              </Reveal>
+            ))}
+          </ul>
+        </div>
         <Reveal i={1}>
           <MoneyStory />
         </Reveal>
@@ -157,53 +262,7 @@ function WhyHard() {
   );
 }
 
-function HowItWorks({
-  proof,
-  progress,
-  demoRun,
-}: {
-  proof: Overview | null;
-  progress: Progress | null;
-  demoRun: string | null;
-}) {
-  return (
-    <section className="section alt" id="how">
-      <div className="wrap">
-        <Title sub="Most records are proved by code. Only the leftovers meet the AI, and you decide.">
-          What happens behind the scenes
-        </Title>
-        <Reveal>
-          <FlowDiagram proof={proof} progress={progress} demoRun={demoRun} />
-        </Reveal>
-      </div>
-    </section>
-  );
-}
-
-const TRUST: { icon: IconName; title: string; text: string }[] = [
-  {
-    icon: 'target',
-    title: 'Exact to the paisa',
-    text: 'No tolerance on amounts. If two records could fit, it stays an exception.',
-  },
-  {
-    icon: 'shield',
-    title: 'The AI cannot write',
-    text: 'It only proposes. A separate checker recomputes every claim and can refuse it.',
-  },
-  {
-    icon: 'user',
-    title: 'You approve',
-    text: 'Approve, or reject with a note. Every action is in the audit trail.',
-  },
-  {
-    icon: 'book',
-    title: 'Books-ready',
-    text: 'Fee leakage, late payouts and Tally vouchers come out of the same run.',
-  },
-];
-
-function Trust({
+function Proof({
   proof,
   progress,
   replay,
@@ -222,47 +281,47 @@ function Trust({
       ]
     : [];
   return (
-    <section className="section" id="trust">
+    <section className="section" id="proof">
       <div className="wrap">
-        <Title>Built so you can trust the numbers</Title>
-        <div className="trust-grid">
-          {TRUST.map((t, i) => (
-            <Reveal key={t.title} i={i}>
-              <div className="card trust-card">
-                <span className="ico">
-                  <Icon name={t.icon} size={18} />
-                </span>
-                <h3>{t.title}</h3>
-                <p>{t.text}</p>
-              </div>
-            </Reveal>
-          ))}
-        </div>
+        <SectionTitle
+          n="03"
+          label="Proof"
+          title={
+            <>
+              Numbers you can <em>reproduce.</em>
+            </>
+          }
+          sub="Every figure says what it counts and out of what. Press ⓘ for how."
+        />
         <Reveal>
-          <p className="strip-cap">
-            In the 500-order replay run {replay ? <a href={linkTo(replay)}>Open it →</a> : null}
-          </p>
-          <div className="stats-bar" aria-label="Numbers from the 500-order replay run">
+          <div className="proof-head">
+            <span className="slash">Recorded 500-order run</span>
+            {replay ? <a href={linkTo(replay)}>Open it →</a> : null}
+          </div>
+          <div className="proof-row">
             {proof ? (
               run.map((m) => <Stat key={m.label} m={m} />)
             ) : (
-              <div className="skel stats-skel" />
+              <div className="skel proof-skel" />
             )}
           </div>
-          <p className="strip-cap">
-            Against the generator’s answer key
+          <div className="proof-head">
+            <span className="slash">Against the generator’s answer key</span>
             <InfoTip
               label="How we measured"
               title="How we measured"
               text={`npm run eval scores the rules against the answer key the data generator writes: ${facts.run.orders} generated orders, seed ${facts.seed}${facts.repeats > 1 && facts.identical ? `, identical over ${facts.repeats} runs` : ''}.`}
             />
-          </p>
-          <div className="stats-bar cols-2">
+          </div>
+          <div className="proof-row two">
             {[truthFoundExactly(facts), falseMatches(facts)].map((m) => (
               <Stat key={m.label} m={m} />
             ))}
           </div>
-          <p className="fine">The AI agent’s own accuracy has not been measured yet.</p>
+          <p className="fine">
+            <Icon name="info" size={13} /> The AI agent’s own accuracy has not been measured yet;
+            these figures are the rules and the checker.
+          </p>
         </Reveal>
       </div>
     </section>
@@ -331,42 +390,42 @@ function StartHere({
   agent,
   razorpay,
   replay,
+  starter,
 }: {
   offer: Availability | null;
   agent: AgentStatus | null;
   razorpay: RazorpayStatus | null;
   replay: string | null;
+  starter: ReturnType<typeof useRunStarter>;
 }) {
   const state = pathState(razorpay);
-  const [ref, running] = useLoop<HTMLElement>();
-  const starter = useRunStarter();
   const options = agentOptions(offer, agent);
   const [picked, setPicked] = useState<AgentChoice | null>(null);
   const choice = picked ?? options[0]?.id ?? 'scripted';
   const [chaos, setChaos] = useState(false);
   return (
-    <section ref={ref} className="section start" id="start" data-loops={running ? 'on' : 'off'}>
-      <div className="aurora" aria-hidden="true">
-        <span className="a" />
-        <span className="b" />
-      </div>
+    <section className="section start" id="start">
       <div className="wrap">
-        <Title sub="Watch built-in demo data go through, or reconcile a Razorpay test account.">
-          Two ways to start
-        </Title>
+        <SectionTitle
+          n="04"
+          label="Try it"
+          title={
+            <>
+              Two ways in. <em>Same pipeline.</em>
+            </>
+          }
+          sub="Generated demo data in two seconds, or your own Razorpay test account. The labels never mix the two."
+        />
         <div className="paths">
           <article className="card path path-rec">
-            <span className="rec-badge">
-              <Icon name="sparkle" size={13} /> Recommended
-            </span>
-            <span className="path-tag demo">Demo data</span>
-            <h3>Built-in demo</h3>
-            <p>50 generated orders go through the whole pipeline in about two seconds. No keys.</p>
-            <ul className="path-list">
-              <li>Rules match what they can prove, to the paisa</li>
-              <li>The agent proposes, and a checker can refuse it</li>
-              <li>Every step is written to an audit log</li>
-            </ul>
+            <div className="path-top">
+              <span className="path-tag demo">
+                <Icon name="sparkle" size={13} /> Instant demo · synthetic data
+              </span>
+              <span className="rec-badge">Recommended</span>
+            </div>
+            <h3 className="serif">Built-in demo</h3>
+            <p>50 generated orders through the whole pipeline in about two seconds. No keys.</p>
             <fieldset className="path-choice">
               <legend>Who plays the agent</legend>
               {options.map((o) => (
@@ -393,7 +452,7 @@ function StartHere({
                   />
                   <span>
                     <b>Break three investigations</b>
-                    <small>Watch failures get handled.</small>
+                    <small>A timeout, no quota, a cut-off reply. Watch them get handled.</small>
                   </span>
                 </label>
               ) : null}
@@ -414,7 +473,11 @@ function StartHere({
                   </>
                 )}
               </button>
-              <ReplayLink replay={replay} />
+              {replay ? (
+                <a className="button lg ghost" href={linkTo(replay)}>
+                  500-order replay
+                </a>
+              ) : null}
             </div>
             {starter.problem ? (
               <p className="problem" role="alert">
@@ -422,17 +485,20 @@ function StartHere({
               </p>
             ) : (
               <p className="path-note">
-                Synthetic data. Each run plants two wrong proposals so you can watch the checker
-                refuse them.
+                Each run plants two wrong proposals, so you can watch the checker refuse them.
               </p>
             )}
           </article>
 
           <article className="card path">
-            <span className="path-tag real">Real test data</span>
-            <h3>Your Razorpay test account</h3>
+            <div className="path-top">
+              <span className="path-tag real">
+                <Icon name="shield" size={13} /> Razorpay test mode · your data
+              </span>
+            </div>
+            <h3 className="serif">Your test account</h3>
             <p>
-              Make test payments and refunds in the test account whose keys this server holds, then
+              Make test payments and refunds in the account whose keys this server holds, then
               reconcile them against a ledger.
             </p>
             <ul className="path-list">
@@ -440,7 +506,7 @@ function StartHere({
               <li>Bring your own ledger, or start one from its orders</li>
               <li>Nothing made up: an empty account stays empty</li>
             </ul>
-            <div className="path-choice path-status">
+            <div className="path-status">
               <span className={`status-dot ${state === 'ready' ? 'ok' : ''}`} />
               <p>
                 {realNote(state, razorpay?.keyId ?? null)}
@@ -462,7 +528,7 @@ function StartHere({
                 </a>
               )}
             </div>
-            <p className="path-note">Razorpay test mode only. Nothing here moves real money.</p>
+            <p className="path-note">Test mode only. Nothing here moves real money.</p>
           </article>
         </div>
       </div>
@@ -486,20 +552,22 @@ function Footer() {
           <span>Every paisa, accounted for.</span>
         </div>
         <nav aria-label="Footer">
-          <a href="#how">How it works</a>
-          <a href="#trust">Trust</a>
-          <a href="#start">Start</a>
+          <a href="#architecture">Architecture</a>
+          <a href="#proof">Proof</a>
+          <a href="#start">Try it</a>
           <a href={LINKS.github}>GitHub</a>
           <a href={LINKS.video}>Demo video</a>
           <a href={LINKS.evals}>EVALS.md</a>
         </nav>
-        <p className="footer-fine">
-          Test mode only · synthetic data · built for the Razorpay AI Builders application
-        </p>
       </div>
       <div ref={ref} className={`watermark ${seen ? 'in' : ''}`} aria-hidden="true">
-        <span>Ziro</span>
+        <span className="serif">
+          Ziro <em>₹0.00</em>
+        </span>
       </div>
+      <p className="wrap footer-fine">
+        Razorpay test mode only · synthetic data · built for the Razorpay AI Builders application
+      </p>
     </footer>
   );
 }

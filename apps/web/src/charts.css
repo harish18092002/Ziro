@@ -1,0 +1,388 @@
+/* Charts and tables (Charts.tsx): kept from the previous console, restyled through the tokens. */
+.ring-meter {
+  display: grid;
+  justify-items: center;
+  gap: var(--sp-1);
+  text-align: center;
+}
+.ring-svg {
+  width: 124px;
+  height: 124px;
+}
+/* SVG strokes may draw: stroke-dashoffset repaints this one ring and moves nothing around it */
+.ring-fill {
+  transition: stroke-dashoffset var(--dur-count) var(--ease-out);
+}
+.ring-text {
+  font-size: var(--fs-3xl);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+.ring-words {
+  display: grid;
+  gap: 1px;
+  font-size: var(--fs-base);
+}
+.ring-words span {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+/* ---------- cards, legend ---------- */
+.card-head {
+  margin-bottom: var(--sp-3);
+}
+.card-title {
+  font-size: var(--fs-md);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.card-sub {
+  margin-top: 1px;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+.card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--hair);
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-4);
+  margin: 0 0 var(--sp-3);
+  padding: 0;
+  list-style: none;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.legend b {
+  color: var(--ink);
+}
+.legend .legend-ico {
+  margin-left: -2px;
+  color: var(--ink-3);
+}
+.mini-title {
+  margin: var(--sp-4) 0 var(--sp-2);
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.empty {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+  color: var(--ink-2);
+}
+.empty svg {
+  color: var(--good-text);
+}
+.block {
+  margin-top: var(--sp-3);
+}
+.count-line {
+  font-size: var(--fs-sm);
+}
+.figure {
+  font-size: var(--fs-3xl);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+.figure-sub {
+  margin: 2px 0 var(--sp-3);
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+.mini-rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-base);
+}
+.mini-rows li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border-top: 1px solid var(--hair);
+}
+.mini-rows span {
+  color: var(--ink-2);
+}
+.mini-rows b {
+}
+
+/* ---------- stacked bars ---------- */
+.sbars {
+  display: grid;
+  gap: var(--sp-3);
+}
+.sbar-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-1);
+  font-size: var(--fs-base);
+}
+.sbar-head a,
+.sbar-head span {
+  color: var(--ink);
+  text-decoration: none;
+}
+.sbar-head a:hover {
+  color: var(--link);
+  text-decoration: underline;
+}
+.sbar-head b {
+  color: var(--ink-3);
+}
+.sbar {
+  height: 16px;
+  border-radius: var(--r-xs);
+  overflow: hidden;
+}
+.sbars.tall .sbar {
+  height: 20px;
+}
+/* the segments keep their real widths; the whole bar slides in from the left the first time it is seen */
+.sbar-track {
+  display: flex;
+  gap: 2px;
+  height: 100%;
+  transform: translateX(-101%);
+  transition: transform var(--dur-grow) var(--ease-out);
+}
+.sbars.in .sbar-track {
+  transform: none;
+}
+.sbar-seg {
+  flex: 0 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  outline-offset: -2px;
+}
+.sbar-seg:hover,
+.sbar-seg:focus-visible {
+  filter: brightness(1.12) saturate(1.05);
+}
+.sbar-in {
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity var(--dur-slow) ease var(--dur-reveal);
+}
+.sbars.in .sbar-in {
+  opacity: 1;
+}
+
+/* ---------- horizontal bars & meter ---------- */
+.bars {
+  display: grid;
+  gap: var(--sp-3);
+}
+.bar-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-1);
+}
+.bar-label {
+  min-width: 0;
+  font-size: var(--fs-base);
+}
+.bar-label a {
+  color: var(--ink);
+}
+.bar-label small {
+  display: block;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+.bar-head b {
+  flex: none;
+  font-size: var(--fs-base);
+}
+.bar-track {
+  position: relative;
+  height: 8px;
+  border-radius: var(--r-xs);
+  background: color-mix(in srgb, var(--line) 30%, transparent);
+}
+.bar-track::before {
+  content: '';
+  position: absolute;
+  inset: -9px 0;
+}
+.bar-clip {
+  display: block;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 0 var(--r-xs) var(--r-xs) 0;
+}
+/* the fill keeps its real width inside the clip and slides in from the left */
+.bar-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: translateX(-100%);
+  transition: transform var(--dur-grow) var(--ease-out);
+}
+.bars.in .bar-fill {
+  transform: none;
+}
+.bar-track:hover .bar-fill,
+.bar-track:focus-visible .bar-fill {
+  filter: brightness(1.12);
+}
+.meter {
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--meter) 18%, var(--card));
+  overflow: hidden;
+}
+.meter span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: var(--r-pill);
+  background: var(--meter);
+  transform: translateX(-100%);
+  transition: transform var(--dur-grow) var(--ease-out);
+}
+
+/* ---------- tooltip ---------- */
+.tip {
+  position: fixed;
+  z-index: var(--z-tooltip);
+  min-width: 140px;
+  max-width: 280px;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--ink);
+  color: var(--page);
+  box-shadow: var(--shadow-md);
+  font-size: var(--fs-sm);
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 14px));
+  animation: tip-in var(--dur-fast) var(--ease-out) both;
+}
+.tip-title {
+  margin-bottom: 3px;
+  font-weight: 700;
+}
+.tip-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: 2px;
+}
+.tip-row b {
+}
+.tip-row span {
+  opacity: 0.75;
+}
+.tip-key {
+  flex: none;
+  width: 12px;
+  height: 3px;
+  border-radius: var(--r-xs);
+}
+@keyframes tip-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ---------- tables ---------- */
+.table-wrap {
+  margin: 2px -6px 0;
+  padding: 0 var(--sp-1);
+  overflow-x: auto;
+  transition: opacity var(--dur-base);
+}
+.table-wrap.loading {
+  opacity: 0.45;
+}
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-base);
+}
+.data th {
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: var(--fs-2xs);
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.data td {
+  padding: var(--sp-2) var(--sp-2);
+  border-bottom: 1px solid var(--hair);
+  vertical-align: middle;
+}
+.data .n {
+  text-align: right;
+  white-space: nowrap;
+}
+.data tbody tr {
+  transition: background var(--dur-fast);
+}
+.data tbody tr:hover {
+  background: var(--card-2);
+}
+.data tbody tr:last-child td {
+  border-bottom: 0;
+}
+.rows tr.sel,
+.rows tr.sel:hover {
+  background: var(--brand-soft);
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+.rows .pill {
+  white-space: nowrap;
+}
+.row-skel {
+  height: 36px;
+  margin-top: var(--sp-2);
+}
+.row-sub {
+  display: block;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+/* a legend swatch */
+.sw {
+  display: inline-block;
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+}

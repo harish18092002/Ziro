@@ -26,27 +26,27 @@
   color-scheme: light;
 
   /* ---- surfaces and ink ---- */
-  --page: #f9f9f7;
-  --card: #fcfcfb;
-  --card-2: #f3f3f0;
-  --card-3: #ecebe6;
-  --hair: #e1e0d9;
-  --line: #c3c2b7;
-  --ring: rgba(11, 11, 11, 0.1);
-  --ink: #0b0b0b;
-  --ink-2: #52514e;
-  --ink-3: #66655f;
-  --axis: #898781;
+  --page: #f5f6f9;
+  --card: #ffffff;
+  --card-2: #eef0f5;
+  --card-3: #e3e6ee;
+  --hair: #e1e4ec;
+  --line: #c6ccd9;
+  --ring: rgba(10, 12, 18, 0.08);
+  --ink: #0a0c12;
+  --ink-2: #434a5a;
+  --ink-3: #596073;
+  --axis: #8a91a3;
   --good-text: #006300;
 
   /* ---- brand: the blue to violet gradient (logo, hero glow, "accounted for.") ---- */
-  --brand: #256abf;
-  --brand-hover: #1c5cab;
+  --brand: #2f45ff;
+  --brand-hover: #2234e0;
   --on-brand: #ffffff;
-  --link: #256abf;
-  --brand-soft: rgba(42, 120, 214, 0.1);
-  --brand-blue: #2a78d6;
-  --brand-violet: #6250d6;
+  --link: #2a3fe6;
+  --brand-soft: rgba(47, 69, 255, 0.09);
+  --brand-blue: #2f45ff;
+  --brand-violet: #6a4cf0;
 
   /* ---- money states: green means done ---- */
   --st-rules: #5ac576;
@@ -63,32 +63,32 @@
   --on-st-ignored: #0b0b0b;
 
   /* ---- actors in the flow: who does the step ---- */
-  --actor-code: #2a78d6;
-  --actor-ai: #6539c2;
+  --actor-code: #2f45ff;
+  --actor-ai: #7a4ff0;
   --actor-you: #eda100;
 
   /* ---- kinds of money (not states): what reaches the bank, and what Razorpay keeps ---- */
-  --kind-net: #2a78d6;
-  --kind-fee: #6250d6;
+  --kind-net: #2f45ff;
+  --kind-fee: #7a4ff0;
 
   /* ---- ordinal blue ramp (rule tiers, strictest first) ---- */
-  --ord-1: #1c5cab;
-  --ord-2: #2a78d6;
-  --ord-3: #5598e7;
-  --ord-4: #86b6ef;
+  --ord-1: #1a28b8;
+  --ord-2: #2f45ff;
+  --ord-3: #6c80ff;
+  --ord-4: #a6b3ff;
 
   /* ---- shadows and glows ---- */
-  --shadow-sm: 0 1px 2px rgba(11, 11, 11, 0.06), 0 1px 1px rgba(11, 11, 11, 0.04);
-  --shadow-md: 0 14px 32px -14px rgba(11, 11, 11, 0.22), 0 2px 6px rgba(11, 11, 11, 0.06);
-  --shadow-lg: 0 24px 48px -20px rgba(11, 11, 11, 0.28), 0 4px 10px rgba(11, 11, 11, 0.06);
-  --shadow-drop: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.07));
-  --blob-a: rgba(42, 120, 214, 0.22);
-  --blob-b: rgba(98, 80, 214, 0.18);
+  --shadow-sm: 0 1px 2px rgba(10, 12, 18, 0.05);
+  --shadow-md: 0 12px 28px -14px rgba(10, 12, 18, 0.2), 0 2px 6px rgba(10, 12, 18, 0.05);
+  --shadow-lg: 0 28px 60px -24px rgba(10, 12, 18, 0.28), 0 4px 10px rgba(10, 12, 18, 0.05);
+  --shadow-drop: drop-shadow(0 6px 14px rgba(10, 12, 18, 0.08));
+  --blob-a: rgba(47, 69, 255, 0.14);
+  --blob-b: rgba(106, 76, 240, 0.08);
 }
 
 /* ---- tokens that do not change with the theme ---- */
 :root {
-  --grad-brand: linear-gradient(100deg, var(--brand-blue), var(--brand-violet) 70%);
+  --grad-brand: linear-gradient(100deg, var(--brand-blue), var(--brand-violet) 85%);
   --grad-brand-diag: linear-gradient(
     135deg,
     var(--brand),
@@ -102,21 +102,26 @@
   --critical: #d03b3b;
 
   /* type */
-  --font: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font:
+    'Inter', 'Segoe UI Variable Text', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* editorial display: the serif headlines (italic for the emphasis), from the fonts every OS ships */
+  --serif:
+    'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', 'URW Palladio L', Georgia,
+    serif;
   --mono: ui-monospace, 'Cascadia Mono', 'SF Mono', Menlo, Consolas, monospace;
   --fs-2xs: 0.6875rem; /* 11px: labels inside bars and badges only */
   --fs-xs: 0.8125rem; /* 13px: the smallest caption */
   --fs-sm: 0.8125rem; /* 13px */
-  --fs-base: 0.875rem; /* 14px: body */
+  --fs-base: 0.9375rem; /* 15px: body */
   --fs-md: 1rem; /* 16px */
   --fs-lg: 1.125rem; /* 18px */
   --fs-xl: 1.25rem; /* 20px */
   --fs-2xl: 1.5rem; /* 24px */
   --fs-3xl: 1.75rem; /* 28px */
-  --fs-h2: clamp(1.4rem, 2.6vw, 1.9rem);
-  --fs-h1: clamp(1.35rem, 2.4vw, 1.7rem);
-  --fs-display: clamp(2rem, 4.2vw, 3rem);
-  --fs-figure: clamp(2.1rem, 4.4vw, 3rem);
+  --fs-h2: clamp(1.9rem, 4vw, 3rem);
+  --fs-h1: clamp(1.6rem, 3vw, 2.25rem);
+  --fs-display: clamp(2.6rem, 7vw, 5.4rem);
+  --fs-figure: clamp(2.4rem, 5vw, 3.6rem);
 
   /* spacing: an 8-point grid with a 4-point half step */
   --sp-1: 4px;
@@ -132,9 +137,9 @@
 
   /* radius */
   --r-xs: 4px;
-  --r-sm: 8px;
-  --r-md: 12px;
-  --r-lg: 16px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
   --r-pill: 999px;
 
   /* stacking */
@@ -169,25 +174,25 @@
 @media (prefers-color-scheme: dark) {
   :root:where(:not([data-theme='light'])) {
     color-scheme: dark;
-    --page: #0d0d0d;
-    --card: #1a1a19;
-    --card-2: #222220;
-    --card-3: #2a2a28;
-    --hair: #2c2c2a;
-    --line: #383835;
-    --ring: rgba(255, 255, 255, 0.1);
-    --ink: #f0efec;
-    --ink-2: #c3c2b7;
-    --ink-3: #a3a299;
-    --axis: #898781;
-    --good-text: #0ca30c;
-    --brand: #3987e5;
-    --brand-hover: #6da7ec;
-    --on-brand: #0b0b0b;
-    --link: #6da7ec;
-    --brand-soft: rgba(57, 135, 229, 0.16);
-    --brand-blue: #3987e5;
-    --brand-violet: #9085e9;
+    --page: #06070b;
+    --card: #0c0e14;
+    --card-2: #12151d;
+    --card-3: #191d28;
+    --hair: #1c2030;
+    --line: #2a3043;
+    --ring: rgba(255, 255, 255, 0.07);
+    --ink: #f3f5fa;
+    --ink-2: #b7bdcc;
+    --ink-3: #8e96a9;
+    --axis: #646c80;
+    --good-text: #3ccf6b;
+    --brand: #3d55ff;
+    --brand-hover: #5a6fff;
+    --on-brand: #ffffff;
+    --link: #97a6ff;
+    --brand-soft: rgba(77, 99, 255, 0.15);
+    --brand-blue: #4d63ff;
+    --brand-violet: #9a80ff;
     --st-rules: #67d283;
     --on-st-rules: #0b0b0b;
     --st-ai: #1aa291;
@@ -200,45 +205,45 @@
     --on-st-open: #0b0b0b;
     --st-ignored: #55544f;
     --on-st-ignored: #ffffff;
-    --actor-code: #3987e5;
-    --actor-ai: #7046cf;
-    --actor-you: #c98500;
-    --kind-net: #3987e5;
-    --kind-fee: #9085e9;
-    --ord-1: #9ec5f4;
-    --ord-2: #6da7ec;
-    --ord-3: #3987e5;
-    --ord-4: #256abf;
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 18px 36px -14px rgba(0, 0, 0, 0.7), 0 2px 6px rgba(0, 0, 0, 0.4);
-    --shadow-lg: 0 28px 56px -20px rgba(0, 0, 0, 0.8), 0 4px 10px rgba(0, 0, 0, 0.45);
-    --shadow-drop: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.35));
-    --blob-a: rgba(57, 135, 229, 0.26);
-    --blob-b: rgba(144, 133, 233, 0.22);
+    --actor-code: #5a6fff;
+    --actor-ai: #9a80ff;
+    --actor-you: #d99400;
+    --kind-net: #5a6fff;
+    --kind-fee: #9a80ff;
+    --ord-1: #c3cbff;
+    --ord-2: #909fff;
+    --ord-3: #5a6fff;
+    --ord-4: #3346e6;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 18px 40px -16px rgba(0, 0, 0, 0.8), 0 2px 6px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 32px 70px -24px rgba(0, 0, 0, 0.9), 0 4px 12px rgba(0, 0, 0, 0.5);
+    --shadow-drop: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.45));
+    --blob-a: rgba(61, 85, 255, 0.22);
+    --blob-b: rgba(154, 128, 255, 0.1);
   }
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --page: #0d0d0d;
-  --card: #1a1a19;
-  --card-2: #222220;
-  --card-3: #2a2a28;
-  --hair: #2c2c2a;
-  --line: #383835;
-  --ring: rgba(255, 255, 255, 0.1);
-  --ink: #f0efec;
-  --ink-2: #c3c2b7;
-  --ink-3: #a3a299;
-  --axis: #898781;
-  --good-text: #0ca30c;
-  --brand: #3987e5;
-  --brand-hover: #6da7ec;
-  --on-brand: #0b0b0b;
-  --link: #6da7ec;
-  --brand-soft: rgba(57, 135, 229, 0.16);
-  --brand-blue: #3987e5;
-  --brand-violet: #9085e9;
+  --page: #06070b;
+  --card: #0c0e14;
+  --card-2: #12151d;
+  --card-3: #191d28;
+  --hair: #1c2030;
+  --line: #2a3043;
+  --ring: rgba(255, 255, 255, 0.07);
+  --ink: #f3f5fa;
+  --ink-2: #b7bdcc;
+  --ink-3: #8e96a9;
+  --axis: #646c80;
+  --good-text: #3ccf6b;
+  --brand: #3d55ff;
+  --brand-hover: #5a6fff;
+  --on-brand: #ffffff;
+  --link: #97a6ff;
+  --brand-soft: rgba(77, 99, 255, 0.15);
+  --brand-blue: #4d63ff;
+  --brand-violet: #9a80ff;
   --st-rules: #67d283;
   --on-st-rules: #0b0b0b;
   --st-ai: #1aa291;
@@ -251,19 +256,19 @@
   --on-st-open: #0b0b0b;
   --st-ignored: #55544f;
   --on-st-ignored: #ffffff;
-  --actor-code: #3987e5;
-  --actor-ai: #7046cf;
-  --actor-you: #c98500;
-  --kind-net: #3987e5;
-  --kind-fee: #9085e9;
-  --ord-1: #9ec5f4;
-  --ord-2: #6da7ec;
-  --ord-3: #3987e5;
-  --ord-4: #256abf;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 18px 36px -14px rgba(0, 0, 0, 0.7), 0 2px 6px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 28px 56px -20px rgba(0, 0, 0, 0.8), 0 4px 10px rgba(0, 0, 0, 0.45);
-  --shadow-drop: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.35));
-  --blob-a: rgba(57, 135, 229, 0.26);
-  --blob-b: rgba(144, 133, 233, 0.22);
+  --actor-code: #5a6fff;
+  --actor-ai: #9a80ff;
+  --actor-you: #d99400;
+  --kind-net: #5a6fff;
+  --kind-fee: #9a80ff;
+  --ord-1: #c3cbff;
+  --ord-2: #909fff;
+  --ord-3: #5a6fff;
+  --ord-4: #3346e6;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 18px 40px -16px rgba(0, 0, 0, 0.8), 0 2px 6px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 32px 70px -24px rgba(0, 0, 0, 0.9), 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-drop: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.45));
+  --blob-a: rgba(61, 85, 255, 0.22);
+  --blob-b: rgba(154, 128, 255, 0.1);
 }

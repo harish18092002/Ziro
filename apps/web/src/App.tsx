@@ -35,6 +35,9 @@ function Shell() {
   const offerTest = razorpay !== null && (razorpay.source === 'testmode' || razorpay.importsOpen);
   return (
     <>
+      <a className="skip" href="#main">
+        Skip to content
+      </a>
       <header className="shell-top">
         <div className="shell-in">
           <a href="#/" className="brand" aria-label="Ziro, home">
@@ -46,13 +49,20 @@ function Shell() {
           </a>
           {home ? (
             <nav className="nav" aria-label="Sections">
-              <a href="#how">How it works</a>
-              <a href="#trust">Trust</a>
-              <a href="#start">Start</a>
+              <a href="#problem">Problem</a>
+              <a href="#architecture">Architecture</a>
+              <a href="#proof">Proof</a>
             </nav>
-          ) : null}
+          ) : (
+            <nav className="nav" aria-label="Where you are">
+              <a href="#/">Home</a>
+              <span className="crumb" aria-current="page">
+                {route.page === 'test' ? 'Test account' : 'Reconciliation run'}
+              </span>
+            </nav>
+          )}
           <div className="shell-right">
-            <span className="env-chip">
+            <span className="env-chip" title="Where the data on screen comes from">
               <span className="live-dot" /> {dataChip(razorpay)}
             </span>
             <button
@@ -72,7 +82,7 @@ function Shell() {
             ) : null}
             {home ? (
               <a className="button primary sm" href="#start">
-                Start
+                Try Ziro
               </a>
             ) : (
               <a className="button sm" href="#/">
@@ -83,7 +93,7 @@ function Shell() {
         </div>
       </header>
       <AgentBanner />
-      <main className={home ? 'bleed' : ''}>
+      <main id="main" className={home ? 'bleed' : ''}>
         {route.page === 'home' ? (
           <Home razorpay={razorpay} />
         ) : route.page === 'test' ? (

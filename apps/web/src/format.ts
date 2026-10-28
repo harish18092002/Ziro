@@ -33,7 +33,12 @@ export const range = (text: string): string => text.replace(/(\d)\s*-\s*(\d)/g, 
 export type Route =
   | { page: 'home' }
   | { page: 'test' }
-  | { page: 'run'; runId: string; tab: Tab; itemId: string | null };
+  | { page: 'run'; runId: string; tab: Tab; itemId: string | null; query?: ListQuery };
+/** A starting view for the exception list, carried in the link: `?reason=FULL_REFUND&filter=waiting`. */
+export interface ListQuery {
+  reason?: string;
+  filter?: string;
+}
 export type Tab = 'summary' | 'exceptions' | 'audit' | 'downloads';
 const TABS: readonly Tab[] = ['summary', 'exceptions', 'audit', 'downloads'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -43,19 +48,42 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * `#/runs/<uuid>/<tab>[/<exception uuid>]` a run; anything else the home page.
  */
 export function parseHash(hash: string): Route {
-  const [, root, runId, tab, itemId] = hash.replace(/^#/, '').split('/');
+  const [path = '', search = ''] = hash.replace(/^#/, '').split('?');
+  const [, root, runId, tab, itemId] = path.split('/');
   if ((root === 'test' || root === 'new') && (runId === undefined || runId === '')) {
     return { page: 'test' };
   }
   if (root !== 'runs' || runId === undefined || !UUID.test(runId)) return { page: 'home' };
   const chosen = TABS.find((t) => t === tab) ?? 'summary';
+  const query = listQuery(search);
   return {
     page: 'run',
     runId,
     tab: chosen,
     itemId: itemId !== undefined && UUID.test(itemId) ? itemId : null,
+    ...(query === null ? {} : { query }),
   };
 }
+
+/** Only well-formed codes are kept: a reason is an upper-case code, a filter a lower-case word. */
+function listQuery(search: string): ListQuery | null {
+  const params = new URLSearchParams(search);
+  const reason = params.get('reason');
+  const filter = params.get('filter');
+  const out: ListQuery = {};
+  if (reason !== null && /^[A-Z_]{2,40}$/.test(reason)) out.reason = reason;
+  if (filter !== null && /^[a-z]{2,20}$/.test(filter)) out.filter = filter;
+  return out.reason === undefined && out.filter === undefined ? null : out;
+}
+
+/** The exception list opened on a reason or a filter. */
+export const exceptionsLink = (runId: string, query: ListQuery): string => {
+  const params = new URLSearchParams();
+  if (query.reason) params.set('reason', query.reason);
+  if (query.filter) params.set('filter', query.filter);
+  const search = params.toString();
+  return `${linkTo(runId, 'exceptions')}${search ? `?${search}` : ''}`;
+};
 
 export const linkTo = (runId: string, tab: Tab = 'summary', itemId?: string): string =>
   `#/runs/${runId}/${tab}${itemId ? `/${itemId}` : ''}`;
