@@ -258,23 +258,6 @@
   border-radius: var(--r-sm);
   color: var(--link);
 }
-/* glossary tips in prose and in the figure span the block, so they never leave the screen */
-.pains .tip-wrap,
-.money-story .tip-wrap {
-  position: static;
-}
-.pains li,
-.money-story {
-  position: relative;
-}
-.pains .tip-pop,
-.money-story .tip-pop {
-  left: 0;
-  right: 0;
-  width: auto;
-  max-width: none;
-  transform: none;
-}
 .arch-plain {
   max-width: 62ch;
   color: var(--ink-2);

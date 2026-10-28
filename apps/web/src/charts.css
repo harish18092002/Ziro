@@ -275,8 +275,7 @@
 
 /* ---------- tooltip ---------- */
 .tip {
-  position: fixed;
-  z-index: var(--z-tooltip);
+  width: max-content;
   min-width: 140px;
   max-width: 280px;
   padding: var(--sp-2) var(--sp-3);
@@ -285,9 +284,6 @@
   color: var(--page);
   box-shadow: var(--shadow-md);
   font-size: var(--fs-sm);
-  pointer-events: none;
-  transform: translate(-50%, calc(-100% - 14px));
-  animation: tip-in var(--dur-fast) var(--ease-out) both;
 }
 .tip-title {
   margin-bottom: 3px;

@@ -556,11 +556,14 @@ textarea {
   box-shadow: none;
   color: var(--link);
 }
-.tip-pop {
-  position: absolute;
-  bottom: calc(100% + var(--sp-2));
-  left: 50%;
+/* every tooltip box: drawn at the end of <body> and placed in viewport pixels by <Floating> (ui.tsx) */
+.floating {
+  position: fixed;
   z-index: var(--z-tooltip);
+  pointer-events: none;
+  animation: tip-in var(--dur-fast) var(--ease-out) both;
+}
+.tip-pop {
   display: grid;
   gap: 2px;
   width: max-content;
@@ -574,8 +577,6 @@ textarea {
   font-weight: 400;
   line-height: 1.45;
   text-align: left;
-  transform: translateX(-50%);
-  animation: tip-in var(--dur-fast) var(--ease-out) both;
 }
 .tip-pop b {
   font-size: var(--fs-xs);

@@ -1,10 +1,11 @@
-import { type FocusEvent, type PointerEvent, type ReactNode, useState } from 'react';
+import { type FocusEvent, type PointerEvent, type ReactNode, useCallback, useState } from 'react';
 import { labelFits, ratio, segmentWeights } from './chart-math';
 import { percent } from './format';
 import { useEased, useInView } from './hooks';
 import { Icon, type IconName } from './Icons';
 import { MOTION } from './motion';
-import { cssVars } from './ui';
+import type { TipAnchor } from './place';
+import { anchorOf, cssVars, Floating } from './ui';
 
 // Charts built from plain HTML and SVG, to the charting method: thin marks, a 2px surface gap between
 // touching fills, values written out (never colour alone), a legend for two or more series, a tooltip on
@@ -22,42 +23,40 @@ export interface TipContent {
   rows: TipRow[];
 }
 interface TipState {
-  x: number;
-  y: number;
+  anchor: TipAnchor;
   content: TipContent;
 }
 
-/** One tooltip per chart. `bind(content)` makes any element a hover and focus target for it. */
+/**
+ * One tooltip per chart. `bind(content)` makes any element a hover and focus target for it. On hover it follows
+ * the pointer across the mark but sits on the mark's top edge, so it does not jitter up and down.
+ */
 function useTooltip() {
   const [tip, setTip] = useState<TipState | null>(null);
+  const hide = useCallback(() => setTip(null), []);
   const bind = (content: TipContent) => ({
     tabIndex: 0,
     onPointerMove: (e: PointerEvent<HTMLElement>) =>
-      setTip({ x: e.clientX, y: e.clientY, content }),
-    onPointerLeave: () => setTip(null),
-    onFocus: (e: FocusEvent<HTMLElement>) => {
-      const box = e.currentTarget.getBoundingClientRect();
-      setTip({ x: box.left + box.width / 2, y: box.top, content });
-    },
-    onBlur: () => setTip(null),
+      setTip({ anchor: anchorOf(e.currentTarget, e.clientX), content }),
+    onPointerLeave: hide,
+    onFocus: (e: FocusEvent<HTMLElement>) => setTip({ anchor: anchorOf(e.currentTarget), content }),
+    onBlur: hide,
   });
-  return { bind, node: tip ? <TooltipView tip={tip} /> : null };
-}
-
-function TooltipView({ tip }: { tip: TipState }) {
-  const x = Math.min(Math.max(tip.x, 120), window.innerWidth - 120);
-  return (
-    <div className="tip" role="tooltip" style={{ left: x, top: tip.y }}>
-      <div className="tip-title">{tip.content.title}</div>
-      {tip.content.rows.map((r) => (
-        <div className="tip-row" key={r.label}>
-          {r.color ? <i className="tip-key" style={{ background: r.color }} /> : null}
-          <b>{r.value}</b>
-          <span>{r.label}</span>
-        </div>
-      ))}
-    </div>
-  );
+  return {
+    bind,
+    node: tip ? (
+      <Floating anchor={tip.anchor} className="tip" onDismiss={hide}>
+        <div className="tip-title">{tip.content.title}</div>
+        {tip.content.rows.map((r) => (
+          <div className="tip-row" key={r.label}>
+            {r.color ? <i className="tip-key" style={{ background: r.color }} /> : null}
+            <b>{r.value}</b>
+            <span>{r.label}</span>
+          </div>
+        ))}
+      </Floating>
+    ) : null,
+  };
 }
 
 // ---------- card, legend, table twin ----------

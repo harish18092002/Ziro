@@ -1,10 +1,20 @@
-import { type CSSProperties, type ReactNode, useId, useState } from 'react';
+import {
+  type CSSProperties,
+  type ReactNode,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { compact, scaleBig, toBig } from './chart-math';
 import { inr } from './format';
 import { useEased, useInView } from './hooks';
 import { Icon } from './Icons';
 import { GLOSSARY, type TermKey } from './glossary';
 import type { Metric } from './metrics';
+import { type Placement, placeTip, type TipAnchor } from './place';
 
 /** A style object that carries CSS custom properties (`--i`, `--w`): React sets them through the CSSOM. */
 export const cssVars = (vars: Record<string, string | number>): CSSProperties => vars;
@@ -77,6 +87,76 @@ export function Banner({
   );
 }
 
+/** The anchor for an element: its centre, or `x` (the pointer) when given, and its top and bottom edges. */
+export function anchorOf(el: Element, x?: number): TipAnchor {
+  const box = el.getBoundingClientRect();
+  return { x: x ?? box.left + box.width / 2, top: box.top, bottom: box.bottom };
+}
+
+/**
+ * Every tooltip's box. It is drawn at the end of <body> (a portal), not inside the card it belongs to: a card
+ * that lifts or reveals has a transform, which would make a fixed box move with the card and land away from the
+ * pointer, and a card's overflow would cut it off. It is measured, put above its anchor (below when there is no
+ * room) and kept on screen. It closes when the page scrolls or resizes, since its anchor moves.
+ */
+export function Floating({
+  anchor,
+  id,
+  className,
+  onDismiss,
+  children,
+}: {
+  anchor: TipAnchor;
+  id?: string;
+  className: string;
+  onDismiss: () => void;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState<Placement | null>(null);
+  const dismiss = useRef(onDismiss);
+  dismiss.current = onDismiss;
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el === null) return;
+    const next = placeTip(
+      anchor,
+      { width: el.offsetWidth, height: el.offsetHeight },
+      { width: document.documentElement.clientWidth, height: window.innerHeight },
+    );
+    setPlace((prev) =>
+      prev?.left === next.left && prev.top === next.top && prev.side === next.side ? prev : next,
+    );
+  });
+
+  useEffect(() => {
+    const close = () => dismiss.current();
+    window.addEventListener('scroll', close, { capture: true, passive: true });
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, { capture: true });
+      window.removeEventListener('resize', close);
+    };
+  }, []);
+
+  return createPortal(
+    <div
+      ref={ref}
+      id={id}
+      role="tooltip"
+      className={`floating ${className}`}
+      data-side={place?.side}
+      style={
+        place ? { left: place.left, top: place.top } : { left: 0, top: 0, visibility: 'hidden' }
+      }
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
 /**
  * A small tooltip on a button: it opens on hover, keyboard focus and a tap, and closes on leaving, blur or Escape.
  * A click only ever opens it, so a hover followed by a click does not shut it again.
@@ -94,34 +174,37 @@ function Tip({
   text: string;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<TipAnchor | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
   const id = useId();
+  const show = () => {
+    if (button.current !== null) setAnchor(anchorOf(button.current));
+  };
+  const hide = () => setAnchor(null);
+  const open = anchor !== null;
   return (
-    <span
-      className="tip-wrap"
-      onPointerEnter={() => setOpen(true)}
-      onPointerLeave={() => setOpen(false)}
-    >
+    <span className="tip-wrap" onPointerEnter={show} onPointerLeave={hide}>
       <button
+        ref={button}
         type="button"
         className={className}
         aria-label={label}
         aria-expanded={open}
         aria-describedby={open ? id : undefined}
-        onClick={() => setOpen(true)}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
+        onClick={show}
+        onFocus={show}
+        onBlur={hide}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') setOpen(false);
+          if (e.key === 'Escape') hide();
         }}
       >
         {children}
       </button>
-      {open ? (
-        <span role="tooltip" id={id} className="tip-pop">
+      {anchor !== null ? (
+        <Floating anchor={anchor} id={id} className="tip-pop" onDismiss={hide}>
           <b>{title}</b>
           {text}
-        </span>
+        </Floating>
       ) : null}
     </span>
   );
